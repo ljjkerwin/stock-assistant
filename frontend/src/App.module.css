@@ -1,0 +1,19 @@
+.layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 280px;
+  min-width: 280px;
+  border-right: 1px solid #f0f0f0;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.content {
+  flex: 1;
+  overflow: hidden;
+  background: #fff;
+}
