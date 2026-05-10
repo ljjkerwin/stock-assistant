@@ -11,7 +11,7 @@
 | 前端状态管理 | Zustand |
 | 后端框架 | Node.js + NestJS |
 | 数据存储 | SQLite（通过 TypeORM） |
-| 股票数据源 | 东方财富 HTTP API（A股 + 港股） |
+| 股票数据源 | 东方财富（搜索 + 行情）、新浪财经（A股K线）、Yahoo Finance（港股K线） |
 
 ---
 
@@ -34,13 +34,15 @@
 │  └──────────────┬───────────────────┘   │
 │  ┌──────────────▼───────────────────┐   │
 │  │       数据服务层 (Service)        │   │
-│  │  StockService  KlineService      │   │
-│  └──────┬──────────────┬────────────┘   │
-│         │              │                │
-│  ┌──────▼──────┐ ┌─────▼────────────┐  │
-│  │   SQLite    │ │    东方财富 API   │  │
-│  │ (收藏/配置) │ │ (A股 + 港股)     │  │
-│  └─────────────┘ └──────────────────┘  │
+│  │  StocksService  KlineService     │   │
+│  └──────┬──────────┬────────────────┘   │
+│         │          │  MemCache (TTL)     │
+│  ┌──────▼──────┐ ┌─▼──────────────────┐ │
+│  │   SQLite    │ │    外部数据源       │ │
+│  │ (收藏/配置) │ │ 东方财富(搜索/行情)│ │
+│  └─────────────┘ │ 新浪(A股K线)       │ │
+│                  │ Yahoo(港股K线)     │ │
+│                  └────────────────────┘ │
 └─────────────────────────────────────────┘
 ```
 
@@ -81,6 +83,7 @@ stock-assistant/
     │   │   ├── favorites.service.ts
     │   │   ├── favorite.entity.ts       # TypeORM 实体
     │   │   └── favorites.module.ts
+    │   ├── cache.ts                   # MemCache + tradingTtl（交易时段感知 TTL）
     │   ├── app.module.ts              # 根模块，配置 TypeORM + SQLite
     │   └── main.ts                    # NestJS 入口
     └── package.json
@@ -213,20 +216,45 @@ interface KLineChartProps {
 ```typescript
 @Injectable()
 export class KlineService {
-  async getKline(market: 'A' | 'HK', code: string, period: string): Promise<KlineBar[]> {
-    const raw = market === 'A'
-      ? await this.fetchAShare(code, period)    // 东方财富 A股接口
-      : await this.fetchHKShare(code, period)   // 东方财富 港股接口
-    return this.calcMACD(raw)  // 统一在后端计算 MACD(4,35,4)
-  }
+  private klineCache = new MemCache<KlineBar[]>();
 
-  private async fetchAShare(code: string, period: string): Promise<RawBar[]> { ... }
-  private async fetchHKShare(code: string, period: string): Promise<RawBar[]> { ... }
-  private calcMACD(bars: RawBar[]): KlineBar[] { ... }
+  async getKline(market: 'A' | 'HK', code: string, period: string): Promise<KlineBar[]> {
+    // 先查缓存
+    const cached = this.klineCache.get(`${market}:${code}:${period}`);
+    if (cached) return cached;
+
+    const raw = market === 'A'
+      ? await this.fetchSina(code, period)   // 新浪财经 A股K线
+      : await this.fetchYahoo(code, period)  // Yahoo Finance 港股K线
+    const bars = this.calcMACD(raw)          // 统一在后端计算 MACD(4,35,4)
+    this.klineCache.set(key, bars, tradingTtl(t, o));
+    return bars;
+  }
 }
 ```
 
 MACD 指标在后端统一计算后随 K 线数据一并返回，前端无需自行计算。
+
+---
+
+## 缓存策略
+
+### MemCache
+
+进程内 TTL 缓存（`backend/src/cache.ts`），无外部依赖，按 key 存储，过期自动失效。
+
+### 交易时段感知 TTL
+
+`tradingTtl(tradingMs, offHoursMs)`：UTC+8 工作日 09:30–12:00、13:00–16:00 期间返回短 TTL，其余时间返回长 TTL，覆盖 A股与港股交易时段。
+
+### 各接口 TTL 配置
+
+| 接口 | 盘中 TTL | 盘外 TTL |
+|------|----------|----------|
+| 股票行情（`/stocks/:market/:code`） | 30s | 10min |
+| K线 timeshare / 1min | 1min | 30min |
+| K线 5min / 15min / 30min / 60min | 3min | 30min |
+| K线 daily / weekly | 5min | 1h |
 
 ---
 

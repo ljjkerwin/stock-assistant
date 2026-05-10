@@ -42,13 +42,13 @@ const CHART_OPTIONS = {
   timeScale: { borderColor: '#e0e0e0', timeVisible: true, fixRightEdge: true },
 };
 
-// Convert "yyyy-mm-dd HH:mm" (CST, UTC+8) to Unix seconds; keep "yyyy-mm-dd" as-is
+// Treat UTC+8 datetime strings as UTC so the chart axis shows CST times directly.
 function toChartTime(t: string): number | string {
   if (!t.includes(' ')) return t;
   const [date, time] = t.split(' ');
   const [y, mo, d] = date.split('-').map(Number);
   const [h, mi] = time.split(':').map(Number);
-  return Date.UTC(y, mo - 1, d, h - 8, mi) / 1000;
+  return Date.UTC(y, mo - 1, d, h, mi) / 1000;
 }
 
 function isInTradingHours(market: 'A' | 'HK'): boolean {
@@ -125,6 +125,19 @@ export default function KLineChart({ market, code }: Props) {
   const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod) => {
     if (!mainChartRef.current || !volumeChartRef.current || !macdChartRef.current) return;
 
+    const isTimeshare = pd === 'timeshare';
+    const interactionOpts = isTimeshare
+      ? { handleScale: false, handleScroll: false }
+      : { handleScale: true, handleScroll: true };
+    [mainChartRef.current, volumeChartRef.current, macdChartRef.current].forEach((c) =>
+      c?.applyOptions(interactionOpts),
+    );
+
+    if (isTimeshare && bars.length > 0) {
+      const latestDate = bars[bars.length - 1].time.split(' ')[0];
+      bars = bars.filter((b) => b.time.startsWith(latestDate));
+    }
+
     if (mainSeriesRef.current) {
       mainChartRef.current.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
@@ -199,9 +212,18 @@ export default function KLineChart({ market, code }: Props) {
     );
     macdBarSeriesRef.current = macdBarSeries;
 
-    mainChartRef.current.timeScale().fitContent();
-    volumeChartRef.current.timeScale().fitContent();
-    macdChartRef.current.timeScale().fitContent();
+    if (isTimeshare || bars.length === 0) {
+      mainChartRef.current.timeScale().fitContent();
+      volumeChartRef.current.timeScale().fitContent();
+      macdChartRef.current.timeScale().fitContent();
+    } else {
+      const defaultVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
+      const from = Math.max(0, bars.length - defaultVisible);
+      const range = { from, to: bars.length - 1 };
+      mainChartRef.current.timeScale().setVisibleLogicalRange(range);
+      volumeChartRef.current.timeScale().setVisibleLogicalRange(range);
+      macdChartRef.current.timeScale().setVisibleLogicalRange(range);
+    }
 
     requestAnimationFrame(() => {
       const charts = [mainChartRef.current, volumeChartRef.current, macdChartRef.current];
