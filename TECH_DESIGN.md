@@ -203,6 +203,12 @@ interface KLineChartProps {
 - 成交量：柱状图，涨红跌绿
 - MACD 参数：短期 4、长期 35、信号 4（即 MACD(4,35,4)，比标准参数更灵敏）
 
+**十字线 legend：**
+- 主图、成交量副图、MACD 副图各有一个 legend 条，悬浮在图区左上角
+- 鼠标移入任意图区，三个图的 legend 同步更新至当前十字线对应 bar 的值
+- 主图显示开/高/低/收（分时图显示价格），量图显示 VOL，MACD 图显示 DIF / DEA / MACD 柱
+- 实现方式：`applyData` 将 bars 存入 `barsRef`，`initCharts` 内定义 `updateAllLegends(time)` 按时间查表，三个图的 `subscribeCrosshairMove` 回调均优先调用此函数再执行跨图十字线同步
+
 **数据刷新策略：**
 - 刷新间隔：30 秒轮询
 - 仅在对应市场交易时段内自动刷新，收盘后停止轮询
@@ -252,9 +258,12 @@ MACD 指标在后端统一计算后随 K 线数据一并返回，前端无需自
 | 接口 | 盘中 TTL | 盘外 TTL |
 |------|----------|----------|
 | 股票行情（`/stocks/:market/:code`） | 30s | 10min |
-| K线 timeshare / 1min | 1min | 30min |
-| K线 5min / 15min / 30min / 60min | 3min | 30min |
-| K线 daily / weekly | 5min | 1h |
+| K线 timeshare / 1min | 1min | 1h |
+| K线 5min / 15min / 30min | 3min | 1h |
+| K线 60min / daily | 5min | 1h |
+| K线 weekly | 10min | 1h |
+
+> 盘外 TTL 统一为 1 小时，不再按周期阶梯区分。
 
 ---
 

@@ -15,6 +15,7 @@ import type {
   LineData,
   HistogramData,
   SeriesType,
+  Time,
 } from 'lightweight-charts';
 import { klineApi } from '../../api/stock';
 import type { KlinePeriod, KlineBar } from '../../types';
@@ -27,6 +28,17 @@ interface Props {
 }
 
 const PERIODS = Object.keys(PERIOD_LABELS) as KlinePeriod[];
+
+function fmtVol(v: number): string {
+  if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+  if (v >= 1e4) return (v / 1e4).toFixed(2) + '万';
+  return v.toFixed(0);
+}
+
+function fmtNum(v: number | null | undefined): string {
+  if (v == null) return '--';
+  return v.toFixed(3);
+}
 
 const CHART_OPTIONS = {
   layout: {
@@ -87,6 +99,16 @@ export default function KLineChart({ market, code }: Props) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncingRef = useRef(false);
 
+  // Data refs — used by legend updater to look up values by time
+  const barsRef = useRef<KlineBar[]>([]);
+  const chartTimesRef = useRef<(number | string)[]>([]);
+  const periodRef = useRef<KlinePeriod>('timeshare');
+
+  // Legend DOM refs
+  const mainLegendRef = useRef<HTMLDivElement>(null);
+  const volLegendRef = useRef<HTMLDivElement>(null);
+  const macdLegendRef = useRef<HTMLDivElement>(null);
+
   const initCharts = useCallback(() => {
     if (!containerRef.current || !volumeRef.current || !macdRef.current) return;
 
@@ -104,6 +126,38 @@ export default function KLineChart({ market, code }: Props) {
 
     const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
     macdChartRef.current = macdChart;
+
+    // Unified legend updater — looks up bar by chart time and refreshes all three legends
+    function updateAllLegends(time: Time) {
+      const idx = chartTimesRef.current.findIndex((t) => t === time);
+      if (idx < 0) return;
+      const bar = barsRef.current[idx];
+      const pd = periodRef.current;
+
+      if (mainLegendRef.current) {
+        if (pd === 'timeshare') {
+          mainLegendRef.current.textContent = `价格: ${bar.close.toFixed(3)}`;
+        } else {
+          mainLegendRef.current.innerHTML =
+            `<span>开:${bar.open.toFixed(3)}</span>&nbsp;&nbsp;` +
+            `<span>高:${bar.high.toFixed(3)}</span>&nbsp;&nbsp;` +
+            `<span>低:${bar.low.toFixed(3)}</span>&nbsp;&nbsp;` +
+            `<span>收:${bar.close.toFixed(3)}</span>`;
+        }
+      }
+
+      if (volLegendRef.current) {
+        volLegendRef.current.textContent = `VOL: ${fmtVol(bar.volume)}`;
+      }
+
+      if (macdLegendRef.current) {
+        const barColor = bar.macd.bar >= 0 ? '#ef5350' : '#26a69a';
+        macdLegendRef.current.innerHTML =
+          `<span style="color:#1677ff">DIF:${fmtNum(bar.macd.dif)}</span>&nbsp;&nbsp;` +
+          `<span style="color:#ff9800">DEA:${fmtNum(bar.macd.dea)}</span>&nbsp;&nbsp;` +
+          `<span style="color:${barColor}">MACD:${fmtNum(bar.macd.bar)}</span>`;
+      }
+    }
 
     mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (range) {
@@ -125,6 +179,7 @@ export default function KLineChart({ market, code }: Props) {
     });
 
     mainChart.subscribeCrosshairMove((param) => {
+      if (param.time) updateAllLegends(param.time);
       if (syncingRef.current) return;
       syncingRef.current = true;
       if (param.time) {
@@ -138,6 +193,7 @@ export default function KLineChart({ market, code }: Props) {
     });
 
     volumeChart.subscribeCrosshairMove((param) => {
+      if (param.time) updateAllLegends(param.time);
       if (syncingRef.current) return;
       syncingRef.current = true;
       if (param.time) {
@@ -151,6 +207,7 @@ export default function KLineChart({ market, code }: Props) {
     });
 
     macdChart.subscribeCrosshairMove((param) => {
+      if (param.time) updateAllLegends(param.time);
       if (syncingRef.current) return;
       syncingRef.current = true;
       if (param.time) {
@@ -179,6 +236,11 @@ export default function KLineChart({ market, code }: Props) {
       const latestDate = bars[bars.length - 1].time.split(' ')[0];
       bars = bars.filter((b) => b.time.startsWith(latestDate));
     }
+
+    // Store data for legend lookup
+    barsRef.current = bars;
+    chartTimesRef.current = bars.map((b) => toChartTime(b.time));
+    periodRef.current = pd;
 
     if (mainSeriesRef.current) {
       mainChartRef.current.removeSeries(mainSeriesRef.current);
@@ -362,9 +424,18 @@ export default function KLineChart({ market, code }: Props) {
         className={styles.tabs}
       />
       <Spin spinning={loading}>
-        <div ref={containerRef} className={styles.main} />
-        <div ref={volumeRef} className={styles.sub} />
-        <div ref={macdRef} className={styles.sub} />
+        <div className={styles.subWrapper}>
+          <div ref={mainLegendRef} className={styles.subLegend} />
+          <div ref={containerRef} className={styles.main} />
+        </div>
+        <div className={styles.subWrapper}>
+          <div ref={volLegendRef} className={styles.subLegend}>VOL: --</div>
+          <div ref={volumeRef} className={styles.sub} />
+        </div>
+        <div className={styles.subWrapper}>
+          <div ref={macdLegendRef} className={styles.subLegend}>DIF: --&nbsp;&nbsp;DEA: --&nbsp;&nbsp;MACD: --</div>
+          <div ref={macdRef} className={styles.sub} />
+        </div>
       </Spin>
     </div>
   );

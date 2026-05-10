@@ -102,17 +102,19 @@ interface RawBar {
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
-// [盘中TTL, 盘外TTL]
-const KLINE_TTL: Record<string, [number, number]> = {
-  timeshare: [  60_000,  30 * 60_000],  // 1min  → 30min
-  '1min':    [  60_000,  30 * 60_000],
-  '5min':    [ 180_000,  30 * 60_000],  // 3min  → 30min
-  '15min':   [ 180_000,  30 * 60_000],
-  '30min':   [ 180_000,  30 * 60_000],
-  '60min':   [ 300_000,  60 * 60_000],  // 5min  → 60min
-  daily:     [ 300_000,  60 * 60_000],
-  weekly:    [ 600_000, 120 * 60_000],  // 10min → 2h
+// 盘中TTL（毫秒），盘外统一 1 小时
+const KLINE_TRADING_TTL: Record<string, number> = {
+  timeshare:  60_000,   // 1min
+  '1min':     60_000,
+  '5min':    180_000,   // 3min
+  '15min':   180_000,
+  '30min':   180_000,
+  '60min':   300_000,   // 5min
+  daily:     300_000,
+  weekly:    600_000,   // 10min
 };
+
+const OFF_HOURS_TTL = 60 * 60_000; // 1h
 
 @Injectable()
 export class KlineService {
@@ -147,8 +149,8 @@ export class KlineService {
     }
     const bars = this.calcMACD(raw);
     if (bars.length > 0) {
-      const [t, o] = KLINE_TTL[period] ?? [300_000, 60 * 60_000];
-      this.klineCache.set(key, bars, tradingTtl(t, o));
+      const tradingMs = KLINE_TRADING_TTL[period] ?? 300_000;
+      this.klineCache.set(key, bars, tradingTtl(tradingMs, OFF_HOURS_TTL));
     }
     return { code, market, period, data: bars };
   }

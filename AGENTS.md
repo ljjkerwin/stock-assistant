@@ -78,6 +78,7 @@ cd frontend && npm install && npm run dev
 - 分时图渲染折线图，其他周期渲染蜡烛线
 - 副图包含成交量（柱状图，涨红跌绿）和 MACD(4,35,4)
 - MACD 由**后端计算**后随 K 线数据一并返回，前端不做指标计算
+- 三个图（主图、量图、MACD 图）各有 legend，鼠标在任意图区移动时三者同步更新；`applyData` 将 bars 存入 `barsRef`，`updateAllLegends(time)` 按时间查表统一刷新
 - 30 秒轮询刷新，仅在对应市场交易时段内启用
 
 ### 后端 `KlineService`
@@ -87,7 +88,7 @@ cd frontend && npm install && npm run dev
 ### 缓存层（`cache.ts`）
 - `MemCache<T>`：进程内 TTL 缓存，自动过期，无需外部依赖
 - `tradingTtl(tradingMs, offHoursMs)`：交易时段（UTC+8 工作日 09:30–12:00、13:00–16:00）返回短 TTL，盘外返回长 TTL
-- K线缓存 TTL：分时/1min 盘中 1min，5min–60min 盘中 3min，日线及以上盘中 5min，盘外均延长至 30min–1h
+- K线缓存 TTL：分时/1min 盘中 1min，5min–30min 盘中 3min，60min/日线盘中 5min，周线盘中 10min；**盘外统一 1h**
 - 行情缓存 TTL：盘中 30s，盘外 10min
 
 ### 状态管理（Zustand）
