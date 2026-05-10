@@ -32,6 +32,7 @@ const CHART_OPTIONS = {
   layout: {
     background: { type: ColorType.Solid, color: '#ffffff' },
     textColor: '#333',
+    attributionLogo: false,
   },
   grid: {
     vertLines: { color: '#f0f0f0' },
@@ -84,6 +85,7 @@ export default function KLineChart({ market, code }: Props) {
   const macdBarSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncingRef = useRef(false);
 
   const initCharts = useCallback(() => {
     if (!containerRef.current || !volumeRef.current || !macdRef.current) return;
@@ -93,13 +95,14 @@ export default function KLineChart({ market, code }: Props) {
       ref.current = null;
     });
 
+    const noTimeScale = { timeScale: { ...CHART_OPTIONS.timeScale, visible: false } };
     const mainChart = createChart(containerRef.current, { ...CHART_OPTIONS, height: 300 });
     mainChartRef.current = mainChart;
 
-    const volumeChart = createChart(volumeRef.current, { ...CHART_OPTIONS, height: 100 });
+    const volumeChart = createChart(volumeRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
     volumeChartRef.current = volumeChart;
 
-    const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, height: 100 });
+    const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
     macdChartRef.current = macdChart;
 
     mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -119,6 +122,45 @@ export default function KLineChart({ market, code }: Props) {
         mainChart.timeScale().setVisibleLogicalRange(range);
         volumeChart.timeScale().setVisibleLogicalRange(range);
       }
+    });
+
+    mainChart.subscribeCrosshairMove((param) => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      if (param.time) {
+        if (volumeSeriesRef.current) volumeChart.setCrosshairPosition(0, param.time, volumeSeriesRef.current);
+        if (difSeriesRef.current) macdChart.setCrosshairPosition(0, param.time, difSeriesRef.current);
+      } else {
+        volumeChart.clearCrosshairPosition();
+        macdChart.clearCrosshairPosition();
+      }
+      syncingRef.current = false;
+    });
+
+    volumeChart.subscribeCrosshairMove((param) => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      if (param.time) {
+        if (mainSeriesRef.current) mainChart.setCrosshairPosition(0, param.time, mainSeriesRef.current);
+        if (difSeriesRef.current) macdChart.setCrosshairPosition(0, param.time, difSeriesRef.current);
+      } else {
+        mainChart.clearCrosshairPosition();
+        macdChart.clearCrosshairPosition();
+      }
+      syncingRef.current = false;
+    });
+
+    macdChart.subscribeCrosshairMove((param) => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      if (param.time) {
+        if (mainSeriesRef.current) mainChart.setCrosshairPosition(0, param.time, mainSeriesRef.current);
+        if (volumeSeriesRef.current) volumeChart.setCrosshairPosition(0, param.time, volumeSeriesRef.current);
+      } else {
+        mainChart.clearCrosshairPosition();
+        volumeChart.clearCrosshairPosition();
+      }
+      syncingRef.current = false;
     });
   }, []);
 
@@ -154,7 +196,12 @@ export default function KLineChart({ market, code }: Props) {
     });
 
     if (pd === 'timeshare') {
-      const lineSeries = mainChartRef.current.addSeries(LineSeries, { color: '#1677ff', lineWidth: 1 });
+      const lineSeries = mainChartRef.current.addSeries(LineSeries, {
+        color: '#1677ff',
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
       lineSeries.setData(bars.map((b) => ({ time: toChartTime(b.time), value: b.close } as LineData)));
       mainSeriesRef.current = lineSeries;
     } else {
@@ -165,6 +212,8 @@ export default function KLineChart({ market, code }: Props) {
         borderDownColor: '#26a69a',
         wickUpColor: '#ef5350',
         wickDownColor: '#26a69a',
+        lastValueVisible: false,
+        priceLineVisible: false,
       });
       candleSeries.setData(
         bars.map(
@@ -178,6 +227,8 @@ export default function KLineChart({ market, code }: Props) {
     const volSeries = volumeChartRef.current.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: '',
+      lastValueVisible: false,
+      priceLineVisible: false,
     });
     volSeries.setData(
       bars.map(
@@ -191,15 +242,29 @@ export default function KLineChart({ market, code }: Props) {
     );
     volumeSeriesRef.current = volSeries;
 
-    const difSeries = macdChartRef.current.addSeries(LineSeries, { color: '#1677ff', lineWidth: 1 });
+    const difSeries = macdChartRef.current.addSeries(LineSeries, {
+      color: '#1677ff',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
     difSeries.setData(bars.map((b) => ({ time: toChartTime(b.time), value: b.macd.dif } as LineData)));
     difSeriesRef.current = difSeries;
 
-    const deaSeries = macdChartRef.current.addSeries(LineSeries, { color: '#ff9800', lineWidth: 1 });
+    const deaSeries = macdChartRef.current.addSeries(LineSeries, {
+      color: '#ff9800',
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
     deaSeries.setData(bars.map((b) => ({ time: toChartTime(b.time), value: b.macd.dea } as LineData)));
     deaSeriesRef.current = deaSeries;
 
-    const macdBarSeries = macdChartRef.current.addSeries(HistogramSeries, { priceScaleId: 'right' });
+    const macdBarSeries = macdChartRef.current.addSeries(HistogramSeries, {
+      priceScaleId: 'right',
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
     macdBarSeries.setData(
       bars.map(
         (b) =>
