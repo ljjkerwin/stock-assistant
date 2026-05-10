@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { yahooGet } from '../yahoo-session';
+import { MemCache, tradingTtl } from '../cache';
 
 // ── Sina (A-shares) ──────────────────────────────────────────────────────────
 
@@ -101,8 +102,22 @@ interface RawBar {
 
 // ── Service ──────────────────────────────────────────────────────────────────
 
+// [盘中TTL, 盘外TTL]
+const KLINE_TTL: Record<string, [number, number]> = {
+  timeshare: [  60_000,  30 * 60_000],  // 1min  → 30min
+  '1min':    [  60_000,  30 * 60_000],
+  '5min':    [ 180_000,  30 * 60_000],  // 3min  → 30min
+  '15min':   [ 180_000,  30 * 60_000],
+  '30min':   [ 180_000,  30 * 60_000],
+  '60min':   [ 300_000,  60 * 60_000],  // 5min  → 60min
+  daily:     [ 300_000,  60 * 60_000],
+  weekly:    [ 600_000, 120 * 60_000],  // 10min → 2h
+};
+
 @Injectable()
 export class KlineService {
+  private klineCache = new MemCache<KlineBar[]>();
+
   async getKline(
     market: 'A' | 'HK',
     code: string,
@@ -113,6 +128,10 @@ export class KlineService {
     period: string;
     data: KlineBar[];
   }> {
+    const key = `${market}:${code}:${period}`;
+    const cached = this.klineCache.get(key);
+    if (cached) return { code, market, period, data: cached };
+
     let raw: RawBar[] = [];
     try {
       raw =
@@ -126,7 +145,12 @@ export class KlineService {
         `[kline] upstream error market=${market} code=${code} period=${period} status=${status ?? 'N/A'} msg=${msg}`,
       );
     }
-    return { code, market, period, data: this.calcMACD(raw) };
+    const bars = this.calcMACD(raw);
+    if (bars.length > 0) {
+      const [t, o] = KLINE_TTL[period] ?? [300_000, 60 * 60_000];
+      this.klineCache.set(key, bars, tradingTtl(t, o));
+    }
+    return { code, market, period, data: bars };
   }
 
   // ── Sina (A-shares) ────────────────────────────────────────────────────────
