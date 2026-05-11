@@ -51,7 +51,7 @@ export default function Sidebar() {
                 {stock.code} · {stock.market === 'HK' ? '港股' : 'A股'}
               </Text>
             </div>
-            <Space size={0} onClick={(e) => e.stopPropagation()}>
+            <Space size={0} className={styles.actions} onClick={(e) => e.stopPropagation()}>
               <Tooltip title={stock.pinned ? '取消置顶' : '置顶'}>
                 <Button
                   type="text"

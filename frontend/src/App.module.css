@@ -5,8 +5,8 @@
 }
 
 .sidebar {
-  width: 280px;
-  min-width: 280px;
+  width: 200px;
+  min-width: 200px;
   border-right: 1px solid #f0f0f0;
   overflow-y: auto;
   background: #fff;
