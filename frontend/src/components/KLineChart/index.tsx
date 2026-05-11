@@ -95,6 +95,10 @@ export default function KLineChart({ market, code }: Props) {
   const difSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const deaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const macdBarSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const ma5SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const ma10SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const ma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const ma60SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncingRef = useRef(false);
@@ -138,11 +142,19 @@ export default function KLineChart({ market, code }: Props) {
         if (pd === 'timeshare') {
           mainLegendRef.current.textContent = `价格: ${bar.close.toFixed(3)}`;
         } else {
+          const m = bar.ma;
+          const maHtml = m
+            ? `&nbsp;&nbsp;<span style="color:#FFAB00">MA5:${m.ma5?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+              `<span style="color:#E91E63">MA10:${m.ma10?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+              `<span style="color:#1677FF">MA20:${m.ma20?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+              `<span style="color:#9C27B0">MA60:${m.ma60?.toFixed(3) ?? '--'}</span>`
+            : '';
           mainLegendRef.current.innerHTML =
             `<span>开:${bar.open.toFixed(3)}</span>&nbsp;&nbsp;` +
             `<span>高:${bar.high.toFixed(3)}</span>&nbsp;&nbsp;` +
             `<span>低:${bar.low.toFixed(3)}</span>&nbsp;&nbsp;` +
-            `<span>收:${bar.close.toFixed(3)}</span>`;
+            `<span>收:${bar.close.toFixed(3)}</span>` +
+            maHtml;
         }
       }
 
@@ -246,6 +258,12 @@ export default function KLineChart({ market, code }: Props) {
       mainChartRef.current.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
     }
+    [ma5SeriesRef, ma10SeriesRef, ma20SeriesRef, ma60SeriesRef].forEach((ref) => {
+      if (ref.current) {
+        mainChartRef.current!.removeSeries(ref.current);
+        ref.current = null;
+      }
+    });
     if (volumeSeriesRef.current) {
       volumeChartRef.current.removeSeries(volumeSeriesRef.current);
       volumeSeriesRef.current = null;
@@ -284,6 +302,27 @@ export default function KLineChart({ market, code }: Props) {
         ),
       );
       mainSeriesRef.current = candleSeries;
+
+      const maConfigs = [
+        { ref: ma5SeriesRef, key: 'ma5' as const, color: '#FFAB00' },
+        { ref: ma10SeriesRef, key: 'ma10' as const, color: '#E91E63' },
+        { ref: ma20SeriesRef, key: 'ma20' as const, color: '#1677FF' },
+        { ref: ma60SeriesRef, key: 'ma60' as const, color: '#9C27B0' },
+      ];
+      maConfigs.forEach(({ ref, key, color }) => {
+        const series = mainChartRef.current!.addSeries(LineSeries, {
+          color,
+          lineWidth: 1,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        series.setData(
+          bars
+            .filter((b) => b.ma[key] != null)
+            .map((b) => ({ time: toChartTime(b.time), value: b.ma[key]! } as LineData)),
+        );
+        ref.current = series;
+      });
     }
 
     const volSeries = volumeChartRef.current.addSeries(HistogramSeries, {

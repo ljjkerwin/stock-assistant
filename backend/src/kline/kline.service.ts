@@ -89,6 +89,12 @@ export interface KlineBar {
     dea: number;
     bar: number;
   };
+  ma: {
+    ma5: number | null;
+    ma10: number | null;
+    ma20: number | null;
+    ma60: number | null;
+  };
 }
 
 interface RawBar {
@@ -256,6 +262,10 @@ export class KlineService {
     const dif = emaShort.map((v, i) => v - emaLong[i]);
     const dea = this.calcEMA(dif, 4);
     const macdBar = dif.map((v, i) => (v - dea[i]) * 2);
+    const ma5 = this.calcSMA(closes, 5);
+    const ma10 = this.calcSMA(closes, 10);
+    const ma20 = this.calcSMA(closes, 20);
+    const ma60 = this.calcSMA(closes, 60);
 
     return bars.map((bar, i) => ({
       ...bar,
@@ -264,7 +274,21 @@ export class KlineService {
         dea: parseFloat(dea[i].toFixed(4)),
         bar: parseFloat(macdBar[i].toFixed(4)),
       },
+      ma: {
+        ma5: ma5[i],
+        ma10: ma10[i],
+        ma20: ma20[i],
+        ma60: ma60[i],
+      },
     }));
+  }
+
+  private calcSMA(data: number[], period: number): (number | null)[] {
+    return data.map((_, i) => {
+      if (i < period - 1) return null;
+      const sum = data.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+      return parseFloat((sum / period).toFixed(4));
+    });
   }
 
   private calcEMA(data: number[], period: number): number[] {

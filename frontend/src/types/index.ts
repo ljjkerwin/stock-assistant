@@ -30,6 +30,12 @@ export interface KlineBar {
     dea: number;
     bar: number;
   };
+  ma: {
+    ma5: number | null;
+    ma10: number | null;
+    ma20: number | null;
+    ma60: number | null;
+  };
 }
 
 export interface KlineResponse {
