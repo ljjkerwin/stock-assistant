@@ -101,6 +101,5 @@ export interface MonitorMessage {
   targetValue: number;
   maPeriod: MaPeriod | null;
   triggeredAt: number;
-  /** 仅客户端维护，不持久化 */
   read: boolean;
 }

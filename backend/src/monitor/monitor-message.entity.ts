@@ -31,4 +31,7 @@ export class MonitorMessage {
 
   @Column({ type: 'integer' })
   triggeredAt!: number;
+
+  @Column({ default: false })
+  read!: boolean;
 }

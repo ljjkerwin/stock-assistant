@@ -52,8 +52,13 @@ export const monitorApi = {
   toggleRule: (id: number, active: boolean): Promise<MonitorRule> =>
     api.patch<MonitorRule>(`/monitor/rules/${id}`, { active }).then((r) => r.data),
 
-  getMessages: (): Promise<Omit<MonitorMessage, 'read'>[]> =>
-    api.get<Omit<MonitorMessage, 'read'>[]>('/monitor/messages').then((r) => r.data),
+  getMessages: (page: number): Promise<{ items: MonitorMessage[]; total: number }> =>
+    api
+      .get<{ items: MonitorMessage[]; total: number }>('/monitor/messages', { params: { page } })
+      .then((r) => r.data),
+
+  getUnreadCount: (): Promise<{ count: number }> =>
+    api.get<{ count: number }>('/monitor/messages/unread-count').then((r) => r.data),
 
   clearMessages: (): Promise<void> =>
     api.delete('/monitor/messages').then(() => undefined),

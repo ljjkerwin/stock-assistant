@@ -55,17 +55,40 @@ function MessageItem({ msg }: { msg: MonitorMessage }) {
 
 export default function MonitorCenter() {
   const [open, setOpen] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useMonitorSSE();
 
-  const { messages, fetchRules, fetchMessages, markAllRead, clearMessages } = useMonitorStore();
+  const {
+    messages,
+    messagesTotal,
+    messagesPage,
+    unreadCount,
+    fetchRules,
+    fetchMessages,
+    fetchUnreadCount,
+  } = useMonitorStore();
 
   useEffect(() => {
     void fetchRules();
-    void fetchMessages();
-  }, [fetchRules, fetchMessages]);
+    void fetchUnreadCount();
+  }, [fetchRules, fetchUnreadCount]);
 
-  const unreadCount = messages.filter((m) => !m.read).length;
+  const handleOpen = () => {
+    setOpen(true);
+    void fetchMessages(1);
+  };
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    try {
+      await fetchMessages(messagesPage + 1);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const hasMore = messages.length < messagesTotal;
 
   return (
     <>
@@ -76,7 +99,7 @@ export default function MonitorCenter() {
             shape="circle"
             size="large"
             icon={<BellOutlined />}
-            onClick={() => setOpen(true)}
+            onClick={handleOpen}
           />
         </Badge>
       </div>
@@ -91,12 +114,9 @@ export default function MonitorCenter() {
       >
         {messages.length > 0 && (
           <div className={styles.tabToolbar}>
-            <Button size="small" onClick={markAllRead} disabled={unreadCount === 0}>
-              全部已读
-            </Button>
-            <Button size="small" danger onClick={() => void clearMessages()}>
-              清空
-            </Button>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              共 {messagesTotal} 条
+            </Typography.Text>
           </div>
         )}
         {messages.length === 0 ? (
@@ -110,6 +130,13 @@ export default function MonitorCenter() {
             {messages.map((msg) => (
               <MessageItem key={msg.id} msg={msg} />
             ))}
+            {hasMore && (
+              <div style={{ textAlign: 'center', padding: '8px 0' }}>
+                <Button size="small" loading={loadingMore} onClick={() => void handleLoadMore()}>
+                  加载更多
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Modal>

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   MessageEvent,
@@ -8,6 +9,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Sse,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
@@ -38,9 +40,14 @@ export class MonitorController {
     return this.monitorService.toggleRule(id, active);
   }
 
+  @Get('messages/unread-count')
+  getUnreadCount() {
+    return this.monitorService.getUnreadCount();
+  }
+
   @Get('messages')
-  getMessages() {
-    return this.monitorService.getMessages();
+  getMessages(@Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number) {
+    return this.monitorService.getMessages(page);
   }
 
   @Delete('messages')

@@ -268,11 +268,26 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     return this.ruleRepo.findOneByOrFail({ id });
   }
 
-  async getMessages(): Promise<MonitorMessage[]> {
-    return this.messageRepo.find({
+  async getMessages(page: number): Promise<{ items: MonitorMessage[]; total: number }> {
+    const limit = 20;
+    const [items, total] = await this.messageRepo.findAndCount({
       order: { triggeredAt: 'DESC' },
-      take: 100,
+      take: limit,
+      skip: (page - 1) * limit,
     });
+    const unreadIds = items.filter((m) => !m.read).map((m) => m.id);
+    if (unreadIds.length > 0) {
+      await this.messageRepo.update(unreadIds, { read: true });
+      items.forEach((m) => {
+        m.read = true;
+      });
+    }
+    return { items, total };
+  }
+
+  async getUnreadCount(): Promise<{ count: number }> {
+    const count = await this.messageRepo.count({ where: { read: false } });
+    return { count };
   }
 
   async clearMessages(): Promise<void> {
