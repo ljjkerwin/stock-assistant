@@ -1,0 +1,47 @@
+.trigger {
+  position: fixed;
+  bottom: 20px;
+  /* 居中于 200px 宽的 sidebar */
+  left: 0;
+  width: 200px;
+  display: flex;
+  justify-content: center;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.trigger > * {
+  pointer-events: auto;
+}
+
+.tabToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.scrollList {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.listItem {
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.15s;
+}
+
+.listItem:last-child {
+  border-bottom: none;
+}
+
+.listItem.read {
+  opacity: 0.55;
+}
+
+.itemRow {
+  display: flex;
+  align-items: center;
+  margin-bottom: 3px;
+}

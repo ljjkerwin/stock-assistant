@@ -1,5 +1,12 @@
 import axios from 'axios';
-import type { Stock, StockInfo, KlineResponse, KlinePeriod } from '../types';
+import type {
+  Stock,
+  StockInfo,
+  KlineResponse,
+  KlinePeriod,
+  MonitorRule,
+  MonitorMessage,
+} from '../types';
 
 const api = axios.create({ baseURL: '/api' });
 
@@ -23,4 +30,31 @@ export const stocksApi = {
 export const klineApi = {
   get: (market: 'A' | 'HK', code: string, period: KlinePeriod): Promise<KlineResponse> =>
     api.get<KlineResponse>(`/kline/${market}/${code}`, { params: { period } }).then((r) => r.data),
+};
+
+export const monitorApi = {
+  getRules: (): Promise<MonitorRule[]> =>
+    api.get<MonitorRule[]>('/monitor/rules').then((r) => r.data),
+
+  createRule: (body: {
+    stockCode: string;
+    stockMarket: 'A' | 'HK';
+    stockName: string;
+    type: string;
+    targetPrice?: number;
+    maPeriod?: string;
+  }): Promise<MonitorRule> =>
+    api.post<MonitorRule>('/monitor/rules', body).then((r) => r.data),
+
+  deleteRule: (id: number): Promise<void> =>
+    api.delete(`/monitor/rules/${id}`).then(() => undefined),
+
+  toggleRule: (id: number, active: boolean): Promise<MonitorRule> =>
+    api.patch<MonitorRule>(`/monitor/rules/${id}`, { active }).then((r) => r.data),
+
+  getMessages: (): Promise<Omit<MonitorMessage, 'read'>[]> =>
+    api.get<Omit<MonitorMessage, 'read'>[]>('/monitor/messages').then((r) => r.data),
+
+  clearMessages: (): Promise<void> =>
+    api.delete('/monitor/messages').then(() => undefined),
 };

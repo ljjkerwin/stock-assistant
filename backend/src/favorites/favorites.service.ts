@@ -16,11 +16,7 @@ export class FavoritesService {
     });
   }
 
-  async add(data: {
-    code: string;
-    market: string;
-    name: string;
-  }): Promise<Favorite> {
+  async add(data: { code: string; market: string; name: string }): Promise<Favorite> {
     const count = await this.repo.count();
     const fav = this.repo.create({ ...data, sortOrder: count });
     return this.repo.save(fav);
@@ -28,14 +24,10 @@ export class FavoritesService {
 
   async remove(id: number): Promise<void> {
     const result = await this.repo.delete(id);
-    if (result.affected === 0)
-      throw new NotFoundException(`Favorite ${id} not found`);
+    if (result.affected === 0) throw new NotFoundException(`Favorite ${id} not found`);
   }
 
-  async update(
-    id: number,
-    data: { sortOrder?: number; pinned?: boolean },
-  ): Promise<Favorite> {
+  async update(id: number, data: { sortOrder?: number; pinned?: boolean }): Promise<Favorite> {
     const fav = await this.repo.findOneBy({ id });
     if (!fav) throw new NotFoundException(`Favorite ${id} not found`);
     if (data.sortOrder !== undefined) fav.sortOrder = data.sortOrder;

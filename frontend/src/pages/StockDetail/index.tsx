@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Typography, Descriptions, Spin, Tag } from 'antd';
 import { stocksApi } from '../../api/stock';
 import KLineChart from '../../components/KLineChart';
+import StockMonitorButton from '../../components/StockMonitorButton';
 import type { StockInfo } from '../../types';
 import styles from './StockDetail.module.css';
 
@@ -41,6 +42,14 @@ export default function StockDetail() {
         <Tag color="blue" style={{ marginLeft: 8 }}>
           {code} · {market === 'HK' ? '港股' : 'A股'}
         </Tag>
+        <span style={{ flex: 1 }} />
+        {market && code && (
+          <StockMonitorButton
+            market={market as 'A' | 'HK'}
+            code={code}
+            stockName={info?.name ?? code ?? ''}
+          />
+        )}
       </div>
 
       <Spin spinning={loading}>

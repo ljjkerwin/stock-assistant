@@ -66,3 +66,41 @@ export const PERIOD_LABELS: Record<KlinePeriod, string> = {
   daily: '日线',
   weekly: '周线',
 };
+
+// ── 监控模块 ──────────────────────────────────────────────────────────────────
+
+export type MonitorType =
+  | 'price_above'
+  | 'price_below'
+  | 'ma_cross_above'
+  | 'ma_cross_below';
+
+export type MaPeriod = 'ma5' | 'ma10' | 'ma20';
+
+export interface MonitorRule {
+  id: number;
+  stockCode: string;
+  stockMarket: 'A' | 'HK';
+  stockName: string;
+  type: MonitorType;
+  targetPrice: number | null;
+  maPeriod: MaPeriod | null;
+  active: boolean;
+  lastTriggeredAt: number | null;
+  createdAt: number;
+}
+
+export interface MonitorMessage {
+  id: number;
+  ruleId: number;
+  stockCode: string;
+  stockMarket: 'A' | 'HK';
+  stockName: string;
+  type: MonitorType;
+  currentPrice: number;
+  targetValue: number;
+  maPeriod: MaPeriod | null;
+  triggeredAt: number;
+  /** 仅客户端维护，不持久化 */
+  read: boolean;
+}

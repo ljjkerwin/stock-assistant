@@ -9,7 +9,6 @@ const BROWSER_HEADERS = {
   Origin: 'https://quote.eastmoney.com',
 };
 
-
 export interface StockInfo {
   code: string;
   name: string;
@@ -51,14 +50,13 @@ interface EastmoneyQuoteResponse {
   data?: EastmoneyQuoteData;
 }
 
-
 function numOrNull(v: number | string | undefined): number | null {
   if (v == null || v === '-') return null;
   return typeof v === 'number' ? v : parseFloat(String(v));
 }
 
-const INFO_TTL_TRADING   = 30_000;       // 盘中 30s
-const INFO_TTL_OFF_HOURS = 10 * 60_000;  // 盘外 10min
+const INFO_TTL_TRADING = 30_000; // 盘中 30s
+const INFO_TTL_OFF_HOURS = 10 * 60_000; // 盘外 10min
 
 @Injectable()
 export class StocksService {
@@ -69,7 +67,10 @@ export class StocksService {
     const res = await axios
       .get<EastmoneySearchResponse>(url, { timeout: 5000, headers: BROWSER_HEADERS })
       .catch((err: Error) => {
-        throw new HttpException(`Failed to fetch search results: ${err.message}`, HttpStatus.BAD_GATEWAY);
+        throw new HttpException(
+          `Failed to fetch search results: ${err.message}`,
+          HttpStatus.BAD_GATEWAY,
+        );
       });
     const list: SearchResult[] = [];
     const data = res.data?.QuotationCodeTable?.Data;
@@ -108,7 +109,10 @@ export class StocksService {
     const res = await axios
       .get<EastmoneyQuoteResponse>(url, { timeout: 5000, headers: BROWSER_HEADERS })
       .catch((err: Error) => {
-        throw new HttpException(`Failed to fetch stock info: ${err.message}`, HttpStatus.BAD_GATEWAY);
+        throw new HttpException(
+          `Failed to fetch stock info: ${err.message}`,
+          HttpStatus.BAD_GATEWAY,
+        );
       });
     const d = res.data?.data ?? {};
 
@@ -120,8 +124,7 @@ export class StocksService {
     const f170 = numOrNull(d.f170);
 
     const price = f43 != null ? f43 / 100 : null;
-    const change_pct =
-      f170 != null ? f170 / 100 : f47 != null ? f47 / 100 : null;
+    const change_pct = f170 != null ? f170 / 100 : f47 != null ? f47 / 100 : null;
     const market_cap = f116;
     const pe = f167 != null ? f167 / 100 : null;
     const turnover = f48;
@@ -144,7 +147,10 @@ export class StocksService {
     const res = await axios
       .get<EastmoneyQuoteResponse>(url, { timeout: 5000, headers: BROWSER_HEADERS })
       .catch((err: Error) => {
-        throw new HttpException(`Failed to fetch HK stock info: ${err.message}`, HttpStatus.BAD_GATEWAY);
+        throw new HttpException(
+          `Failed to fetch HK stock info: ${err.message}`,
+          HttpStatus.BAD_GATEWAY,
+        );
       });
     const d = res.data?.data ?? {};
     const f43 = numOrNull(d.f43);

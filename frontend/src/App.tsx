@@ -4,6 +4,7 @@ import { Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Home from './pages/Home';
 import StockDetail from './pages/StockDetail';
+import MonitorCenter from './components/MonitorCenter';
 import styles from './App.module.css';
 
 export default function App() {
@@ -20,6 +21,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
+      <MonitorCenter />
     </ConfigProvider>
   );
 }

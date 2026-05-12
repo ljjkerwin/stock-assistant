@@ -110,14 +110,14 @@ interface RawBar {
 
 // 盘中TTL（毫秒），盘外统一 1 小时
 const KLINE_TRADING_TTL: Record<string, number> = {
-  timeshare:  60_000,   // 1min
-  '1min':     60_000,
-  '5min':    180_000,   // 3min
-  '15min':   180_000,
-  '30min':   180_000,
-  '60min':   300_000,   // 5min
-  daily:     300_000,
-  weekly:    600_000,   // 10min
+  timeshare: 60_000, // 1min
+  '1min': 60_000,
+  '5min': 180_000, // 3min
+  '15min': 180_000,
+  '30min': 180_000,
+  '60min': 300_000, // 5min
+  daily: 300_000,
+  weekly: 600_000, // 10min
 };
 
 const OFF_HOURS_TTL = 60 * 60_000; // 1h
@@ -143,9 +143,7 @@ export class KlineService {
     let raw: RawBar[] = [];
     try {
       raw =
-        market === 'A'
-          ? await this.fetchSina(code, period)
-          : await this.fetchYahoo(code, period);
+        market === 'A' ? await this.fetchSina(code, period) : await this.fetchYahoo(code, period);
     } catch (err) {
       const msg = (err as Error).message;
       const status = (err as { response?: { status?: number } }).response?.status;
