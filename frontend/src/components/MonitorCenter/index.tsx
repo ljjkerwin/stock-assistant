@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Empty, Modal, Typography } from 'antd';
 import { BellOutlined } from '@ant-design/icons';
 import { useMonitorStore } from '../../store/monitorStore';
@@ -56,6 +56,7 @@ function MessageItem({ msg }: { msg: MonitorMessage }) {
 export default function MonitorCenter() {
   const [open, setOpen] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useMonitorSSE();
 
@@ -79,16 +80,26 @@ export default function MonitorCenter() {
     void fetchMessages(1);
   };
 
-  const handleLoadMore = async () => {
-    setLoadingMore(true);
-    try {
-      await fetchMessages(messagesPage + 1);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
   const hasMore = messages.length < messagesTotal;
+  const loadingMoreRef = useRef(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      if (loadingMoreRef.current || !hasMore) return;
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) {
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+        void fetchMessages(messagesPage + 1).finally(() => {
+          loadingMoreRef.current = false;
+          setLoadingMore(false);
+        });
+      }
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [hasMore, messagesPage, fetchMessages]);
 
   return (
     <>
@@ -126,15 +137,13 @@ export default function MonitorCenter() {
             style={{ marginTop: 32 }}
           />
         ) : (
-          <div className={styles.scrollList}>
+          <div className={styles.scrollList} ref={scrollRef}>
             {messages.map((msg) => (
               <MessageItem key={msg.id} msg={msg} />
             ))}
-            {hasMore && (
-              <div style={{ textAlign: 'center', padding: '8px 0' }}>
-                <Button size="small" loading={loadingMore} onClick={() => void handleLoadMore()}>
-                  加载更多
-                </Button>
+            {hasMore && loadingMore && (
+              <div style={{ textAlign: 'center', padding: '8px 0', color: '#999', fontSize: 12 }}>
+                加载中…
               </div>
             )}
           </div>
