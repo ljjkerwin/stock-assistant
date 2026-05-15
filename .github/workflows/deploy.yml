@@ -36,8 +36,11 @@ jobs:
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "mkdir -p /data/deploy/stock-assistant"
 
-      - name: 安装 rsync
-        run: sudo apt-get install -y rsync
+      - name: 确保远端已安装 rsync
+        run: |
+          ssh -p ${{ vars.VPS_PORT || '22' }} \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "command -v rsync >/dev/null || apt-get install -y rsync"
 
       - name: 同步产物
         run: |
