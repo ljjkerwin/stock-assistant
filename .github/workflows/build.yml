@@ -1,0 +1,49 @@
+name: 构建
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: 安装后端依赖
+        working-directory: backend
+        run: npm ci
+
+      - name: 构建后端
+        working-directory: backend
+        run: npm run build
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 构建前端
+        working-directory: frontend
+        run: npm run build
+
+      - name: 整合产物
+        run: |
+          mkdir -p release/backend release/frontend
+          cp -r backend/dist backend/package.json backend/package-lock.json release/backend/
+          cp -r frontend/dist release/frontend/
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/
+          retention-days: 30

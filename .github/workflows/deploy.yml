@@ -1,0 +1,53 @@
+name: 部署
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: '构建产物的 Run ID（来自「构建」workflow）'
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: 部署到 VPS
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载产物
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release/
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 配置 SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p ${{ vars.VPS_PORT || '22' }} -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: 创建远端目录
+        run: |
+          ssh -p ${{ vars.VPS_PORT || '22' }} \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "mkdir -p /data/deploy/stock-assistant"
+
+      - name: 同步产物
+        run: |
+          rsync -avz --delete \
+            -e "ssh -p ${{ vars.VPS_PORT || '22' }}" \
+            release/ \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/data/deploy/stock-assistant/
+
+      - name: 安装依赖并重启服务
+        run: |
+          ssh -p ${{ vars.VPS_PORT || '22' }} \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+          cd /data/deploy/stock-assistant/backend
+          npm ci --omit=dev
+          pm2 reload stock-assistant 2>/dev/null || \
+            pm2 start dist/main.js --name stock-assistant --cwd /data/deploy/stock-assistant/backend
+          pm2 save
+          EOF
