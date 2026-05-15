@@ -12,6 +12,8 @@ jobs:
   deploy:
     name: 部署到 VPS
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
     steps:
       - name: 下载产物
         uses: actions/download-artifact@v8
