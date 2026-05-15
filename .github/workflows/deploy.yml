@@ -36,6 +36,9 @@ jobs:
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             "mkdir -p /data/deploy/stock-assistant"
 
+      - name: 安装 rsync
+        run: sudo apt-get install -y rsync
+
       - name: 同步产物
         run: |
           rsync -avz --delete \
