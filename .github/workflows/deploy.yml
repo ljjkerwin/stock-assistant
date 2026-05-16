@@ -42,6 +42,13 @@ jobs:
             release/. \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/data/deploy/stock-assistant/
 
+      - name: 写入 .env
+        run: |
+          printf '%s' "${{ secrets.BACKEND_ENV }}" > /tmp/backend.env
+          scp -P ${{ vars.VPS_PORT || '22' }} \
+            /tmp/backend.env \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/data/deploy/stock-assistant/backend/.env
+
       - name: 安装依赖并重启服务
         run: |
           ssh -p ${{ vars.VPS_PORT || '22' }} \
