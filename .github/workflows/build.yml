@@ -47,3 +47,8 @@ jobs:
           name: release
           path: release/
           retention-days: 30
+
+      - name: 输出 Run ID
+        run: |
+          echo "## 构建产物 Run ID" >> $GITHUB_STEP_SUMMARY
+          echo "\`${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
