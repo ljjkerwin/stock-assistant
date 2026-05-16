@@ -101,6 +101,9 @@ cd frontend && npm install && npm run dev
 - 行情缓存 TTL：盘中 30s，盘外 10min
 
 ### 监控模块（`MonitorModule`）
+- 规则触发时，除写入消息表并推送 SSE 外，还通过 `EmailService` 向配置的收件人发送邮件通知；发送为异步 fire-and-forget，失败时只记录日志，不影响主流程
+- 邮件通过 163 SMTP（smtp.163.com:465）发送，凭证通过环境变量配置：`EMAIL_USER`（发件人）、`EMAIL_PASS`（163 SMTP 授权码）、`EMAIL_TO`（收件人，默认 ljjnotice@163.com）；未配置时邮件功能自动禁用
+- 参考 `backend/.env.example` 创建 `backend/.env` 文件填写凭证
 - 后端 `MonitorService` 在 `OnModuleInit` 启动 30s 定时轮询，仅在 `isTrading()` 为 true 时执行
 - 规则检查：价格规则直接对比当前价；MA 均线穿越规则使用**边沿触发**（`prevAboveMA` 字段记录上次方向），避免持续满足时重复触发
 - 每条规则每 30 分钟最多触发一次（`lastTriggeredAt` + `COOLDOWN_MS = 30 * 60_000`）
@@ -129,6 +132,8 @@ cd frontend && npm install && npm run dev
 **调试外部 API**：数据源请求逻辑集中在 `KlineService`（新浪/Yahoo K线）和 `StocksService`（东方财富行情），在这两个 service 内打日志即可，无需改动 controller。
 
 **调试监控轮询**：轮询日志通过 NestJS `Logger(MonitorService.name)` 输出，搜索 `[轮询]` 前缀。手动触发一次轮询：`curl -X GET http://localhost:3000/api/monitor/rules` 验证规则是否正确，重启服务后首次开盘轮询自动开始。
+
+**配置邮件通知**：复制 `backend/.env.example` 为 `backend/.env`，填入 163 邮箱账号和 SMTP 授权码。邮件日志搜索 `[邮件]` 前缀；未配置时后端启动日志会打印 `EMAIL_USER 或 EMAIL_PASS 未配置，邮件通知已禁用`。
 
 ---
 

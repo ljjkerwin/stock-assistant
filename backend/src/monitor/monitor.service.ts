@@ -6,6 +6,7 @@ import { MonitorRule } from './monitor-rule.entity';
 import { MonitorMessage } from './monitor-message.entity';
 import { StocksService } from '../stocks/stocks.service';
 import { KlineService } from '../kline/kline.service';
+import { EmailService } from './email.service';
 import { isTrading } from '../cache';
 import { CreateRuleDto } from './dto/create-rule.dto';
 
@@ -33,6 +34,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     private readonly messageRepo: Repository<MonitorMessage>,
     private readonly stocksService: StocksService,
     private readonly klineService: KlineService,
+    private readonly emailService: EmailService,
   ) {}
 
   onModuleInit() {
@@ -205,6 +207,17 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     });
     await this.messageRepo.save(message);
     await this.ruleRepo.update(rule.id, { lastTriggeredAt: now });
+
+    void this.emailService.sendMonitorAlert({
+      stockName: rule.stockName,
+      stockCode: rule.stockCode,
+      stockMarket: rule.stockMarket,
+      type: rule.type,
+      currentPrice,
+      targetValue,
+      maPeriod: rule.maPeriod,
+      triggeredAt: now,
+    });
 
     this.logger.log(
       `[轮询] 规则 #${rule.id} 触发 ` +
