@@ -96,7 +96,9 @@ cd frontend && npm install && npm run dev
 
 ### 缓存层（`cache.ts`）
 - `MemCache<T>`：进程内 TTL 缓存，自动过期，无需外部依赖
-- `tradingTtl(tradingMs, offHoursMs)`：交易时段（UTC+8 工作日 09:30–12:00、13:00–16:00）返回短 TTL，盘外返回长 TTL
+- `isTradingMarket(market)`：按市场判断当前是否在交易时段；A股 09:30–11:30、13:00–15:00；HK 09:30–12:00、13:00–16:00
+- `isTrading()`：任意市场在交易时段内即返回 true，用于缓存 TTL 守卫（覆盖 HK 最宽窗口 09:30–12:00、13:00–16:00）
+- `tradingTtl(tradingMs, offHoursMs)`：交易时段返回短 TTL，盘外返回长 TTL
 - K线缓存 TTL：分时/1min 盘中 1min，5min–30min 盘中 3min，60min/日线盘中 5min，周线盘中 10min；**盘外统一 1h**
 - 行情缓存 TTL：盘中 30s，盘外 10min
 
@@ -104,7 +106,7 @@ cd frontend && npm install && npm run dev
 - 规则触发时，除写入消息表并推送 SSE 外，还通过 `EmailService` 向配置的收件人发送邮件通知；发送为异步 fire-and-forget，失败时只记录日志，不影响主流程
 - 邮件通过 163 SMTP（smtp.163.com:465）发送，凭证通过环境变量配置：`EMAIL_USER`（发件人）、`EMAIL_PASS`（163 SMTP 授权码）、`EMAIL_TO`（收件人，默认 ljjnotice@163.com）；未配置时邮件功能自动禁用
 - 参考 `backend/.env.example` 创建 `backend/.env` 文件填写凭证
-- 后端 `MonitorService` 在 `OnModuleInit` 启动 30s 定时轮询，仅在 `isTrading()` 为 true 时执行
+- 后端 `MonitorService` 在 `OnModuleInit` 启动 30s 定时轮询；外层守卫用 `isTrading()`（任意市场开盘即进入），内层按股票市场调用 `isTradingMarket(market)` 过滤，非交易时段的规则静默跳过（无任何日志）
 - 规则检查：价格规则直接对比当前价；MA 均线穿越规则使用**边沿触发**（`prevAboveMA` 字段记录上次方向），避免持续满足时重复触发
 - 每条规则每 30 分钟最多触发一次（`lastTriggeredAt` + `COOLDOWN_MS = 30 * 60_000`）
 - 触发后写入 `monitor_messages` 表，并通过 RxJS `Subject` 推送 SSE 事件至前端

@@ -21,12 +21,33 @@ export class MemCache<T> {
   }
 }
 
-/** UTC+8 交易时段：工作日 09:30–12:00、13:00–16:00（覆盖 A 股 + 港股）*/
-export function isTrading(): boolean {
+/** UTC+8 工作日分钟数 */
+function hkt8Mins(): { day: number; mins: number } {
   const hkt = new Date(Date.now() + 8 * 3600 * 1000);
-  const day = hkt.getUTCDay();
+  return {
+    day: hkt.getUTCDay(),
+    mins: hkt.getUTCHours() * 60 + hkt.getUTCMinutes(),
+  };
+}
+
+/**
+ * 判断指定市场当前是否在交易时段（UTC+8 工作日）
+ * A股：09:30–11:30、13:00–15:00
+ * HK ：09:30–12:00、13:00–16:00
+ */
+export function isTradingMarket(market: 'A' | 'HK'): boolean {
+  const { day, mins } = hkt8Mins();
   if (day === 0 || day === 6) return false;
-  const mins = hkt.getUTCHours() * 60 + hkt.getUTCMinutes();
+  if (market === 'A') {
+    return (mins >= 9 * 60 + 30 && mins < 11 * 60 + 30) || (mins >= 13 * 60 && mins < 15 * 60);
+  }
+  return (mins >= 9 * 60 + 30 && mins < 12 * 60) || (mins >= 13 * 60 && mins < 16 * 60);
+}
+
+/** 任意市场在交易时段内即返回 true（用于缓存 TTL 和轮询外层守卫）*/
+export function isTrading(): boolean {
+  const { day, mins } = hkt8Mins();
+  if (day === 0 || day === 6) return false;
   return (mins >= 9 * 60 + 30 && mins < 12 * 60) || (mins >= 13 * 60 && mins < 16 * 60);
 }
 

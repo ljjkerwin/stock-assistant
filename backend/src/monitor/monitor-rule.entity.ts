@@ -1,4 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ValueTransformer } from 'typeorm';
+
+const bigintCol: ValueTransformer = {
+  to: (v: number | null) => v,
+  from: (v: string | null) => (v != null ? Number(v) : null),
+};
 
 @Entity('monitor_rules')
 export class MonitorRule {
@@ -18,7 +23,7 @@ export class MonitorRule {
   @Column()
   type!: string;
 
-  @Column({ type: 'real', nullable: true })
+  @Column({ type: 'double', nullable: true })
   targetPrice!: number | null;
 
   /** 'ma5' | 'ma10' | 'ma20' */
@@ -29,13 +34,13 @@ export class MonitorRule {
   active!: boolean;
 
   /** ms 时间戳，上次触发时间；null 表示从未触发 */
-  @Column({ type: 'integer', nullable: true })
+  @Column({ type: 'bigint', nullable: true, transformer: bigintCol })
   lastTriggeredAt!: number | null;
 
   /** MA 穿越规则：上一次轮询时价格是否在均线上方；null 表示尚未初始化 */
   @Column({ type: 'boolean', nullable: true })
   prevAboveMA!: boolean | null;
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'bigint', transformer: bigintCol })
   createdAt!: number;
 }

@@ -1,4 +1,9 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ValueTransformer } from 'typeorm';
+
+const bigintCol: ValueTransformer = {
+  to: (v: number) => v,
+  from: (v: string) => Number(v),
+};
 
 @Entity('monitor_messages')
 export class MonitorMessage {
@@ -20,16 +25,16 @@ export class MonitorMessage {
   @Column()
   type!: string;
 
-  @Column({ type: 'real' })
+  @Column({ type: 'double' })
   currentPrice!: number;
 
-  @Column({ type: 'real' })
+  @Column({ type: 'double' })
   targetValue!: number;
 
   @Column({ type: 'text', nullable: true })
   maPeriod!: string | null;
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'bigint', transformer: bigintCol })
   triggeredAt!: number;
 
   @Column({ default: false })

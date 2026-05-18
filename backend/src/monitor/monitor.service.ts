@@ -7,7 +7,7 @@ import { MonitorMessage } from './monitor-message.entity';
 import { StocksService } from '../stocks/stocks.service';
 import { KlineService } from '../kline/kline.service';
 import { EmailService } from './email.service';
-import { isTrading } from '../cache';
+import { isTrading, isTradingMarket } from '../cache';
 import { CreateRuleDto } from './dto/create-rule.dto';
 
 const POLL_INTERVAL_MS = 30_000;
@@ -69,7 +69,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     const rules = await this.ruleRepo.find({ where: { active: true } });
     if (rules.length === 0) return;
 
-    this.logger.log(`[轮询] 开始检查，共 ${rules.length} 条活跃规则`);
+    this.logger.debug(`[轮询] 开始检查，共 ${rules.length} 条活跃规则`);
 
     // 按股票分组，减少重复请求
     const stockMap = new Map<string, MonitorRule[]>();
@@ -86,6 +86,8 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       const colonIdx = key.indexOf(':');
       const market = key.slice(0, colonIdx) as 'A' | 'HK';
       const code = key.slice(colonIdx + 1);
+
+      if (!isTradingMarket(market)) continue;
 
       let currentPrice: number | null = null;
       try {
@@ -120,7 +122,11 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(`[轮询] 完成，触发 ${triggered} 条规则`);
+    if (triggered > 0) {
+      this.logger.log(`[轮询] 完成，触发 ${triggered} 条规则`);
+    } else {
+      this.logger.debug('[轮询] 完成，无规则触发');
+    }
   }
 
   private async checkRule(
