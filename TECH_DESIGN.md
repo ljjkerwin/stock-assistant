@@ -291,13 +291,13 @@ interface FavoritesStore {
 ```bash
 # 后端
 cd backend
-npm install
-npm run start:dev     # NestJS dev server，默认 3000 端口
+pnpm install
+pnpm start:dev     # NestJS dev server，默认 3000 端口
 
 # 前端
 cd frontend
-npm install
-npm run dev          # Vite dev server，默认 5173 端口，代理 /api 到 3000
+pnpm install
+pnpm dev          # Vite dev server，默认 5173 端口，代理 /api 到 3000
 ```
 
 ---

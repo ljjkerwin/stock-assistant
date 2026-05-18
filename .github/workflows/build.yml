@@ -10,35 +10,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 设置 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: 设置 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
           cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
+            backend/pnpm-lock.yaml
+            frontend/pnpm-lock.yaml
 
       - name: 安装后端依赖
         working-directory: backend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: 构建后端
         working-directory: backend
-        run: npm run build
+        run: pnpm build
 
       - name: 安装前端依赖
         working-directory: frontend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: 构建前端
         working-directory: frontend
-        run: npm run build
+        run: pnpm build
 
       - name: 整合产物
         run: |
           mkdir -p release/backend release/frontend
-          cp -r backend/dist backend/package.json backend/package-lock.json release/backend/
+          cp -r backend/dist backend/package.json backend/pnpm-lock.yaml release/backend/
           cp -r frontend/dist release/frontend/
 
       - name: 上传产物

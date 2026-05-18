@@ -47,10 +47,10 @@ stock-assistant/
 
 ```bash
 # 后端（端口 3000）
-cd backend && npm install && npm run start:dev
+cd backend && pnpm install && pnpm start:dev
 
 # 前端（端口 5173，/api 代理到 3000）
-cd frontend && npm install && npm run dev
+cd frontend && pnpm install && pnpm dev
 ```
 
 ---
@@ -165,7 +165,7 @@ cd frontend && npm install && npm run dev
 ## 测试规范
 
 - 后端 Service 层的业务逻辑（如 MACD 计算、K 线数据映射）需有对应单元测试
-- 每次改动 Service 后，运行 `cd backend && npm run test` 确保无回归
+- 每次改动 Service 后，运行 `cd backend && pnpm test` 确保无回归
 - 不要求 Controller、前端组件、前端 API 层写测试
 - 前端纯工具函数（`utils/`）和含复杂逻辑的 store action 需有对应单元测试
 - 外部 API（东方财富）调用须在测试中 mock，不发真实请求
@@ -180,7 +180,7 @@ cd frontend && npm install && npm run dev
 - `backend/.eslintrc.js` — 后端专用（NestJS + TypeScript 规则，由 NestJS CLI 自动生成）
 
 ### 操作要求
-- 完成任何代码改动后，在对应目录运行 `npm run lint`，确保无报错再收工
+- 完成任何代码改动后，在对应目录运行 `pnpm lint`，确保无报错再收工
 - 不要手动调整格式（缩进、引号、分号等），交给 Prettier 统一处理
 
 ---
