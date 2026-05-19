@@ -108,7 +108,7 @@ cd frontend && pnpm install && pnpm dev
 - 参考 `backend/.env.example` 创建 `backend/.env` 文件填写凭证
 - 后端 `MonitorService` 在 `OnModuleInit` 启动 30s 定时轮询；外层守卫用 `isTrading()`（任意市场开盘即进入），内层按股票市场调用 `isTradingMarket(market)` 过滤，非交易时段的规则静默跳过（无任何日志）
 - 规则检查：价格规则直接对比当前价；MA 均线穿越规则使用**边沿触发**（`prevAboveMA` 字段记录上次方向），避免持续满足时重复触发
-- 每条规则每 30 分钟最多触发一次（`lastTriggeredAt` + `COOLDOWN_MS = 30 * 60_000`）
+- 每条规则每 2 小时最多触发一次（`lastTriggeredAt` + `COOLDOWN_MS = 2 * 60 * 60_000`）
 - 触发后写入 `monitor_messages` 表，并通过 RxJS `Subject` 推送 SSE 事件至前端
 - MA 均线穿越规则重新激活时，`prevAboveMA` 重置为 null，下次轮询重新初始化方向
 - 轮询日志格式：`[轮询] 开始检查，共 N 条活跃规则` / `[轮询] 规则 #id 触发 ...` / `[轮询] 完成，触发 N 条规则`

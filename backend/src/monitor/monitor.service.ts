@@ -11,7 +11,7 @@ import { isTrading, isTradingMarket } from '../cache';
 import { CreateRuleDto } from './dto/create-rule.dto';
 
 const POLL_INTERVAL_MS = 30_000;
-const COOLDOWN_MS = 30 * 60_000;
+const COOLDOWN_MS = 2 * 60 * 60_000;
 
 type MaPeriod = 'ma5' | 'ma10' | 'ma20';
 type MaValues = { ma5: number | null; ma10: number | null; ma20: number | null };
