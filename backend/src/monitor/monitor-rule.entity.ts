@@ -26,9 +26,13 @@ export class MonitorRule {
   @Column({ type: 'double', nullable: true })
   targetPrice!: number | null;
 
-  /** 'ma5' | 'ma10' | 'ma20' */
+  /** 'ma5' | 'ma10' | 'ma20' | 'ma60' */
   @Column({ type: 'text', nullable: true })
   maPeriod!: string | null;
+
+  /** MA 穿越规则使用的 K 线周期，null 表示日线 */
+  @Column({ type: 'text', nullable: true })
+  klinePeriod!: string | null;
 
   @Column({ default: true })
   active!: boolean;

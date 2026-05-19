@@ -34,6 +34,10 @@ export class MonitorMessage {
   @Column({ type: 'text', nullable: true })
   maPeriod!: string | null;
 
+  /** MA 穿越规则使用的 K 线周期，null 表示日线 */
+  @Column({ type: 'text', nullable: true })
+  klinePeriod!: string | null;
+
   @Column({ type: 'bigint', transformer: bigintCol })
   triggeredAt!: number;
 

@@ -108,6 +108,7 @@ cd frontend && pnpm install && pnpm dev
 - 参考 `backend/.env.example` 创建 `backend/.env` 文件填写凭证
 - 后端 `MonitorService` 在 `OnModuleInit` 启动 30s 定时轮询；外层守卫用 `isTrading()`（任意市场开盘即进入），内层按股票市场调用 `isTradingMarket(market)` 过滤，非交易时段的规则静默跳过（无任何日志）
 - 规则检查：价格规则直接对比当前价；MA 均线穿越规则使用**边沿触发**（`prevAboveMA` 字段记录上次方向），避免持续满足时重复触发
+- MA 均线穿越规则支持日线（`klinePeriod=null`）和 15min（`klinePeriod='15min'`）两个 K 线周期；`maPeriod` 支持 `ma5 | ma10 | ma20 | ma60`；轮询时按 `klinePeriod` 分组拉取 K 线，同一股票的不同周期规则各自复用对应缓存
 - 每条规则每 2 小时最多触发一次（`lastTriggeredAt` + `COOLDOWN_MS = 2 * 60 * 60_000`）
 - 触发后写入 `monitor_messages` 表，并通过 RxJS `Subject` 推送 SSE 事件至前端
 - MA 均线穿越规则重新激活时，`prevAboveMA` 重置为 null，下次轮询重新初始化方向

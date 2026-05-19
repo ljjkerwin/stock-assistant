@@ -43,6 +43,7 @@ export const monitorApi = {
     type: string;
     targetPrice?: number;
     maPeriod?: string;
+    klinePeriod?: string;
   }): Promise<MonitorRule> =>
     api.post<MonitorRule>('/monitor/rules', body).then((r) => r.data),
 

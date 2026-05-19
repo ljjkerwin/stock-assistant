@@ -16,6 +16,7 @@ interface MonitorStore {
     type: string;
     targetPrice?: number;
     maPeriod?: string;
+    klinePeriod?: string;
   }) => Promise<void>;
   deleteRule: (id: number) => Promise<void>;
   toggleRule: (id: number, active: boolean) => Promise<void>;
