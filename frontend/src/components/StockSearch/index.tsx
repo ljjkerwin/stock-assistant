@@ -1,8 +1,8 @@
 import { useState, useRef } from 'react';
-import { AutoComplete, Input, message, Spin } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { AutoComplete, Input, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { stocksApi } from '../../api/stock';
-import { useFavoritesStore } from '../../store/favoritesStore';
 import type { Stock } from '../../types';
 import debounce from './debounce';
 
@@ -15,8 +15,7 @@ interface Option {
 export default function StockSearch() {
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
-  const addStock = useFavoritesStore((s) => s.addStock);
-  const favorites = useFavoritesStore((s) => s.favorites);
+  const navigate = useNavigate();
 
   const searchRef = useRef(
     debounce(async (q: string, onResult: (opts: Option[]) => void, onLoading: (v: boolean) => void) => {
@@ -46,16 +45,8 @@ export default function StockSearch() {
     searchRef.current(q, setOptions, setLoading);
   };
 
-  const onSelect = async (_value: string, option: Option) => {
-    const already = favorites.some(
-      (f) => f.code === option.stock.code && f.market === option.stock.market,
-    );
-    if (already) {
-      void message.info(`${option.stock.name} 已在收藏夹`);
-      return;
-    }
-    await addStock({ code: option.stock.code, market: option.stock.market, name: option.stock.name });
-    void message.success(`已添加 ${option.stock.name}`);
+  const onSelect = (_value: string, option: Option) => {
+    navigate(`/stock/${option.stock.market}/${option.stock.code}`);
   };
 
   return (
