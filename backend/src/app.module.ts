@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSourceOptions } from 'typeorm';
 import { FavoritesModule } from './favorites/favorites.module';
 import { StocksModule } from './stocks/stocks.module';
 import { KlineModule } from './kline/kline.module';
@@ -8,19 +9,34 @@ import { Favorite } from './favorites/favorite.entity';
 import { MonitorRule } from './monitor/monitor-rule.entity';
 import { MonitorMessage } from './monitor/monitor-message.entity';
 
+const entities = [Favorite, MonitorRule, MonitorMessage];
+
+function buildDataSourceOptions(): DataSourceOptions {
+  const { MYSQL_HOST, MYSQL_USERNAME, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;
+  if (MYSQL_HOST && MYSQL_USERNAME && MYSQL_PASSWORD) {
+    return {
+      type: 'mysql',
+      host: MYSQL_HOST,
+      port: 3306,
+      username: MYSQL_USERNAME,
+      password: MYSQL_PASSWORD,
+      database: MYSQL_DATABASE,
+      charset: 'utf8mb4',
+      entities,
+      synchronize: true,
+    };
+  }
+  return {
+    type: 'better-sqlite3',
+    database: './stock-assistant.db',
+    entities,
+    synchronize: true,
+  };
+}
+
 @Module({
   imports: [
-    TypeOrmModule.forRoot({
-      type: 'mysql',
-      host: process.env.MYSQL_HOST,
-      port: 3306,
-      username: process.env.MYSQL_USERNAME,
-      password: process.env.MYSQL_PASSWORD,
-      database: process.env.MYSQL_DATABASE,
-      charset: 'utf8mb4',
-      entities: [Favorite, MonitorRule, MonitorMessage],
-      synchronize: true,
-    }),
+    TypeOrmModule.forRoot(buildDataSourceOptions()),
     FavoritesModule,
     StocksModule,
     KlineModule,
