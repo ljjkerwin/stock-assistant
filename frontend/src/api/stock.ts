@@ -6,6 +6,9 @@ import type {
   KlinePeriod,
   MonitorRule,
   MonitorMessage,
+  FundInfo,
+  FundNavResponse,
+  FundSearchResult,
 } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
@@ -30,6 +33,17 @@ export const stocksApi = {
 export const klineApi = {
   get: (market: 'A' | 'HK', code: string, period: KlinePeriod): Promise<KlineResponse> =>
     api.get<KlineResponse>(`/kline/${market}/${code}`, { params: { period } }).then((r) => r.data),
+};
+
+export const fundApi = {
+  search: (q: string): Promise<FundSearchResult[]> =>
+    api.get<FundSearchResult[]>('/fund/search', { params: { q } }).then((r) => r.data),
+
+  getInfo: (code: string): Promise<FundInfo> =>
+    api.get<FundInfo>(`/fund/${code}`).then((r) => r.data),
+
+  getNav: (code: string, limit: number): Promise<FundNavResponse> =>
+    api.get<FundNavResponse>(`/fund/${code}/nav`, { params: { limit } }).then((r) => r.data),
 };
 
 export const monitorApi = {

@@ -1,0 +1,19 @@
+.wrapper {
+  width: 100%;
+}
+
+.tabs {
+  margin-bottom: 4px;
+}
+
+.legend {
+  height: 20px;
+  font-size: 12px;
+  color: #666;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.chart {
+  width: 100%;
+}

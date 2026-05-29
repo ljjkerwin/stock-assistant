@@ -12,7 +12,11 @@ interface Option {
   stock: Stock;
 }
 
-export default function StockSearch() {
+interface Props {
+  size?: 'small' | 'middle' | 'large';
+}
+
+export default function StockSearch({ size = 'middle' }: Props) {
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -57,6 +61,8 @@ export default function StockSearch() {
       style={{ width: '100%' }}
     >
       <Input
+        size={size}
+        variant="borderless"
         prefix={<SearchOutlined />}
         suffix={loading ? <Spin size="small" /> : null}
         placeholder="搜索股票代码/名称"

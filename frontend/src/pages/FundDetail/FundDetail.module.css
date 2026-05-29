@@ -1,0 +1,22 @@
+.container {
+  padding: 16px 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.info {
+  margin-bottom: 16px;
+  background: #fafafa;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.chart {
+  width: 100%;
+}
