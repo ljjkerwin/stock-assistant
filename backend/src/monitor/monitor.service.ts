@@ -321,14 +321,11 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       take: limit,
       skip: (page - 1) * limit,
     });
-    const unreadIds = items.filter((m) => !m.read).map((m) => m.id);
-    if (unreadIds.length > 0) {
-      await this.messageRepo.update(unreadIds, { read: true });
-      items.forEach((m) => {
-        m.read = true;
-      });
-    }
     return { items, total };
+  }
+
+  async markMessagesRead(ids: number[]): Promise<void> {
+    await this.messageRepo.update(ids, { read: true });
   }
 
   async getUnreadCount(): Promise<{ count: number }> {

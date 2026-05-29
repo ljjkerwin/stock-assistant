@@ -47,9 +47,10 @@ stock-assistant/
 
 ```bash
 # 后端（端口 3000）
-cd backend && pnpm install && pnpm start:dev
+cd backend && pnpm start:dev
 
 # 前端（端口 5173，/api 代理到 3000）
+cd frontend && pnpm dev
 
 ```
 
@@ -70,8 +71,9 @@ cd backend && pnpm install && pnpm start:dev
 | POST | `/api/monitor/rules` | 创建监控规则 |
 | DELETE | `/api/monitor/rules/:id` | 删除监控规则 |
 | PATCH | `/api/monitor/rules/:id` | 切换规则激活状态（`{ active: boolean }`） |
-| GET | `/api/monitor/messages?page=` | 获取触发消息列表（分页，每页 20 条，已读/未读均可翻页，加载即标记已读） |
+| GET | `/api/monitor/messages?page=` | 获取触发消息列表（分页，每页 20 条，已读/未读均可翻页，不改变已读状态） |
 | GET | `/api/monitor/messages/unread-count` | 获取未读消息数 `{ count }` |
+| PATCH | `/api/monitor/messages` | 批量标记已读，`{ ids: number[] }` 指定消息 ID |
 | DELETE | `/api/monitor/messages` | 清空所有消息 |
 | GET (SSE) | `/api/monitor/events` | SSE 实时推送触发事件 |
 
@@ -116,7 +118,7 @@ cd backend && pnpm install && pnpm start:dev
 - MA 均线穿越规则重新激活时，`prevAboveMA` 重置为 null，下次轮询重新初始化方向
 - 轮询日志格式：`[轮询] 开始检查，共 N 条活跃规则` / `[轮询] 规则 #id 触发 ...` / `[轮询] 完成，触发 N 条规则`
 - 前端 `useMonitorSSE` hook 通过 `EventSource(/api/monitor/events)` 接收推送，写入 `monitorStore`
-- `MonitorCenter` 组件固定在页面左下角（sidebar 宽度范围内居中），弹窗仅展示「消息通知」列表，不再包含监控规则管理；消息分页加载（每页 20 条，已读/未读均可翻页），加载即在后端标记已读；未读角标通过独立接口 `getUnreadCount` 维护，SSE 推送到达时立即 +1
+- `MonitorCenter` 组件固定在页面左下角（sidebar 宽度范围内居中），弹窗仅展示「消息通知」列表，不再包含监控规则管理；消息分页加载（每页 20 条，已读/未读均可翻页），`getMessages` 不标记已读；每次加载完一页后，store 内自动提取本页未读 ID 调用 `PATCH /api/monitor/messages` 批量标记已读并刷新未读角标；未读角标通过独立接口 `getUnreadCount` 维护，SSE 推送到达时立即 +1
 - `StockMonitorButton` 组件嵌入各股票详情页标题栏右侧，Badge 显示该股票活跃规则数；弹窗展示并管理该股票的监控规则（增删、激活/暂停），添加规则无需选择股票（已由页面上下文确定）
 
 ### 状态管理（Zustand）

@@ -50,6 +50,11 @@ export class MonitorController {
     return this.monitorService.getMessages(page);
   }
 
+  @Patch('messages')
+  markMessagesRead(@Body('ids') ids: number[]) {
+    return this.monitorService.markMessagesRead(ids);
+  }
+
   @Delete('messages')
   clearMessages() {
     return this.monitorService.clearMessages();
