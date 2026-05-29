@@ -43,6 +43,7 @@ export const monitorApi = {
     type: string;
     targetPrice?: number;
     maPeriod?: string;
+    klinePeriod?: string;
   }): Promise<MonitorRule> =>
     api.post<MonitorRule>('/monitor/rules', body).then((r) => r.data),
 
@@ -59,6 +60,9 @@ export const monitorApi = {
 
   getUnreadCount: (): Promise<{ count: number }> =>
     api.get<{ count: number }>('/monitor/messages/unread-count').then((r) => r.data),
+
+  markMessagesRead: (ids: number[]): Promise<void> =>
+    api.patch('/monitor/messages', { ids }).then(() => undefined),
 
   clearMessages: (): Promise<void> =>
     api.delete('/monitor/messages').then(() => undefined),

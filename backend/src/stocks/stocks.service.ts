@@ -84,7 +84,7 @@ export class StocksService {
       if (market === '港股') {
         list.push({ code, name, market: 'HK' });
       } else if (
-        ['沪A', '深A', '沪市', '深市', 'A股', '上交所', '深交所'].some((m) =>
+        ['沪A', '深A', '沪市', '深市', 'A股', '上交所', '深交所', '基金'].some((m) =>
           String(market).includes(m),
         )
       ) {
@@ -169,7 +169,7 @@ export class StocksService {
   }
 
   private buildAShareSecid(code: string): string {
-    const prefix = code.startsWith('6') ? '1' : '0';
+    const prefix = code.startsWith('6') || code.startsWith('5') ? '1' : '0';
     return `${prefix}.${code}`;
   }
 }

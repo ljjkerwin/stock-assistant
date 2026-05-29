@@ -5,4 +5,5 @@ export class CreateRuleDto {
   type!: string;
   targetPrice?: number;
   maPeriod?: string;
+  klinePeriod?: string;
 }

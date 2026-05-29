@@ -10,16 +10,18 @@ function conditionText(
   type: MonitorType,
   targetPrice: number | null,
   maPeriod: MaPeriod | null,
+  klinePeriod: string | null,
 ): string {
+  const suffix = klinePeriod === '15min' ? '(15min)' : '';
   switch (type) {
     case 'price_above':
       return `突破 ¥${targetPrice?.toFixed(2) ?? '-'}`;
     case 'price_below':
       return `跌破 ¥${targetPrice?.toFixed(2) ?? '-'}`;
     case 'ma_cross_above':
-      return `突破 ${(maPeriod ?? '').toUpperCase()}`;
+      return `突破 ${(maPeriod ?? '').toUpperCase()}${suffix}`;
     case 'ma_cross_below':
-      return `跌破 ${(maPeriod ?? '').toUpperCase()}`;
+      return `跌破 ${(maPeriod ?? '').toUpperCase()}${suffix}`;
   }
 }
 
@@ -45,7 +47,7 @@ function MessageItem({ msg }: { msg: MonitorMessage }) {
         </Typography.Text>
       </div>
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {conditionText(msg.type, isMA ? null : msg.targetValue, msg.maPeriod)} 已触发
+        {conditionText(msg.type, isMA ? null : msg.targetValue, msg.maPeriod, msg.klinePeriod)} 已触发
         {' ｜ '}当前价 ¥{msg.currentPrice.toFixed(2)}
         {isMA && ` · ${(msg.maPeriod ?? '').toUpperCase()} ¥${msg.targetValue.toFixed(2)}`}
       </Typography.Text>

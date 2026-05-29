@@ -11,13 +11,18 @@ import { isTrading, isTradingMarket } from '../cache';
 import { CreateRuleDto } from './dto/create-rule.dto';
 
 const POLL_INTERVAL_MS = 30_000;
-const COOLDOWN_MS = 30 * 60_000;
+const COOLDOWN_MS = 2 * 60 * 60_000;
 
-type MaPeriod = 'ma5' | 'ma10' | 'ma20';
-type MaValues = { ma5: number | null; ma10: number | null; ma20: number | null };
+type MaPeriod = 'ma5' | 'ma10' | 'ma20' | 'ma60';
+type MaValues = {
+  ma5: number | null;
+  ma10: number | null;
+  ma20: number | null;
+  ma60: number | null;
+};
 
 function isMaPeriod(v: string | null): v is MaPeriod {
-  return v === 'ma5' || v === 'ma10' || v === 'ma20';
+  return v === 'ma5' || v === 'ma10' || v === 'ma20' || v === 'ma60';
 }
 
 @Injectable()
@@ -100,23 +105,41 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       }
       if (currentPrice == null) continue;
 
-      // 仅存在 MA 规则时才请求 K 线
-      const needsMA = stockRules.some(
-        (r) => r.type === 'ma_cross_above' || r.type === 'ma_cross_below',
-      );
-      let maValues: MaValues | null = null;
-      if (needsMA) {
-        const kline = await this.klineService.getKline(market, code, 'daily');
-        if (kline.data.length > 0) {
-          const last = kline.data[kline.data.length - 1];
-          maValues = last.ma;
-          this.logger.debug(
-            `[轮询] ${market}:${code} MA5=${maValues.ma5} MA10=${maValues.ma10} MA20=${maValues.ma20}`,
+      // 按 K 线周期分组收集 MA 规则所需的数据
+      const neededKlinePeriods = new Set<string>();
+      for (const rule of stockRules) {
+        if (rule.type === 'ma_cross_above' || rule.type === 'ma_cross_below') {
+          neededKlinePeriods.add(rule.klinePeriod ?? 'daily');
+        }
+      }
+
+      const maValuesMap = new Map<string, MaValues | null>();
+      for (const kp of neededKlinePeriods) {
+        try {
+          const kline = await this.klineService.getKline(market, code, kp);
+          if (kline.data.length > 0) {
+            const last = kline.data[kline.data.length - 1];
+            maValuesMap.set(kp, last.ma);
+            this.logger.debug(
+              `[轮询] ${market}:${code} [${kp}] MA5=${last.ma.ma5} MA10=${last.ma.ma10} MA20=${last.ma.ma20} MA60=${last.ma.ma60}`,
+            );
+          } else {
+            maValuesMap.set(kp, null);
+          }
+        } catch (err) {
+          this.logger.warn(
+            `[轮询] 获取 ${market}:${code} ${kp} K线失败: ${(err as Error).message}`,
           );
+          maValuesMap.set(kp, null);
         }
       }
 
       for (const rule of stockRules) {
+        const kp = rule.klinePeriod ?? 'daily';
+        const maValues =
+          rule.type === 'ma_cross_above' || rule.type === 'ma_cross_below'
+            ? (maValuesMap.get(kp) ?? null)
+            : null;
         const fired = await this.checkRule(rule, currentPrice, maValues);
         if (fired) triggered++;
       }
@@ -209,6 +232,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       currentPrice,
       targetValue,
       maPeriod: rule.maPeriod,
+      klinePeriod: rule.klinePeriod ?? null,
       triggeredAt: now,
     });
     await this.messageRepo.save(message);
@@ -225,11 +249,12 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       triggeredAt: now,
     });
 
+    const kpLabel = rule.klinePeriod ? `[${rule.klinePeriod}]` : '';
     this.logger.log(
       `[轮询] 规则 #${rule.id} 触发 ` +
         `${rule.stockName}(${rule.stockCode}·${rule.stockMarket}) ` +
         `${rule.type}` +
-        (rule.maPeriod ? ` ${rule.maPeriod.toUpperCase()}` : '') +
+        (rule.maPeriod ? ` ${rule.maPeriod.toUpperCase()}${kpLabel}` : '') +
         ` | 当前价 ${currentPrice.toFixed(2)}` +
         ` | 目标 ${targetValue.toFixed(2)}`,
     );
@@ -245,6 +270,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
         currentPrice,
         targetValue,
         maPeriod: rule.maPeriod ?? null,
+        klinePeriod: rule.klinePeriod ?? null,
         triggeredAt: now,
       },
     });
@@ -264,6 +290,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       type: dto.type,
       targetPrice: dto.targetPrice ?? null,
       maPeriod: dto.maPeriod ?? null,
+      klinePeriod: dto.klinePeriod ?? null,
       active: true,
       createdAt: Date.now(),
     });
@@ -294,14 +321,11 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       take: limit,
       skip: (page - 1) * limit,
     });
-    const unreadIds = items.filter((m) => !m.read).map((m) => m.id);
-    if (unreadIds.length > 0) {
-      await this.messageRepo.update(unreadIds, { read: true });
-      items.forEach((m) => {
-        m.read = true;
-      });
-    }
     return { items, total };
+  }
+
+  async markMessagesRead(ids: number[]): Promise<void> {
+    await this.messageRepo.update(ids, { read: true });
   }
 
   async getUnreadCount(): Promise<{ count: number }> {

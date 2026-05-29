@@ -75,7 +75,7 @@ export type MonitorType =
   | 'ma_cross_above'
   | 'ma_cross_below';
 
-export type MaPeriod = 'ma5' | 'ma10' | 'ma20';
+export type MaPeriod = 'ma5' | 'ma10' | 'ma20' | 'ma60';
 
 export interface MonitorRule {
   id: number;
@@ -85,6 +85,8 @@ export interface MonitorRule {
   type: MonitorType;
   targetPrice: number | null;
   maPeriod: MaPeriod | null;
+  /** MA 穿越规则的 K 线周期，null 表示日线 */
+  klinePeriod: string | null;
   active: boolean;
   lastTriggeredAt: number | null;
   createdAt: number;
@@ -100,6 +102,7 @@ export interface MonitorMessage {
   currentPrice: number;
   targetValue: number;
   maPeriod: MaPeriod | null;
+  klinePeriod: string | null;
   triggeredAt: number;
   read: boolean;
 }

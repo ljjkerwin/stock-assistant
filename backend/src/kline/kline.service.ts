@@ -162,7 +162,7 @@ export class KlineService {
   // ── Sina (A-shares) ────────────────────────────────────────────────────────
 
   private async fetchSina(code: string, period: string): Promise<RawBar[]> {
-    const symbol = code.startsWith('6') ? `sh${code}` : `sz${code}`;
+    const symbol = code.startsWith('6') || code.startsWith('5') ? `sh${code}` : `sz${code}`;
 
     const isTimeshare = period === 'timeshare';
     const scale = isTimeshare ? 1 : (SINA_SCALE_MAP[period] ?? 240);

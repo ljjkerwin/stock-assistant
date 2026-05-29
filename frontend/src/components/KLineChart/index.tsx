@@ -16,6 +16,7 @@ import type {
   HistogramData,
   SeriesType,
   Time,
+  LogicalRange,
 } from 'lightweight-charts';
 import { klineApi } from '../../api/stock';
 import type { KlinePeriod, KlineBar } from '../../types';
@@ -233,8 +234,14 @@ export default function KLineChart({ market, code }: Props) {
     });
   }, []);
 
-  const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod) => {
+  const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod, preserveViewport = false) => {
     if (!mainChartRef.current || !volumeChartRef.current || !macdChartRef.current) return;
+
+    // Save current viewport before clearing series so it can be restored after refresh
+    let savedRange: LogicalRange | null = null;
+    if (preserveViewport) {
+      savedRange = mainChartRef.current.timeScale().getVisibleLogicalRange();
+    }
 
     const isTimeshare = pd === 'timeshare';
     const interactionOpts = isTimeshare
@@ -378,7 +385,11 @@ export default function KLineChart({ market, code }: Props) {
     );
     macdBarSeriesRef.current = macdBarSeries;
 
-    if (isTimeshare || bars.length === 0) {
+    if (preserveViewport && savedRange) {
+      mainChartRef.current.timeScale().setVisibleLogicalRange(savedRange);
+      volumeChartRef.current.timeScale().setVisibleLogicalRange(savedRange);
+      macdChartRef.current.timeScale().setVisibleLogicalRange(savedRange);
+    } else if (isTimeshare || bars.length === 0) {
       mainChartRef.current.timeScale().fitContent();
       volumeChartRef.current.timeScale().fitContent();
       macdChartRef.current.timeScale().fitContent();
@@ -401,21 +412,21 @@ export default function KLineChart({ market, code }: Props) {
   }, []);
 
   const loadData = useCallback(
-    async (mkt: 'A' | 'HK', cd: string, pd: KlinePeriod) => {
-      setLoading(true);
+    async (mkt: 'A' | 'HK', cd: string, pd: KlinePeriod, preserveViewport = false) => {
+      if (!preserveViewport) setLoading(true);
       try {
         const res = await klineApi.get(mkt, cd, pd);
         if (res.data.length === 0) {
-          applyData([], pd);
-          void message.warning(`${PERIOD_LABELS[pd]}暂无数据`);
+          applyData([], pd, preserveViewport);
+          if (!preserveViewport) void message.warning(`${PERIOD_LABELS[pd]}暂无数据`);
         } else {
-          applyData(res.data, pd);
+          applyData(res.data, pd, preserveViewport);
         }
       } catch (e) {
         console.error('Failed to load kline data', e);
-        applyData([], pd);
+        if (!preserveViewport) applyData([], pd);
       } finally {
-        setLoading(false);
+        if (!preserveViewport) setLoading(false);
       }
     },
     [applyData],
@@ -432,7 +443,7 @@ export default function KLineChart({ market, code }: Props) {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
       if (isInTradingHours(market)) {
-        void loadData(market, code, period);
+        void loadData(market, code, period, true);
       }
     }, 30000);
 

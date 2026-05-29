@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Typography, Descriptions, Spin, Tag } from 'antd';
+import { Typography, Descriptions, Spin, Tag, Button, Tooltip } from 'antd';
+import { StarOutlined, StarFilled } from '@ant-design/icons';
 import { stocksApi } from '../../api/stock';
 import KLineChart from '../../components/KLineChart';
 import StockMonitorButton from '../../components/StockMonitorButton';
+import { useFavoritesStore } from '../../store/favoritesStore';
 import type { StockInfo } from '../../types';
 import styles from './StockDetail.module.css';
 
@@ -18,6 +20,9 @@ export default function StockDetail() {
   const { market, code } = useParams<{ market: string; code: string }>();
   const [info, setInfo] = useState<StockInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const { favorites, addStock, removeStock } = useFavoritesStore();
+  const favoriteEntry = favorites.find((f) => f.market === market && f.code === code);
+  const isFavorited = !!favoriteEntry;
 
   useEffect(() => {
     if (!market || !code) return;
@@ -43,6 +48,21 @@ export default function StockDetail() {
           {code} · {market === 'HK' ? '港股' : 'A股'}
         </Tag>
         <span style={{ flex: 1 }} />
+        {market && code && (
+          <Tooltip title={isFavorited ? '取消收藏' : '添加收藏'}>
+            <Button
+              type="text"
+              icon={isFavorited ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+              onClick={() => {
+                if (isFavorited) {
+                  removeStock(favoriteEntry!.id!);
+                } else {
+                  addStock({ code, market: market as 'A' | 'HK', name: info?.name ?? code });
+                }
+              }}
+            />
+          </Tooltip>
+        )}
         {market && code && (
           <StockMonitorButton
             market={market as 'A' | 'HK'}
