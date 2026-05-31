@@ -1,12 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Typography, Descriptions, Spin, Tag, Button, Tooltip } from 'antd';
 import { StarOutlined, StarFilled } from '@ant-design/icons';
 import { fundApi } from '../../api/stock';
 import NavChart from '../../components/NavChart';
+import HoldingKlinePopup from '../../components/HoldingKlinePopup';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import type { FundInfo, FundHoldingPeriod } from '../../types';
 import styles from './FundDetail.module.css';
+
+interface HoveredHolding {
+  code: string;
+  name: string;
+  periodIndex: number;
+  rect: DOMRect;
+}
 
 export default function FundDetail() {
   const { code } = useParams<{ code: string }>();
@@ -14,6 +22,8 @@ export default function FundDetail() {
   const [loading, setLoading] = useState(false);
   const [holdings, setHoldings] = useState<FundHoldingPeriod[]>([]);
   const [holdingsLoading, setHoldingsLoading] = useState(false);
+  const [hoveredHolding, setHoveredHolding] = useState<HoveredHolding | null>(null);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { favorites, addStock, removeStock } = useFavoritesStore();
   const favoriteEntry = favorites.find((f) => f.market === 'FUND' && f.code === code);
   const isFavorited = !!favoriteEntry;
@@ -43,14 +53,32 @@ export default function FundDetail() {
   const maxHoldingLen = Math.max(...holdings.map((p) => p.holdings.length), 0);
   const parsedFundSize = info?.fundSize ? parseFloat(info.fundSize) : null;
 
-  const prevCodes =
-    holdings.length >= 2
-      ? new Set(holdings[1].holdings.map((h) => h.code))
-      : new Set<string>();
+  const prevCodesByPeriod = holdings.map((_, idx) =>
+    idx + 1 < holdings.length
+      ? new Set(holdings[idx + 1].holdings.map((h) => h.code))
+      : null,
+  );
 
   const dailyUp = info?.dailyChangePct != null && info.dailyChangePct > 0;
   const dailyDown = info?.dailyChangePct != null && info.dailyChangePct < 0;
   const dailyColor = dailyUp ? '#ef5350' : dailyDown ? '#26a69a' : undefined;
+
+  const handleHoldingEnter = (hCode: string, hName: string, pIdx: number, e: React.MouseEvent) => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    setHoveredHolding({ code: hCode, name: hName, periodIndex: pIdx, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() });
+  };
+
+  const handleHoldingLeave = () => {
+    leaveTimerRef.current = setTimeout(() => setHoveredHolding(null), 200);
+  };
+
+  const handlePopupEnter = () => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+  };
+
+  const handlePopupLeave = () => {
+    leaveTimerRef.current = setTimeout(() => setHoveredHolding(null), 200);
+  };
 
   return (
     <div className={styles.container}>
@@ -132,13 +160,18 @@ export default function FundDetail() {
                   <div className={styles.holdingsList}>
                     {Array.from({ length: maxHoldingLen }, (_, i) => p.holdings[i] ?? null).map((h, i) => {
                       if (!h) return <div key={i} className={styles.holdingItemEmpty} />;
-                      const isNew = periodIndex === 0 && holdings.length >= 2 && !prevCodes.has(h.code);
+                      const isNew = prevCodesByPeriod[periodIndex] !== null && !prevCodesByPeriod[periodIndex]!.has(h.code);
                       return (
                         <div key={h.rank} className={styles.holdingItem}>
                           <span className={styles.holdingRank}>{h.rank}</span>
-                          <span className={`${styles.holdingName}${isNew ? ` ${styles.holdingNameNew}` : ''}`}>
+                          <span
+                            className={`${styles.holdingName} ${styles.holdingNameHoverable}`}
+                            onMouseEnter={(e) => handleHoldingEnter(h.code, h.name, periodIndex, e)}
+                            onMouseLeave={handleHoldingLeave}
+                          >
                             {h.name}
                             <span className={styles.holdingCode}>（{h.code}）</span>
+                            {isNew && <span className={styles.newBadge}>新</span>}
                           </span>
                           <div className={styles.holdingRight}>
                             <span className={styles.holdingRatio}>
@@ -160,6 +193,17 @@ export default function FundDetail() {
           </div>
         )}
       </Spin>
+
+      {hoveredHolding && (
+        <HoldingKlinePopup
+          code={hoveredHolding.code}
+          name={hoveredHolding.name}
+          endDate={holdings[hoveredHolding.periodIndex]?.endDate}
+          anchorRect={hoveredHolding.rect}
+          onMouseEnter={handlePopupEnter}
+          onMouseLeave={handlePopupLeave}
+        />
+      )}
     </div>
   );
 }

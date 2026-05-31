@@ -234,14 +234,14 @@ export class FundService {
     const currentPeriods = this.parseHoldingPeriods(currentJs);
 
     let result: FundHoldingPeriod[];
-    if (currentPeriods.length >= 2) {
-      result = currentPeriods.slice(0, 2);
+    if (currentPeriods.length >= 3) {
+      result = currentPeriods.slice(0, 3);
     } else {
       const curYearMatch = /curyear:(\d+)/.exec(currentJs);
       const prevYear = curYearMatch ? parseInt(curYearMatch[1]) - 1 : new Date().getFullYear() - 1;
       const prevJs = await this.fetchHoldingsJs(code, prevYear).catch(() => '');
       const prevPeriods = this.parseHoldingPeriods(prevJs);
-      result = [...currentPeriods, ...prevPeriods].slice(0, 2);
+      result = [...currentPeriods, ...prevPeriods].slice(0, 3);
     }
 
     this.holdingsCache.set(cacheKey, result, 60 * 60_000);

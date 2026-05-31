@@ -71,10 +71,12 @@ const CHART_OPTIONS = {
   crosshair: { mode: CrosshairMode.Normal },
   rightPriceScale: { borderColor: '#e0e0e0' },
   timeScale: { borderColor: '#e0e0e0', fixRightEdge: true },
+  handleScroll: false,
+  handleScale: false,
 };
 
 export default function NavChart({ code }: Props) {
-  const [period, setPeriod] = useState<FundNavPeriod>('1Y');
+  const [period, setPeriod] = useState<FundNavPeriod>('3M');
   const [loading, setLoading] = useState(false);
   const [sharpe, setSharpe] = useState<number | null>(null);
   const [periodReturn, setPeriodReturn] = useState<number | null>(null);

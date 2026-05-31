@@ -102,8 +102,23 @@
   overflow: hidden;
 }
 
-.holdingNameNew {
-  color: #ef8850;
+.newBadge {
+  display: inline-block;
+  background: #ef8850;
+  color: #fff;
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 3px;
+  line-height: 14px;
+  flex-shrink: 0;
+}
+
+.holdingNameHoverable {
+  cursor: pointer;
+}
+
+.holdingNameHoverable:hover {
+  color: #1677ff;
 }
 
 .holdingCode {
