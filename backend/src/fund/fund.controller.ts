@@ -1,7 +1,7 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { FundService } from './fund.service';
 
-@Controller('fund')
+@Controller('api/fund')
 export class FundController {
   constructor(private readonly fundService: FundService) {}
 
@@ -19,5 +19,10 @@ export class FundController {
   getFundNav(@Param('code') code: string, @Query('limit') limit?: string) {
     const n = Math.min(parseInt(limit ?? '120', 10) || 120, 1000);
     return this.fundService.getFundNav(code, n);
+  }
+
+  @Get(':code/holdings')
+  getFundHoldings(@Param('code') code: string) {
+    return this.fundService.getFundHoldings(code);
   }
 }

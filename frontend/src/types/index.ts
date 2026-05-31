@@ -1,7 +1,7 @@
 export interface Stock {
   id?: number;
   code: string;
-  market: 'A' | 'HK';
+  market: 'A' | 'HK' | 'FUND';
   name: string;
   sortOrder?: number;
   pinned?: boolean;
@@ -85,6 +85,8 @@ export interface FundInfo {
   estimatedChangePct: number | null;
   estimatedTime: string | null;
   dailyChangePct: number | null;
+  fundSize: string | null;
+  establishDate: string | null;
 }
 
 export interface FundNavPoint {
@@ -99,6 +101,20 @@ export interface FundNavResponse {
   name: string;
   data: FundNavPoint[];
   total: number;
+}
+
+export interface FundHolding {
+  rank: number;
+  code: string;
+  name: string;
+  latestPrice: number | null;
+  marketValue: number | null;
+}
+
+export interface FundHoldingPeriod {
+  period: string;
+  endDate: string;
+  holdings: FundHolding[];
 }
 
 export type FundNavPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | 'ALL';
