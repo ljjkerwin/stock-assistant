@@ -4,7 +4,6 @@ import { AutoComplete, Input, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { fundApi } from '../../api/stock';
 import type { FundSearchResult } from '../../types';
-import debounce from '../StockSearch/debounce';
 
 interface Option {
   value: string;
@@ -19,41 +18,35 @@ interface Props {
 export default function FundSearch({ size = 'middle' }: Props) {
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
+  const queryRef = useRef('');
   const navigate = useNavigate();
 
-  const searchRef = useRef(
-    debounce(
-      async (
-        q: string,
-        onResult: (opts: Option[]) => void,
-        onLoading: (v: boolean) => void,
-      ) => {
-        if (!q.trim()) {
-          onResult([]);
-          return;
-        }
-        onLoading(true);
-        try {
-          const results = await fundApi.search(q);
-          onResult(
-            results.map((r) => ({
-              value: r.code,
-              label: `${r.name} (${r.code})${r.type ? ' · ' + r.type : ''}`,
-              fund: r,
-            })),
-          );
-        } catch {
-          onResult([]);
-        } finally {
-          onLoading(false);
-        }
-      },
-      400,
-    ),
-  );
+  const doSearch = async () => {
+    const q = queryRef.current;
+    if (!q.trim()) {
+      setOptions([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const results = await fundApi.search(q);
+      setOptions(
+        results.map((r) => ({
+          value: r.code,
+          label: `${r.name} (${r.code})${r.type ? ' · ' + r.type : ''}`,
+          fund: r,
+        })),
+      );
+    } catch {
+      setOptions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onSearch = (q: string) => {
-    searchRef.current(q, setOptions, setLoading);
+    queryRef.current = q;
+    setOptions([]);
   };
 
   const onSelect = (_value: string, option: Option) => {
@@ -73,6 +66,7 @@ export default function FundSearch({ size = 'middle' }: Props) {
         prefix={<SearchOutlined />}
         suffix={loading ? <Spin size="small" /> : null}
         placeholder="搜索基金代码/名称"
+        onPressEnter={doSearch}
       />
     </AutoComplete>
   );

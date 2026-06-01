@@ -76,10 +76,10 @@ interface EstimatedData {
   gztime?: string;
 }
 
-interface FundSuggestItem {
-  CODE?: string;
-  NAME?: string;
-  FundType?: string;
+interface FundListItem {
+  code: string;
+  name: string;
+  type: string;
 }
 
 @Injectable()
@@ -91,30 +91,49 @@ export class FundService {
   // 基金名称单独缓存，TTL 2h，避免 fundgz 抖动时反复丢失名称
   private nameCache = new MemCache<string>();
 
+  private fundList: FundListItem[] | null = null;
+  private fundListLoadedAt = 0;
+  private readonly FUND_LIST_TTL = 24 * 60 * 60_000;
+
+  private async loadFundList(): Promise<FundListItem[]> {
+    if (this.fundList && Date.now() - this.fundListLoadedAt < this.FUND_LIST_TTL) {
+      return this.fundList;
+    }
+    const res = await axios
+      .get<string>('https://fund.eastmoney.com/js/fundcode_search.js', {
+        headers: FUND_HEADERS,
+        timeout: 15000,
+        responseType: 'text',
+      })
+      .catch(() => null);
+    if (!res?.data) return this.fundList ?? [];
+    // strip UTF-8 BOM if present, then parse "var r = [...];"
+    const raw = res.data
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .replace(/^var\s+r\s*=\s*/, '')
+      .replace(/;?\s*$/, '');
+    const parsed = JSON.parse(raw) as string[][];
+    this.fundList = parsed.map(([code, , name, type]) => ({ code, name, type }));
+    this.fundListLoadedAt = Date.now();
+    return this.fundList;
+  }
+
   async searchFunds(q: string): Promise<FundSearchResult[]> {
     if (!q.trim()) return [];
     const cacheKey = `search_${q}`;
     const cached = this.searchCache.get(cacheKey);
     if (cached) return cached;
 
-    const url = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchPageAPI.ashx?m=1&key=${encodeURIComponent(q)}&n=10`;
-    const res = await axios
-      .get<{ Datas?: FundSuggestItem[]; ErrCode?: number }>(url, {
-        headers: FUND_HEADERS,
-        timeout: 5000,
-      })
-      .catch(() => null);
+    const list = await this.loadFundList();
+    const lower = q.toLowerCase();
+    const results: FundSearchResult[] = list
+      .filter((item) => item.code.includes(q) || item.name.toLowerCase().includes(lower))
+      .slice(0, 10)
+      .map((item) => ({ code: item.code, name: item.name, type: item.type }));
 
-    const list: FundSearchResult[] = (res?.data?.Datas ?? [])
-      .filter((item) => item.CODE && item.NAME)
-      .map((item) => ({
-        code: item.CODE!,
-        name: item.NAME!,
-        type: item.FundType ?? '',
-      }));
-
-    this.searchCache.set(cacheKey, list, 5 * 60_000);
-    return list;
+    this.searchCache.set(cacheKey, results, 5 * 60_000);
+    return results;
   }
 
   async getFundInfo(code: string): Promise<FundInfo> {

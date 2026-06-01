@@ -135,7 +135,7 @@ pnpm dev
 
 ### 基金模块（`FundModule`）
 - 路由：`/fund/:code`，`code` 为基金代码（如 `000001`），无 market 参数
-- 搜索数据源：东方财富 `fundsuggest.eastmoney.com` API，结果缓存 5min
+- 搜索数据源：东方财富 `fund.eastmoney.com/js/fundcode_search.js` 全量基金列表（约 2 万条），首次加载后进程内缓存 24h，`searchFunds` 在内存中过滤返回前 10 条，单次搜索结果仍缓存 5min
 - 净值数据源：东方财富 `lsjz` API（历史净值）+ `fundgz.1234567.com.cn` JSONP API（实时估值）；lsjz 单页实际上限为 20 条，`getFundNav` 按 `limit` 自动分页并发拉取
 - 三个接口并发请求，任一失败均降级处理（估值不可用时不展示估值字段；规模/成立日期不可用时不展示对应字段）
 - 规模、成立日期通过抓取 `fundf10.eastmoney.com/jbgk_${code}.html` 并正则提取，失败时降级为 null

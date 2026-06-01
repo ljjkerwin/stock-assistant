@@ -4,7 +4,6 @@ import { AutoComplete, Input, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { stocksApi } from '../../api/stock';
 import type { Stock } from '../../types';
-import debounce from './debounce';
 
 interface Option {
   value: string;
@@ -19,34 +18,35 @@ interface Props {
 export default function StockSearch({ size = 'middle' }: Props) {
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
+  const queryRef = useRef('');
   const navigate = useNavigate();
 
-  const searchRef = useRef(
-    debounce(async (q: string, onResult: (opts: Option[]) => void, onLoading: (v: boolean) => void) => {
-      if (!q.trim()) {
-        onResult([]);
-        return;
-      }
-      onLoading(true);
-      try {
-        const results = await stocksApi.search(q);
-        onResult(
-          results.map((r) => ({
-            value: `${r.market}:${r.code}`,
-            label: `${r.name} (${r.code}) ${r.market === 'HK' ? '港股' : 'A股'}`,
-            stock: r,
-          })),
-        );
-      } catch {
-        onResult([]);
-      } finally {
-        onLoading(false);
-      }
-    }, 400),
-  );
+  const doSearch = async () => {
+    const q = queryRef.current;
+    if (!q.trim()) {
+      setOptions([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const results = await stocksApi.search(q);
+      setOptions(
+        results.map((r) => ({
+          value: `${r.market}:${r.code}`,
+          label: `${r.name} (${r.code}) ${r.market === 'HK' ? '港股' : 'A股'}`,
+          stock: r,
+        })),
+      );
+    } catch {
+      setOptions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onSearch = (q: string) => {
-    searchRef.current(q, setOptions, setLoading);
+    queryRef.current = q;
+    setOptions([]);
   };
 
   const onSelect = (_value: string, option: Option) => {
@@ -66,6 +66,7 @@ export default function StockSearch({ size = 'middle' }: Props) {
         prefix={<SearchOutlined />}
         suffix={loading ? <Spin size="small" /> : null}
         placeholder="搜索股票代码/名称"
+        onPressEnter={doSearch}
       />
     </AutoComplete>
   );
