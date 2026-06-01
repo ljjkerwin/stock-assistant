@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Spin } from 'antd';
+import { Spin, Tooltip } from 'antd';
+import { StarOutlined, StarFilled, LinkOutlined } from '@ant-design/icons';
 import {
   createChart,
   createSeriesMarkers,
@@ -16,10 +17,13 @@ import styles from './HoldingKlinePopup.module.css';
 interface Props {
   code: string;
   name: string;
+  market?: 'A' | 'HK';
   endDate?: string;
   anchorRect: DOMRect;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
+  onAddFavorite?: () => void;
+  isFavorited?: boolean;
 }
 
 const POPUP_WIDTH = 460;
@@ -27,9 +31,9 @@ const CHART_HEIGHT = 220;
 const HEADER_HEIGHT = 34;
 const POPUP_HEIGHT = CHART_HEIGHT + HEADER_HEIGHT;
 
-function nineMonthsAgo(): string {
+function sixMonthsAgo(): string {
   const d = new Date();
-  d.setMonth(d.getMonth() - 9);
+  d.setMonth(d.getMonth() - 6);
   return d.toISOString().split('T')[0];
 }
 
@@ -52,7 +56,17 @@ function calcPosition(rect: DOMRect): { left: number; top: number } {
   return { left, top };
 }
 
-export default function HoldingKlinePopup({ code, name, endDate, anchorRect, onMouseEnter, onMouseLeave }: Props) {
+export default function HoldingKlinePopup({
+  code,
+  name,
+  market = 'A',
+  endDate,
+  anchorRect,
+  onMouseEnter,
+  onMouseLeave,
+  onAddFavorite,
+  isFavorited,
+}: Props) {
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -79,10 +93,10 @@ export default function HoldingKlinePopup({ code, name, endDate, anchorRect, onM
     });
     chartRef.current = chart;
 
-    const cutoff = nineMonthsAgo();
+    const cutoff = sixMonthsAgo();
 
     klineApi
-      .get('A', code, 'daily')
+      .get(market, code, 'daily')
       .then((res) => {
         if (cancelled) return;
         const bars = res.data.filter((b) => b.time >= cutoff);
@@ -162,7 +176,7 @@ export default function HoldingKlinePopup({ code, name, endDate, anchorRect, onM
       chart.remove();
       chartRef.current = null;
     };
-  }, [code, endDate]);
+  }, [code, market, endDate]);
 
   return createPortal(
     <div
@@ -173,7 +187,29 @@ export default function HoldingKlinePopup({ code, name, endDate, anchorRect, onM
     >
       <div className={styles.header}>
         <span className={styles.title}>{name}</span>
-        <span className={styles.meta}>{code} · 近9个月日K</span>
+        <span className={styles.metaGroup}>
+          <span className={styles.meta}>{code} · 近6个月日K</span>
+          <Tooltip title="在新标签页打开详情">
+            <a
+              href={`/stock/${market}/${code}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.iconBtn}
+            >
+              <LinkOutlined />
+            </a>
+          </Tooltip>
+          {onAddFavorite && (
+            <Tooltip title={isFavorited ? '已收藏' : '加入收藏'}>
+              <span
+                className={`${styles.starBtn} ${isFavorited ? styles.starActive : ''}`}
+                onClick={isFavorited ? undefined : onAddFavorite}
+              >
+                {isFavorited ? <StarFilled /> : <StarOutlined />}
+              </span>
+            </Tooltip>
+          )}
+        </span>
       </div>
       <div className={styles.chartWrap}>
         <Spin spinning={loading} style={{ minHeight: CHART_HEIGHT }}>

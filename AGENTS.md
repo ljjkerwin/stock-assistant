@@ -29,7 +29,8 @@ stock-assistant/
 │   ├── pages/
 │   │   ├── Home/           # 首页（暂空）
 │   │   ├── StockDetail/    # 股票详情页
-│   │   └── FundDetail/     # 基金详情页（路由 /fund/:code）
+│   │   ├── FundDetail/     # 基金详情页（路由 /fund/:code）
+│   │   └── StockListImport/      # 股票列表页（路由 /stock-list-import，导入文件查看，数据不入库）
 │   ├── store/
 │   │   └── favoritesStore.ts  # Zustand 全局状态
 │   ├── api/
@@ -132,6 +133,15 @@ pnpm dev
 - 前端 `useMonitorSSE` hook 通过 `EventSource(/api/monitor/events)` 接收推送，写入 `monitorStore`
 - `MonitorCenter` 组件固定在页面左下角（sidebar 宽度范围内居中），弹窗仅展示「消息通知」列表，不再包含监控规则管理；消息分页加载（每页 20 条，已读/未读均可翻页），`getMessages` 不标记已读；每次加载完一页后，store 内自动提取本页未读 ID 调用 `PATCH /api/monitor/messages` 批量标记已读并刷新未读角标；未读角标通过独立接口 `getUnreadCount` 维护，SSE 推送到达时立即 +1
 - `StockMonitorButton` 组件嵌入各股票详情页标题栏右侧，Badge 显示该股票活跃规则数；弹窗展示并管理该股票的监控规则（增删、激活/暂停），添加规则无需选择股票（已由页面上下文确定）
+
+### 股票列表页（`StockListImport` 页面）
+- 路由：`/stock-list-import`，Sidebar Section Select 新增「列表」选项切换进入；进入后搜索框与收藏列表隐藏
+- 支持导入 Excel（.xlsx/.xls）和 CSV 文件，使用 `xlsx` npm 包解析
+- 解析规则：第一行非纯数字（非 4–6 位数字）时识别为表头行；第一列为股票代码，第二列为名称，其余列原样保留；解析使用 `raw: false` 以保留前导零（如 `000858`、`00700`）
+- 市场推断：6 位纯数字代码 → A 市场；其余 → HK 市场；用于传给 `HoldingKlinePopup`
+- 数据仅展示，不写入数据库
+- 名称列 hover 时弹出近 6 个月日 K 线图，复用 `HoldingKlinePopup` 组件（已扩展可选 `market` 参数，默认 `'A'`）
+- 表格分页展示（默认每页 50 条），支持切换分页大小
 
 ### 基金模块（`FundModule`）
 - 路由：`/fund/:code`，`code` 为基金代码（如 `000001`），无 market 参数

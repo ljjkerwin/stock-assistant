@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Button, Tooltip, Space, Typography, Segmented } from 'antd';
+import { Button, Tooltip, Space, Typography, Select } from 'antd';
 import {
   DeleteOutlined,
   PushpinOutlined,
@@ -19,7 +19,8 @@ const { Text } = Typography;
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
   { value: 'fund', label: '基金' },
-] as const;
+  { value: 'list', label: '股票列表导入' },
+];
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -27,7 +28,11 @@ export default function Sidebar() {
   const { favorites, fetchFavorites, removeStock, pinStock, reorderStocks } =
     useFavoritesStore();
 
-  const section = pathname.startsWith('/fund') ? 'fund' : 'stock';
+  const section = pathname.startsWith('/fund')
+    ? 'fund'
+    : pathname.startsWith('/stock-list-import')
+      ? 'list'
+      : 'stock';
 
   useEffect(() => {
     fetchFavorites();
@@ -46,7 +51,8 @@ export default function Sidebar() {
 
   const handleSectionChange = (val: string) => {
     if (val === 'stock') navigate('/stock');
-    else navigate('/fund');
+    else if (val === 'fund') navigate('/fund');
+    else navigate('/stock-list-import');
   };
 
   const renderItem = (stock: Stock, index: number, list: Stock[], urlFn: (s: Stock) => string) => (
@@ -104,17 +110,19 @@ export default function Sidebar() {
   return (
     <div className={styles.sidebar}>
       <div className={styles.sectionSelect}>
-        <Segmented
+        <Select
           value={section}
           options={SECTION_OPTIONS}
-          onChange={(val) => handleSectionChange(val as string)}
-          block
+          onChange={(val) => handleSectionChange(val)}
+          style={{ width: '100%' }}
         />
       </div>
 
-      <div className={styles.search}>
-        {section === 'stock' ? <StockSearch size="middle" /> : <FundSearch size="middle" />}
-      </div>
+      {section !== 'list' && (
+        <div className={styles.search}>
+          {section === 'stock' ? <StockSearch size="middle" /> : <FundSearch size="middle" />}
+        </div>
+      )}
 
       {section === 'stock' && (
         <div>
