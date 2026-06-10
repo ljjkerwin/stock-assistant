@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# Exit on any command failure
+set -e
+
+echo "🔍 Git pre-commit 钩子 (Husky) 已触发..."
+
+# Get list of staged files (excluding deleted files)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=d)
+
+# Flags to track if files in frontend or backend are modified
+FRONTEND_CHANGED=false
+BACKEND_CHANGED=false
+
+FRONTEND_LINT_FILES=()
+BACKEND_LINT_FILES=()
+
+for FILE in $STAGED_FILES; do
+  if [[ $FILE == frontend/* ]]; then
+    FRONTEND_CHANGED=true
+    if [[ $FILE == frontend/src/**/*.ts || $FILE == frontend/src/**/*.tsx || $FILE == frontend/src/**/*.js || $FILE == frontend/src/**/*.jsx ]]; then
+      FRONTEND_LINT_FILES+=("${FILE#frontend/}")
+    fi
+  fi
+  if [[ $FILE == backend/* ]]; then
+    BACKEND_CHANGED=true
+    if [[ $FILE == backend/src/**/*.ts || $FILE == backend/test/**/*.ts ]]; then
+      BACKEND_LINT_FILES+=("${FILE#backend/}")
+    fi
+  fi
+done
+
+# Run frontend checks if frontend files have changed
+if [ "$FRONTEND_CHANGED" = true ]; then
+  echo "==========================================="
+  echo "🎨 正在运行前端代码检查 (Lint & Typecheck)..."
+  echo "==========================================="
+  cd frontend
+  
+  if [ ${#FRONTEND_LINT_FILES[@]} -ne 0 ]; then
+    echo "📝 仅检查前端改动文件: ${FRONTEND_LINT_FILES[*]}"
+    if ! pnpm exec eslint "${FRONTEND_LINT_FILES[@]}"; then
+      echo "❌ 前端 ESLint 检查失败！请修复后再试。"
+      exit 1
+    fi
+  fi
+  
+  echo "🔍 正在对整个前端项目运行 TypeScript 类型检查..."
+  if ! pnpm exec tsc --noEmit; then
+    echo "❌ 前端 TypeScript 类型检查失败！请修复后再试。"
+    exit 1
+  fi
+  
+  cd ..
+  echo "✅ 前端检查通过！"
+  echo ""
+fi
+
+# Run backend checks if backend files have changed
+if [ "$BACKEND_CHANGED" = true ]; then
+  echo "==========================================="
+  echo "⚙️ 正在运行后端代码检查 (Lint & Typecheck)..."
+  echo "==========================================="
+  cd backend
+  
+  if [ ${#BACKEND_LINT_FILES[@]} -ne 0 ]; then
+    echo "📝 仅检查后端改动文件: ${BACKEND_LINT_FILES[*]}"
+    if ! pnpm exec eslint "${BACKEND_LINT_FILES[@]}" --fix; then
+      echo "❌ 后端 ESLint 检查失败！请修复后再试。"
+      exit 1
+    fi
+  fi
+  
+  echo "🔍 正在对整个后端项目运行 TypeScript 类型检查..."
+  if ! pnpm exec tsc --noEmit; then
+    echo "❌ 后端 TypeScript 类型检查失败！请修复后再试。"
+    exit 1
+  fi
+  
+  cd ..
+  echo "✅ 后端检查通过！"
+  echo ""
+fi
+
+if [ "$FRONTEND_CHANGED" = true ] || [ "$BACKEND_CHANGED" = true ]; then
+  echo "🎉 所有本地提交前检查均已通过！正在提交代码..."
+else
+  echo "ℹ️ 未检测到 frontend/ 或 backend/ 目录下的代码变更，跳过提交前检查。"
+fi

@@ -8,7 +8,7 @@ on:
       - 'backend/src/**'
       - 'backend/package.json'
       - 'backend/tsconfig*.json'
-      - 'backend/pnpm-lock.yaml'
+      - 'pnpm-lock.yaml'
   workflow_dispatch:
     inputs:
       scope:
@@ -26,9 +26,6 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       inputs.scope == 'backend'
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -42,10 +39,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: backend/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
       - name: 运行单元测试
+        working-directory: backend
         run: pnpm test

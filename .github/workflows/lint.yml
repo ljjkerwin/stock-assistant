@@ -13,6 +13,8 @@ on:
       - 'backend/package.json'
       - 'backend/tsconfig*.json'
       - 'backend/.eslintrc*'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
   workflow_dispatch:
     inputs:
       scope:
@@ -32,9 +34,6 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       inputs.scope == 'all' || inputs.scope == 'frontend'
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -48,15 +47,17 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
       - name: ESLint 检查
+        working-directory: frontend
         run: pnpm lint
 
       - name: TypeScript 类型检查
+        working-directory: frontend
         run: pnpm exec tsc --noEmit
 
   backend-lint:
@@ -65,9 +66,6 @@ jobs:
     if: |
       github.event_name == 'pull_request' ||
       inputs.scope == 'all' || inputs.scope == 'backend'
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -81,13 +79,15 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: backend/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
       - name: ESLint 检查
+        working-directory: backend
         run: pnpm lint
 
       - name: TypeScript 类型检查
+        working-directory: backend
         run: pnpm exec tsc --noEmit

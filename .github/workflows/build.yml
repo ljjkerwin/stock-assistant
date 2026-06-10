@@ -23,21 +23,14 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: |
-            backend/pnpm-lock.yaml
-            frontend/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: 安装后端依赖
-        working-directory: backend
+      - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
       - name: 构建后端
         working-directory: backend
         run: pnpm build
-
-      - name: 安装前端依赖
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
 
       - name: 构建前端
         working-directory: frontend
@@ -46,8 +39,9 @@ jobs:
       - name: 整合产物
         run: |
           mkdir -p release/backend release/frontend
-          cp -r backend/dist backend/package.json backend/pnpm-lock.yaml release/backend/
+          cp -r backend/dist backend/package.json release/backend/
           cp -r frontend/dist release/frontend/
+          cp package.json pnpm-lock.yaml pnpm-workspace.yaml release/
 
       - name: 上传产物
         uses: actions/upload-artifact@v7
@@ -103,8 +97,8 @@ jobs:
         run: |
           ssh -p ${{ vars.VPS_PORT || '22' }} \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-          cd /data/deploy/stock-assistant/backend
-          pnpm install --prod --frozen-lockfile
+          cd /data/deploy/stock-assistant
+          pnpm install --filter backend --prod --frozen-lockfile
           pm2 reload stock-assistant 2>/dev/null || \
             pm2 start dist/main.js --name stock-assistant --cwd /data/deploy/stock-assistant/backend
           pm2 save
