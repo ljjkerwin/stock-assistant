@@ -2,6 +2,20 @@ name: 语法检查
 
 on:
   push:
+    branches:
+      - develop
+    paths:
+      - 'frontend/src/**'
+      - 'frontend/package.json'
+      - 'frontend/tsconfig*.json'
+      - 'frontend/.eslintrc*'
+      - 'backend/src/**'
+      - 'backend/package.json'
+      - 'backend/tsconfig*.json'
+      - 'backend/.eslintrc*'
+  pull_request:
+    branches:
+      - main
     paths:
       - 'frontend/src/**'
       - 'frontend/package.json'
@@ -29,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
       inputs.scope == 'all' || inputs.scope == 'frontend'
     defaults:
       run:
@@ -62,6 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'push' ||
+      github.event_name == 'pull_request' ||
       inputs.scope == 'all' || inputs.scope == 'backend'
     defaults:
       run:
