@@ -1,0 +1,148 @@
+.container {
+  padding: 16px 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.info {
+  margin-bottom: 16px;
+  background: #fafafa;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.chart {
+  width: 100%;
+}
+
+.holdings {
+  margin-top: 20px;
+}
+
+.holdingsTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.holdingsPeriods {
+  display: flex;
+  gap: 16px;
+}
+
+.holdingsPeriod {
+  flex: 1;
+  background: #fafafa;
+  border-radius: 6px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.periodHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.periodDate {
+  font-size: 11px;
+  font-weight: 400;
+  color: #999;
+}
+
+.holdingsList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.holdingItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  min-height: 20px;
+}
+
+.holdingItemEmpty {
+  min-height: 20px;
+}
+
+.holdingRank {
+  width: 16px;
+  text-align: right;
+  color: #bbb;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.holdingRank:nth-child(1) {
+  color: #f5222d;
+}
+
+.holdingName {
+  flex: 1;
+  min-width: 0;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.newBadge {
+  display: inline-block;
+  background: #ef8850;
+  color: #fff;
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 3px;
+  line-height: 14px;
+  flex-shrink: 0;
+}
+
+.holdingNameHoverable {
+  cursor: pointer;
+}
+
+.holdingNameHoverable:hover {
+  color: #1677ff;
+}
+
+.holdingCode {
+  font-size: 10px;
+  color: #bbb;
+  flex-shrink: 0;
+}
+
+.holdingRight {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.holdingRatio {
+  color: #333;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.holdingMv {
+  color: #999;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

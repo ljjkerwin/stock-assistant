@@ -1,6 +1,16 @@
 name: 语法检查
 
 on:
+  push:
+    paths:
+      - 'frontend/src/**'
+      - 'frontend/package.json'
+      - 'frontend/tsconfig*.json'
+      - 'frontend/.eslintrc*'
+      - 'backend/src/**'
+      - 'backend/package.json'
+      - 'backend/tsconfig*.json'
+      - 'backend/.eslintrc*'
   workflow_dispatch:
     inputs:
       scope:
@@ -17,7 +27,9 @@ jobs:
   frontend-lint:
     name: 前端语法检查
     runs-on: ubuntu-latest
-    if: ${{ inputs.scope == 'all' || inputs.scope == 'frontend' }}
+    if: |
+      github.event_name == 'push' ||
+      inputs.scope == 'all' || inputs.scope == 'frontend'
     defaults:
       run:
         working-directory: frontend
@@ -48,7 +60,9 @@ jobs:
   backend-lint:
     name: 后端语法检查
     runs-on: ubuntu-latest
-    if: ${{ inputs.scope == 'all' || inputs.scope == 'backend' }}
+    if: |
+      github.event_name == 'push' ||
+      inputs.scope == 'all' || inputs.scope == 'backend'
     defaults:
       run:
         working-directory: backend

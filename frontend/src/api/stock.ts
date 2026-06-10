@@ -6,13 +6,17 @@ import type {
   KlinePeriod,
   MonitorRule,
   MonitorMessage,
+  FundInfo,
+  FundNavResponse,
+  FundSearchResult,
+  FundHoldingPeriod,
 } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
 
 export const favoritesApi = {
   list: () => api.get<Stock[]>('/favorites').then((r) => r.data),
-  add: (stock: { code: string; market: 'A' | 'HK'; name: string }) =>
+  add: (stock: { code: string; market: 'A' | 'HK' | 'FUND'; name: string }) =>
     api.post<Stock>('/favorites', stock).then((r) => r.data),
   remove: (id: number) => api.delete(`/favorites/${id}`),
   update: (id: number, data: { sortOrder?: number; pinned?: boolean }) =>
@@ -30,6 +34,20 @@ export const stocksApi = {
 export const klineApi = {
   get: (market: 'A' | 'HK', code: string, period: KlinePeriod): Promise<KlineResponse> =>
     api.get<KlineResponse>(`/kline/${market}/${code}`, { params: { period } }).then((r) => r.data),
+};
+
+export const fundApi = {
+  search: (q: string): Promise<FundSearchResult[]> =>
+    api.get<FundSearchResult[]>('/fund/search', { params: { q } }).then((r) => r.data),
+
+  getInfo: (code: string): Promise<FundInfo> =>
+    api.get<FundInfo>(`/fund/${code}`).then((r) => r.data),
+
+  getNav: (code: string, limit: number): Promise<FundNavResponse> =>
+    api.get<FundNavResponse>(`/fund/${code}/nav`, { params: { limit } }).then((r) => r.data),
+
+  getHoldings: (code: string): Promise<FundHoldingPeriod[]> =>
+    api.get<FundHoldingPeriod[]>(`/fund/${code}/holdings`).then((r) => r.data),
 };
 
 export const monitorApi = {

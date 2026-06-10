@@ -5,8 +5,12 @@
   overflow: hidden;
 }
 
+.sectionSelect {
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
 .search {
-  padding: 12px;
   border-bottom: 1px solid #f0f0f0;
 }
 
@@ -21,11 +25,16 @@
 }
 
 .actions {
-  visibility: hidden;
+  opacity: 0;
+  max-width: 0;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: opacity 0.15s, max-width 0.15s;
 }
 
 .item:hover .actions {
-  visibility: visible;
+  opacity: 1;
+  max-width: 200px;
 }
 
 .item:hover {

@@ -1,7 +1,7 @@
 export interface Stock {
   id?: number;
   code: string;
-  market: 'A' | 'HK';
+  market: 'A' | 'HK' | 'FUND';
   name: string;
   sortOrder?: number;
   pinned?: boolean;
@@ -65,6 +65,76 @@ export const PERIOD_LABELS: Record<KlinePeriod, string> = {
   '60min': '60分',
   daily: '日线',
   weekly: '周线',
+};
+
+// ── 基金模块 ──────────────────────────────────────────────────────────────────
+
+export interface FundSearchResult {
+  code: string;
+  name: string;
+  type: string;
+}
+
+export interface FundInfo {
+  code: string;
+  name: string;
+  nav: number | null;
+  accNav: number | null;
+  navDate: string | null;
+  estimatedNav: number | null;
+  estimatedChangePct: number | null;
+  estimatedTime: string | null;
+  dailyChangePct: number | null;
+  fundSize: string | null;
+  establishDate: string | null;
+}
+
+export interface FundNavPoint {
+  date: string;
+  nav: number;
+  accNav: number;
+  changePct: number | null;
+}
+
+export interface FundNavResponse {
+  code: string;
+  name: string;
+  data: FundNavPoint[];
+  total: number;
+}
+
+export interface FundHolding {
+  rank: number;
+  code: string;
+  name: string;
+  latestPrice: number | null;
+  marketValue: number | null;
+}
+
+export interface FundHoldingPeriod {
+  period: string;
+  endDate: string;
+  holdings: FundHolding[];
+}
+
+export type FundNavPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | 'ALL';
+
+export const FUND_PERIOD_LABELS: Record<FundNavPeriod, string> = {
+  '1M': '近1月',
+  '3M': '近3月',
+  '6M': '近6月',
+  '1Y': '近1年',
+  '3Y': '近3年',
+  ALL: '全部',
+};
+
+export const FUND_PERIOD_LIMITS: Record<FundNavPeriod, number> = {
+  '1M': 25,
+  '3M': 70,
+  '6M': 135,
+  '1Y': 255,
+  '3Y': 760,
+  ALL: 1000,
 };
 
 // ── 监控模块 ──────────────────────────────────────────────────────────────────

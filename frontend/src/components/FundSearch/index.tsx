@@ -2,20 +2,20 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AutoComplete, Input, Spin } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
-import { stocksApi } from '../../api/stock';
-import type { Stock } from '../../types';
+import { fundApi } from '../../api/stock';
+import type { FundSearchResult } from '../../types';
 
 interface Option {
   value: string;
   label: string;
-  stock: Stock;
+  fund: FundSearchResult;
 }
 
 interface Props {
   size?: 'small' | 'middle' | 'large';
 }
 
-export default function StockSearch({ size = 'middle' }: Props) {
+export default function FundSearch({ size = 'middle' }: Props) {
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
   const queryRef = useRef('');
@@ -29,12 +29,12 @@ export default function StockSearch({ size = 'middle' }: Props) {
     }
     setLoading(true);
     try {
-      const results = await stocksApi.search(q);
+      const results = await fundApi.search(q);
       setOptions(
         results.map((r) => ({
-          value: `${r.market}:${r.code}`,
-          label: `${r.name} (${r.code}) ${r.market === 'HK' ? '港股' : 'A股'}`,
-          stock: r,
+          value: r.code,
+          label: `${r.name} (${r.code})${r.type ? ' · ' + r.type : ''}`,
+          fund: r,
         })),
       );
     } catch {
@@ -50,7 +50,7 @@ export default function StockSearch({ size = 'middle' }: Props) {
   };
 
   const onSelect = (_value: string, option: Option) => {
-    navigate(`/stock/${option.stock.market}/${option.stock.code}`);
+    navigate(`/fund/${option.fund.code}`);
   };
 
   return (
@@ -65,7 +65,7 @@ export default function StockSearch({ size = 'middle' }: Props) {
         variant="borderless"
         prefix={<SearchOutlined />}
         suffix={loading ? <Spin size="small" /> : null}
-        placeholder="搜索股票代码/名称"
+        placeholder="搜索基金代码/名称"
         onPressEnter={doSearch}
       />
     </AutoComplete>

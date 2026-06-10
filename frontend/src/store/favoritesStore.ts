@@ -5,7 +5,7 @@ import { favoritesApi } from '../api/stock';
 interface FavoritesStore {
   favorites: Stock[];
   fetchFavorites: () => Promise<void>;
-  addStock: (stock: { code: string; market: 'A' | 'HK'; name: string }) => Promise<void>;
+  addStock: (stock: { code: string; market: 'A' | 'HK' | 'FUND'; name: string }) => Promise<void>;
   removeStock: (id: number) => Promise<void>;
   reorderStocks: (orderedIds: number[]) => Promise<void>;
   pinStock: (id: number, pinned: boolean) => Promise<void>;
