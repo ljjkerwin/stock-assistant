@@ -16,16 +16,6 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
   workflow_dispatch:
-    inputs:
-      scope:
-        description: '检查范围'
-        required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - frontend
-          - backend
 
 jobs:
   lint:
@@ -50,21 +40,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: 前端 ESLint 检查
-        if: github.event_name == 'pull_request' || inputs.scope == 'all' || inputs.scope == 'frontend'
         working-directory: frontend
         run: pnpm lint
 
       - name: 前端 TypeScript 类型检查
-        if: github.event_name == 'pull_request' || inputs.scope == 'all' || inputs.scope == 'frontend'
         working-directory: frontend
         run: pnpm exec tsc --noEmit
 
       - name: 后端 ESLint 检查
-        if: github.event_name == 'pull_request' || inputs.scope == 'all' || inputs.scope == 'backend'
         working-directory: backend
         run: pnpm lint
 
       - name: 后端 TypeScript 类型检查
-        if: github.event_name == 'pull_request' || inputs.scope == 'all' || inputs.scope == 'backend'
         working-directory: backend
         run: pnpm exec tsc --noEmit
