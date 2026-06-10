@@ -12,16 +12,27 @@ function conditionText(
   maPeriod: MaPeriod | null,
   klinePeriod: string | null,
 ): string {
-  const suffix = klinePeriod === '15min' ? '(15min)' : '';
+  const periodLabel =
+    klinePeriod === 'daily' || !klinePeriod
+      ? '日线'
+      : klinePeriod === '5min'
+      ? '5min线'
+      : klinePeriod === '15min'
+      ? '15min线'
+      : klinePeriod === '30min'
+      ? '30min线'
+      : klinePeriod === '60min'
+      ? '60min线'
+      : `${klinePeriod}`;
   switch (type) {
     case 'price_above':
       return `突破 ¥${targetPrice?.toFixed(2) ?? '-'}`;
     case 'price_below':
       return `跌破 ¥${targetPrice?.toFixed(2) ?? '-'}`;
     case 'ma_cross_above':
-      return `突破 ${(maPeriod ?? '').toUpperCase()}${suffix}`;
+      return `${periodLabel} 突破 ${(maPeriod ?? '').toUpperCase()}`;
     case 'ma_cross_below':
-      return `跌破 ${(maPeriod ?? '').toUpperCase()}${suffix}`;
+      return `${periodLabel} 跌破 ${(maPeriod ?? '').toUpperCase()}`;
   }
 }
 

@@ -4,15 +4,21 @@ import { BellOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMonitorStore } from '../../store/monitorStore';
 import type { MaPeriod, MonitorType } from '../../types';
 
-type UiMonitorType = MonitorType | 'ma15_cross_above' | 'ma15_cross_below';
+type UiMonitorType = MonitorType;
 
 const TYPE_OPTIONS = [
   { value: 'price_above', label: '突破指定价格' },
   { value: 'price_below', label: '跌破指定价格' },
-  { value: 'ma_cross_above', label: '突破均线（日线）' },
-  { value: 'ma_cross_below', label: '跌破均线（日线）' },
-  { value: 'ma15_cross_above', label: '突破均线（15min）' },
-  { value: 'ma15_cross_below', label: '跌破均线（15min）' },
+  { value: 'ma_cross_above', label: '突破均线' },
+  { value: 'ma_cross_below', label: '跌破均线' },
+];
+
+const KLINE_PERIOD_OPTIONS = [
+  { value: 'daily', label: '日线' },
+  { value: '5min', label: '5分钟线' },
+  { value: '15min', label: '15分钟线' },
+  { value: '30min', label: '30分钟线' },
+  { value: '60min', label: '60分钟线' },
 ];
 
 const MA_OPTIONS = [
@@ -23,12 +29,23 @@ const MA_OPTIONS = [
 ];
 
 function conditionText(type: MonitorType, targetPrice: number | null, maPeriod: MaPeriod | null, klinePeriod: string | null): string {
-  const suffix = klinePeriod === '15min' ? '(15min)' : '';
+  const periodLabel =
+    klinePeriod === 'daily' || !klinePeriod
+      ? '日线'
+      : klinePeriod === '5min'
+      ? '5min线'
+      : klinePeriod === '15min'
+      ? '15min线'
+      : klinePeriod === '30min'
+      ? '30min线'
+      : klinePeriod === '60min'
+      ? '60min线'
+      : `${klinePeriod}`;
   switch (type) {
     case 'price_above': return `突破 ¥${targetPrice?.toFixed(2) ?? '-'}`;
     case 'price_below': return `跌破 ¥${targetPrice?.toFixed(2) ?? '-'}`;
-    case 'ma_cross_above': return `突破 ${(maPeriod ?? '').toUpperCase()}${suffix}`;
-    case 'ma_cross_below': return `跌破 ${(maPeriod ?? '').toUpperCase()}${suffix}`;
+    case 'ma_cross_above': return `${periodLabel} 突破 ${(maPeriod ?? '').toUpperCase()}`;
+    case 'ma_cross_below': return `${periodLabel} 跌破 ${(maPeriod ?? '').toUpperCase()}`;
   }
 }
 
@@ -63,24 +80,20 @@ export default function StockMonitorButton({ market, code, stockName }: Props) {
   const handleAddRule = async () => {
     try {
       const values = (await form.validateFields()) as {
-        type: UiMonitorType;
+        type: MonitorType;
         targetPrice?: number;
         maPeriod?: MaPeriod;
+        klinePeriod?: string;
       };
-      let type: string = values.type;
-      let klinePeriod: string | undefined;
-      if (values.type === 'ma15_cross_above') {
-        type = 'ma_cross_above';
-        klinePeriod = '15min';
-      } else if (values.type === 'ma15_cross_below') {
-        type = 'ma_cross_below';
-        klinePeriod = '15min';
+      let klinePeriod: string | undefined = values.klinePeriod;
+      if (klinePeriod === 'daily') {
+        klinePeriod = undefined;
       }
       await createRule({
         stockCode: code,
         stockMarket: market,
         stockName,
-        type,
+        type: values.type,
         targetPrice: values.targetPrice,
         maPeriod: values.maPeriod,
         klinePeriod,
@@ -94,8 +107,7 @@ export default function StockMonitorButton({ market, code, stockName }: Props) {
   };
 
   const isMAType = (t: UiMonitorType) =>
-    t === 'ma_cross_above' || t === 'ma_cross_below' ||
-    t === 'ma15_cross_above' || t === 'ma15_cross_below';
+    t === 'ma_cross_above' || t === 'ma_cross_below';
 
   const handleCancelAdd = () => {
     setAddOpen(false);
@@ -121,7 +133,7 @@ export default function StockMonitorButton({ market, code, stockName }: Props) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1 }}>
-            每条规则每 2 小时最多触发一次
+            每条规则每 30 分钟最多触发一次
           </Typography.Text>
           <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
             添加规则
@@ -184,7 +196,7 @@ export default function StockMonitorButton({ market, code, stockName }: Props) {
           form={form}
           layout="vertical"
           style={{ marginTop: 16 }}
-          initialValues={{ type: 'price_above' }}
+          initialValues={{ type: 'price_above', klinePeriod: 'daily', maPeriod: 'ma5' }}
         >
           <Form.Item
             name="type"
@@ -195,7 +207,10 @@ export default function StockMonitorButton({ market, code, stockName }: Props) {
               options={TYPE_OPTIONS}
               onChange={(v: UiMonitorType) => {
                 setMonitorType(v);
-                form.resetFields(['targetPrice', 'maPeriod']);
+                form.resetFields(['targetPrice', 'maPeriod', 'klinePeriod']);
+                if (isMAType(v)) {
+                  form.setFieldsValue({ klinePeriod: 'daily', maPeriod: 'ma5' });
+                }
               }}
             />
           </Form.Item>
@@ -215,13 +230,22 @@ export default function StockMonitorButton({ market, code, stockName }: Props) {
             </Form.Item>
           )}
           {isMAType(monitorType) && (
-            <Form.Item
-              name="maPeriod"
-              label="均线"
-              rules={[{ required: true, message: '请选择均线' }]}
-            >
-              <Select options={MA_OPTIONS} placeholder="请选择均线" />
-            </Form.Item>
+            <>
+              <Form.Item
+                name="klinePeriod"
+                label="时间维度"
+                rules={[{ required: true, message: '请选择时间维度' }]}
+              >
+                <Select options={KLINE_PERIOD_OPTIONS} />
+              </Form.Item>
+              <Form.Item
+                name="maPeriod"
+                label="均线"
+                rules={[{ required: true, message: '请选择均线' }]}
+              >
+                <Select options={MA_OPTIONS} placeholder="请选择均线" />
+              </Form.Item>
+            </>
           )}
         </Form>
       </Modal>
