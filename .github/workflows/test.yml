@@ -12,8 +12,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  backend-test:
-    name: 后端单元测试
+  test:
+    name: 单元测试
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
