@@ -1,6 +1,9 @@
 name: 构建
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -57,3 +60,52 @@ jobs:
         run: |
           echo "## 构建产物 Run ID" >> $GITHUB_STEP_SUMMARY
           echo "\`${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
+
+  deploy:
+    name: 部署到 VPS
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: 下载产物
+        uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: release/
+
+      - name: 配置 SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p ${{ vars.VPS_PORT || '22' }} -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: 创建远端目录
+        run: |
+          ssh -p ${{ vars.VPS_PORT || '22' }} \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "mkdir -p /data/deploy/stock-assistant"
+
+      - name: 同步产物
+        run: |
+          scp -r -P ${{ vars.VPS_PORT || '22' }} \
+            release/. \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/data/deploy/stock-assistant/
+
+      - name: 写入 .env
+        run: |
+          printf '%s' "${{ secrets.BACKEND_ENV }}" > /tmp/backend.env
+          scp -P ${{ vars.VPS_PORT || '22' }} \
+            /tmp/backend.env \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/data/deploy/stock-assistant/backend/.env
+
+      - name: 安装依赖并重启服务
+        run: |
+          ssh -p ${{ vars.VPS_PORT || '22' }} \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+          cd /data/deploy/stock-assistant/backend
+          pnpm install --prod --frozen-lockfile
+          pm2 reload stock-assistant 2>/dev/null || \
+            pm2 start dist/main.js --name stock-assistant --cwd /data/deploy/stock-assistant/backend
+          pm2 save
+          EOF

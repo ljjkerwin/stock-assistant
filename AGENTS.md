@@ -214,6 +214,8 @@ pnpm dev
 - 不要求 Controller、前端组件、前端 API 层写测试
 - 前端纯工具函数（`utils/`）和含复杂逻辑的 store action 需有对应单元测试
 - 外部 API（东方财富）调用须在测试中 mock，不发真实请求
+- CI 自动测试：已配置 GitHub Actions 单元测试工作流（`.github/workflows/test.yml`），在推送（push）或合并（pull request）到 main 分支且涉及 backend 相关文件时会自动触发后端单元测试
+
 
 ---
 
