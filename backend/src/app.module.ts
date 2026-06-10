@@ -9,6 +9,7 @@ import { FundModule } from './fund/fund.module';
 import { Favorite } from './favorites/favorite.entity';
 import { MonitorRule } from './monitor/monitor-rule.entity';
 import { MonitorMessage } from './monitor/monitor-message.entity';
+import { TestModule } from './test/test.module';
 
 const entities = [Favorite, MonitorRule, MonitorMessage];
 
@@ -43,6 +44,7 @@ function buildDataSourceOptions(): DataSourceOptions {
     KlineModule,
     MonitorModule,
     FundModule,
+    TestModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }
