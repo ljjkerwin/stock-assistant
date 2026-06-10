@@ -58,11 +58,16 @@ export default function Sidebar() {
   const renderItem = (stock: Stock, index: number, list: Stock[], urlFn: (s: Stock) => string) => (
     <div
       key={stock.id}
-      className={`${styles.item} ${pathname === urlFn(stock) ? styles.selected : ''}`}
+      className={`${styles.item} ${stock.pinned ? styles.pinnedItem : ''} ${
+        pathname === urlFn(stock) ? styles.selected : ''
+      }`}
       onClick={() => navigate(urlFn(stock))}
     >
       <div className={styles.stockInfo}>
-        <Text strong className={styles.name}>{stock.name}</Text>
+        <div className={styles.nameRow}>
+          {stock.pinned && <PushpinFilled className={styles.pinIcon} />}
+          <Text strong className={styles.name}>{stock.name}</Text>
+        </div>
         <Text type="secondary" className={styles.code}>
           {stock.code} · {stock.market === 'HK' ? '港股' : stock.market === 'FUND' ? '基金' : 'A股'}
         </Text>

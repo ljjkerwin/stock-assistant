@@ -53,8 +53,8 @@ jobs:
         run: |
           ssh -p ${{ vars.VPS_PORT || '22' }} \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-          cd /data/deploy/stock-assistant/backend
-          pnpm install --prod --frozen-lockfile
+          cd /data/deploy/stock-assistant
+          pnpm install --filter backend --prod --frozen-lockfile
           pm2 reload stock-assistant 2>/dev/null || \
             pm2 start dist/main.js --name stock-assistant --cwd /data/deploy/stock-assistant/backend
           pm2 save

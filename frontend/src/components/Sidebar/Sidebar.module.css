@@ -24,6 +24,12 @@
   transition: background 0.15s;
 }
 
+.pinnedItem {
+  background: #fafafa;
+  border-left: 3px solid #1677ff;
+  padding-left: 9px !important;
+}
+
 .actions {
   opacity: 0;
   max-width: 0;
@@ -49,6 +55,21 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.pinIcon {
+  color: #1677ff;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .name {
@@ -62,3 +83,4 @@
 .code {
   font-size: 12px;
 }
+
