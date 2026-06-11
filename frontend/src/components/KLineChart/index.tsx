@@ -27,7 +27,8 @@ import styles from './KLineChart.module.css';
 interface Props {
   market: 'A' | 'HK';
   code: string;
-  initialData?: { data: KlineBar[]; period?: KlinePeriod };
+  initialData?: { data: KlineBar[]; period?: KlinePeriod; backtestStartTime?: string | null };
+  zoomStorageKey?: string;
 }
 
 const PERIODS = Object.keys(PERIOD_LABELS) as KlinePeriod[];
@@ -81,7 +82,7 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
   return (t >= 570 && t < 720) || (t >= 780 && t < 960);
 }
 
-export default function KLineChart({ market, code, initialData }: Props) {
+export default function KLineChart({ market, code, initialData, zoomStorageKey }: Props) {
   const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? 'timeshare');
   const [loading, setLoading] = useState(false);
 
@@ -105,6 +106,8 @@ export default function KLineChart({ market, code, initialData }: Props) {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncingRef = useRef(false);
+  const zoomStorageKeyRef = useRef<string | undefined>(undefined);
+  const zoomSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Data refs — used by legend updater to look up values by time
   const barsRef = useRef<KlineBar[]>([]);
@@ -178,6 +181,14 @@ export default function KLineChart({ market, code, initialData }: Props) {
       if (range) {
         volumeChart.timeScale().setVisibleLogicalRange(range);
         macdChart.timeScale().setVisibleLogicalRange(range);
+        if (zoomStorageKeyRef.current) {
+          if (zoomSaveTimerRef.current) clearTimeout(zoomSaveTimerRef.current);
+          zoomSaveTimerRef.current = setTimeout(() => {
+            try {
+              localStorage.setItem(`kline:zoom:${zoomStorageKeyRef.current!}`, JSON.stringify(range));
+            } catch { /* localStorage unavailable */ }
+          }, 500);
+        }
       }
     });
     volumeChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -236,7 +247,7 @@ export default function KLineChart({ market, code, initialData }: Props) {
     });
   }, []);
 
-  const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod, preserveViewport = false) => {
+  const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod, preserveViewport = false, backtestStartTime?: string | null) => {
     if (!mainChartRef.current || !volumeChartRef.current || !macdChartRef.current) return;
 
     // Save current viewport before clearing series so it can be restored after refresh
@@ -335,13 +346,31 @@ export default function KLineChart({ market, code, initialData }: Props) {
     }
 
     // Buy/sell markers (only present when data comes from strategy backtest)
-    const markers = bars
+    const markers: Parameters<typeof createSeriesMarkers>[1] = bars
       .filter((b) => b.signal === 'buy' || b.signal === 'sell')
       .map((b) =>
         b.signal === 'buy'
-          ? { time: toChartTime(b.time) as Time, position: 'belowBar', color: '#ef5350', shape: 'arrowUp', text: '买' }
-          : { time: toChartTime(b.time) as Time, position: 'aboveBar', color: '#26a69a', shape: 'arrowDown', text: '卖' },
+          ? { time: toChartTime(b.time) as Time, position: 'belowBar' as const, color: '#ef5350', shape: 'arrowUp' as const, text: '买' }
+          : { time: toChartTime(b.time) as Time, position: 'aboveBar' as const, color: '#26a69a', shape: 'arrowDown' as const, text: '卖' },
       );
+
+    // 回测起始标记
+    if (backtestStartTime) {
+      const startBar = bars.find((b) => b.time === backtestStartTime);
+      if (startBar) {
+        markers.unshift({
+          time: toChartTime(startBar.time) as Time,
+          position: 'belowBar' as const,
+          color: '#1677ff',
+          shape: 'square' as const,
+          text: '回测起始',
+        });
+      }
+    }
+
+    // markers 必须按时间升序
+    markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+
     if (markers.length > 0) {
       createSeriesMarkers(mainSeriesRef.current!, markers);
     }
@@ -408,12 +437,35 @@ export default function KLineChart({ market, code, initialData }: Props) {
       volumeChartRef.current.timeScale().fitContent();
       macdChartRef.current.timeScale().fitContent();
     } else {
-      const defaultVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
-      const from = Math.max(0, bars.length - defaultVisible);
-      const range = { from, to: bars.length - 1 };
-      mainChartRef.current.timeScale().setVisibleLogicalRange(range);
-      volumeChartRef.current.timeScale().setVisibleLogicalRange(range);
-      macdChartRef.current.timeScale().setVisibleLogicalRange(range);
+      // Restore persisted zoom if available
+      let restoredZoom: LogicalRange | null = null;
+      if (zoomStorageKeyRef.current) {
+        try {
+          const s = localStorage.getItem(`kline:zoom:${zoomStorageKeyRef.current}`);
+          restoredZoom = s ? (JSON.parse(s) as LogicalRange) : null;
+        } catch { /* localStorage unavailable */ }
+      }
+
+      if (restoredZoom) {
+        mainChartRef.current.timeScale().setVisibleLogicalRange(restoredZoom);
+        volumeChartRef.current.timeScale().setVisibleLogicalRange(restoredZoom);
+        macdChartRef.current.timeScale().setVisibleLogicalRange(restoredZoom);
+      } else if (backtestStartTime) {
+        // 回测模式：以回测起始点为锚，前留少量历史上下文
+        const startIdx = bars.findIndex((b) => b.time === backtestStartTime);
+        const from = startIdx >= 0 ? Math.max(0, startIdx - 5) : 0;
+        const range = { from, to: bars.length - 1 };
+        mainChartRef.current.timeScale().setVisibleLogicalRange(range);
+        volumeChartRef.current.timeScale().setVisibleLogicalRange(range);
+        macdChartRef.current.timeScale().setVisibleLogicalRange(range);
+      } else {
+        const defaultVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
+        const from = Math.max(0, bars.length - defaultVisible);
+        const range = { from, to: bars.length - 1 };
+        mainChartRef.current.timeScale().setVisibleLogicalRange(range);
+        volumeChartRef.current.timeScale().setVisibleLogicalRange(range);
+        macdChartRef.current.timeScale().setVisibleLogicalRange(range);
+      }
     }
 
     requestAnimationFrame(() => {
@@ -447,6 +499,10 @@ export default function KLineChart({ market, code, initialData }: Props) {
   );
 
   useEffect(() => {
+    zoomStorageKeyRef.current = zoomStorageKey;
+  }, [zoomStorageKey]);
+
+  useEffect(() => {
     initCharts();
   }, [initCharts]);
 
@@ -454,7 +510,7 @@ export default function KLineChart({ market, code, initialData }: Props) {
     if (!code) return;
 
     if (initialData) {
-      applyData(initialData.data, period);
+      applyData(initialData.data, period, false, initialData.backtestStartTime ?? undefined);
       // Don't auto-refresh for initial data
       if (timerRef.current) clearInterval(timerRef.current);
     } else {

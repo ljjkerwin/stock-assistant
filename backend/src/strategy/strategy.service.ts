@@ -11,7 +11,7 @@ interface BacktestParams {
   endDate: string; // YYYY-MM-DD
   period: KlinePeriod;
   strategy: string;
-  historicalPeriods?: number; // extra periods to load before startDate for indicator calculation
+  historicalPeriods?: number; // extra K-lines to prepend before startDate for indicator warmup (e.g. MA60)
 }
 
 export interface TradeRecord {
@@ -30,6 +30,7 @@ export interface BacktestResult {
   tradeCount: number; // 完整买卖次数（一买一卖算一次）
   trades: TradeRecord[];
   klines: KlineBarWithSignal[];
+  backtestStartTime: string | null; // 回测区间第一根 K 线的时间，用于图表标注
 }
 
 interface Trade {
@@ -51,7 +52,7 @@ export class StrategyService {
   constructor(private klineService: KlineService) {}
 
   async backtest(params: BacktestParams): Promise<BacktestResult> {
-    const { market, code, startDate, endDate, period, strategy, historicalPeriods = 60 } = params;
+    const { market, code, startDate, endDate, period, strategy, historicalPeriods = 70 } = params;
 
     if (!['趋势策略'].includes(strategy)) {
       throw new BadRequestException(`Unknown strategy: ${strategy}`);
@@ -72,22 +73,25 @@ export class StrategyService {
       return new Date(y, mo - 1, d, h, mi).getTime();
     };
 
-    const startTs = new Date(startDate).getTime();
-    const endTs = new Date(endDate).getTime() + 24 * 60 * 60 * 1000;
+    // Use parseTime (local time) consistently to avoid UTC vs local midnight mismatch
+    const startTs = parseTime(startDate);
+    const endTs = parseTime(endDate) + 24 * 60 * 60 * 1000;
 
-    // Load historical data for indicator calculation
-    const historicalDate = new Date(startDate);
-    historicalDate.setDate(historicalDate.getDate() - historicalPeriods);
-    const historicalTs = historicalDate.getTime();
+    // 截取到 endDate 的所有 K 线
+    const barsToEnd = bars.filter((bar) => parseTime(bar.time) <= endTs);
 
-    const allBars = bars.filter((bar) => {
-      const barTs = parseTime(bar.time);
-      return barTs >= historicalTs && barTs <= endTs;
-    });
-
-    if (allBars.length === 0) {
-      throw new BadRequestException('No kline data available');
+    // 找到 startDate 在 barsToEnd 中的位置
+    const startIndexInFull = barsToEnd.findIndex((bar) => parseTime(bar.time) >= startTs);
+    if (startIndexInFull === -1) {
+      throw new BadRequestException('No data in the specified date range');
     }
+
+    // 向前多取 historicalPeriods 根 K 线用于指标预热（确保 MA60 等在回测起点有效）
+    const histStartIndex = Math.max(0, startIndexInFull - historicalPeriods);
+    const allBars = barsToEnd.slice(histStartIndex);
+
+    // 回测区间在 allBars 中的起始索引，策略只从此处开始开仓
+    const testStartIndex = startIndexInFull - histStartIndex;
 
     // Keep track of which bars are in the actual test range
     const filtered = allBars.filter((bar) => {
@@ -95,19 +99,15 @@ export class StrategyService {
       return barTs >= startTs && barTs <= endTs;
     });
 
-    if (filtered.length === 0) {
-      throw new BadRequestException('No data in the specified date range');
-    }
-
     // 计算技术指标 - 使用所有历史数据以确保指标准确
     const barsWithIndicators = this.calculateIndicators(allBars);
 
-    // 执行策略回测 - 在完整数据上运行
+    // 执行策略回测 - 在完整数据上运行，但仅从 testStartIndex 开始开仓
     let trades: Trade[] = [];
     let signals: (string | null)[] = [];
 
     if (strategy === '趋势策略') {
-      ({ trades, signals } = this.trendStrategy(barsWithIndicators));
+      ({ trades, signals } = this.trendStrategy(barsWithIndicators, testStartIndex));
     }
 
     // 标记信号并过滤回测范围内的交易
@@ -170,6 +170,7 @@ export class StrategyService {
       tradeCount: tradesInRange.length,
       trades: tradeRecords,
       klines: klineWithSignals,
+      backtestStartTime: testStartIndex >= 0 ? (allBars[testStartIndex]?.time ?? null) : null,
     };
   }
 
@@ -310,7 +311,10 @@ export class StrategyService {
     return 100 - 100 / (1 + rs);
   }
 
-  private trendStrategy(bars: KlineBarWithSignal[]): {
+  private trendStrategy(
+    bars: KlineBarWithSignal[],
+    testStartIndex: number,
+  ): {
     trades: Trade[];
     signals: (string | null)[];
   } {
@@ -327,8 +331,13 @@ export class StrategyService {
       if (bar.ma.ma5 != null && bar.ma.ma10 != null && i > 0) {
         const prevBar = bars[i - 1];
 
-        // 买入：MA5从下方穿越MA10
-        if (!position && prevBar.ma.ma5! <= prevBar.ma.ma10! && bar.ma.ma5 > bar.ma.ma10) {
+        // 买入：MA5从下方穿越MA10；仅在回测开始（testStartIndex）后允许开仓
+        if (
+          i >= testStartIndex &&
+          !position &&
+          prevBar.ma.ma5! <= prevBar.ma.ma10! &&
+          bar.ma.ma5 > bar.ma.ma10
+        ) {
           position = true;
           buyTime = bar.time;
           buyPrice = bar.close;

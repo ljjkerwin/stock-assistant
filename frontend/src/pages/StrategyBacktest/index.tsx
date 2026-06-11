@@ -35,6 +35,7 @@ interface BacktestResult {
   tradeCount: number;
   trades: TradeRecord[];
   klines: KlineBar[];
+  backtestStartTime?: string | null;
 }
 
 interface CachedParams {
@@ -168,12 +169,15 @@ export default function StrategyBacktest() {
     const endStr = endDate.format('YYYY-MM-DD');
     const key = buildKey(code, market, period, strategy, startStr, endStr);
 
-    const cached = getCachedResult(key);
-    if (cached) {
-      setResult(cached);
-      setFromCache(true);
-      return;
-    }
+    // Clear cached result and zoom so the chart always shows fresh data and resets view
+    try {
+      const cache = readResultCache();
+      delete cache[key];
+      localStorage.setItem(RESULTS_KEY, JSON.stringify(cache));
+    } catch { /* ignore */ }
+    try {
+      localStorage.removeItem(`kline:zoom:${code}`);
+    } catch { /* ignore */ }
 
     setLoading(true);
     setFromCache(false);
@@ -376,7 +380,8 @@ export default function StrategyBacktest() {
                   <KLineChart
                     market={market}
                     code={code || ''}
-                    initialData={{ data: result.klines, period }}
+                    initialData={{ data: result.klines, period, backtestStartTime: result.backtestStartTime }}
+                    zoomStorageKey={code}
                   />
                 </Card>
               </Col>
