@@ -45,6 +45,7 @@ interface Trade {
 
 interface KlineBarWithSignal extends KlineBar {
   signal?: 'buy' | 'sell' | null;
+  shouldHold?: boolean; // 当前 K 线是否处于值得持仓的状态（由策略判定）
 }
 
 @Injectable()
@@ -323,37 +324,54 @@ export class StrategyService {
     let position = false;
     let buyTime = '';
     let buyPrice = 0;
+    let buyReason = '';
 
+    // 第一步：为所有 K 线预计算 shouldHold（MA5 >= MA10 时值得持仓）
     for (let i = 0; i < bars.length; i++) {
+      const { ma5, ma10 } = bars[i].ma;
+      bars[i].shouldHold = ma5 != null && ma10 != null && ma5 >= ma10;
+    }
+
+    // 第二步：回测起点若已处于持仓区间，立即买入，不等待穿越信号
+    const startBar = bars[testStartIndex];
+    if (startBar?.shouldHold) {
+      position = true;
+      buyTime = startBar.time;
+      buyPrice = startBar.close;
+      buyReason = `回测起点 MA5(${startBar.ma.ma5!.toFixed(3)}) >= MA10(${startBar.ma.ma10!.toFixed(3)})，立即建仓`;
+      signals[testStartIndex] = 'buy';
+    }
+
+    // 第三步：逐根 K 线处理买卖信号（从 testStartIndex + 1 开始）
+    for (let i = Math.max(1, testStartIndex + 1); i < bars.length; i++) {
       const bar = bars[i];
+      const prevBar = bars[i - 1];
 
-      // 趋势策略：MA5穿越MA10作为买卖信号
-      if (bar.ma.ma5 != null && bar.ma.ma10 != null && i > 0) {
-        const prevBar = bars[i - 1];
+      if (bar.ma.ma5 == null || bar.ma.ma10 == null) continue;
 
-        // 买入：MA5从下方穿越MA10；仅在回测开始（testStartIndex）后允许开仓
-        if (
-          i >= testStartIndex &&
-          !position &&
-          prevBar.ma.ma5! <= prevBar.ma.ma10! &&
-          bar.ma.ma5 > bar.ma.ma10
-        ) {
-          position = true;
-          buyTime = bar.time;
-          buyPrice = bar.close;
-          signals[i] = 'buy';
-        }
-
-        // 卖出：MA5从上方穿越MA10
-        if (position && prevBar.ma.ma5! >= prevBar.ma.ma10! && bar.ma.ma5 < bar.ma.ma10) {
+      // 买入：shouldHold 从 false 转为 true（MA5 向上穿越 MA10）
+      if (!position && !prevBar.shouldHold && bar.shouldHold) {
+        position = true;
+        buyTime = bar.time;
+        buyPrice = bar.close;
+        buyReason = `MA5(${bar.ma.ma5.toFixed(3)}) 上穿 MA10(${bar.ma.ma10.toFixed(3)})`;
+        signals[i] = 'buy';
+      } else {
+        // 卖出：股价跌破 MA10 或 MA5 下穿 MA10（与买入互斥，同一根 K 线不同时触发）
+        const priceBelowMa10 = bar.close < bar.ma.ma10;
+        const ma5CrossedBelowMa10 = prevBar.shouldHold && !bar.shouldHold;
+        if (position && (priceBelowMa10 || ma5CrossedBelowMa10)) {
           position = false;
+          const sellReason = priceBelowMa10
+            ? `收盘价(${bar.close.toFixed(3)}) 跌破 MA10(${bar.ma.ma10.toFixed(3)})`
+            : `MA5(${bar.ma.ma5.toFixed(3)}) 下穿 MA10(${bar.ma.ma10.toFixed(3)})`;
           trades.push({
             buyTime,
             buyPrice,
-            buyReason: `MA5(${prevBar.ma.ma5!.toFixed(3)}) 穿越 MA10(${prevBar.ma.ma10!.toFixed(3)})`,
+            buyReason,
             sellTime: bar.time,
             sellPrice: bar.close,
-            sellReason: `MA5(${bar.ma.ma5.toFixed(3)}) 穿越 MA10(${bar.ma.ma10.toFixed(3)})`,
+            sellReason,
             profit: bar.close - buyPrice,
           });
           signals[i] = 'sell';
@@ -367,7 +385,7 @@ export class StrategyService {
       trades.push({
         buyTime,
         buyPrice,
-        buyReason: `MA5(${bars[bars.length - 2]?.ma.ma5?.toFixed(3) ?? '--'}) 穿越 MA10(${bars[bars.length - 2]?.ma.ma10?.toFixed(3) ?? '--'})`,
+        buyReason,
         sellTime: lastBar.time,
         sellPrice: lastBar.close,
         sellReason: '策略回测结束，强制平仓',
