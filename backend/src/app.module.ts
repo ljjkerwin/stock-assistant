@@ -47,4 +47,4 @@ function buildDataSourceOptions(): DataSourceOptions {
     TestModule,
   ],
 })
-export class AppModule { }
+export class AppModule {}
