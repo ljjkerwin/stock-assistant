@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { Tabs, Spin, message } from 'antd';
 import {
   createChart,
+  createSeriesMarkers,
   ColorType,
   CrosshairMode,
   LineSeries,
@@ -26,6 +27,7 @@ import styles from './KLineChart.module.css';
 interface Props {
   market: 'A' | 'HK';
   code: string;
+  initialData?: { data: KlineBar[]; period?: KlinePeriod };
 }
 
 const PERIODS = Object.keys(PERIOD_LABELS) as KlinePeriod[];
@@ -79,8 +81,8 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
   return (t >= 570 && t < 720) || (t >= 780 && t < 960);
 }
 
-export default function KLineChart({ market, code }: Props) {
-  const [period, setPeriod] = useState<KlinePeriod>('timeshare');
+export default function KLineChart({ market, code, initialData }: Props) {
+  const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? 'timeshare');
   const [loading, setLoading] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -332,6 +334,18 @@ export default function KLineChart({ market, code }: Props) {
       });
     }
 
+    // Buy/sell markers (only present when data comes from strategy backtest)
+    const markers = bars
+      .filter((b) => b.signal === 'buy' || b.signal === 'sell')
+      .map((b) =>
+        b.signal === 'buy'
+          ? { time: toChartTime(b.time) as Time, position: 'belowBar', color: '#ef5350', shape: 'arrowUp', text: '买' }
+          : { time: toChartTime(b.time) as Time, position: 'aboveBar', color: '#26a69a', shape: 'arrowDown', text: '卖' },
+      );
+    if (markers.length > 0) {
+      createSeriesMarkers(mainSeriesRef.current!, markers);
+    }
+
     const volSeries = volumeChartRef.current.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: '',
@@ -438,19 +452,26 @@ export default function KLineChart({ market, code }: Props) {
 
   useEffect(() => {
     if (!code) return;
-    void loadData(market, code, period);
 
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      if (isInTradingHours(market)) {
-        void loadData(market, code, period, true);
-      }
-    }, 30000);
+    if (initialData) {
+      applyData(initialData.data, period);
+      // Don't auto-refresh for initial data
+      if (timerRef.current) clearInterval(timerRef.current);
+    } else {
+      void loadData(market, code, period);
+
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        if (isInTradingHours(market)) {
+          void loadData(market, code, period, true);
+        }
+      }, 30000);
+    }
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [market, code, period, loadData]);
+  }, [market, code, period, loadData, initialData, applyData]);
 
   useEffect(() => {
     return () => {

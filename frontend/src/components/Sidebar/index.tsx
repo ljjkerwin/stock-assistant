@@ -18,6 +18,7 @@ const { Text } = Typography;
 
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
+  { value: 'backtest', label: '策略回测' },
   { value: 'fund', label: '基金' },
   { value: 'list', label: '股票列表导入' },
 ];
@@ -28,11 +29,13 @@ export default function Sidebar() {
   const { favorites, fetchFavorites, removeStock, pinStock, reorderStocks } =
     useFavoritesStore();
 
-  const section = pathname.startsWith('/fund')
-    ? 'fund'
-    : pathname.startsWith('/stock-list-import')
-      ? 'list'
-      : 'stock';
+  const section = pathname.startsWith('/strategy-backtest')
+    ? 'backtest'
+    : pathname.startsWith('/fund')
+      ? 'fund'
+      : pathname.startsWith('/stock-list-import')
+        ? 'list'
+        : 'stock';
 
   useEffect(() => {
     fetchFavorites();
@@ -50,9 +53,15 @@ export default function Sidebar() {
   };
 
   const handleSectionChange = (val: string) => {
-    if (val === 'stock') navigate('/stock');
-    else if (val === 'fund') navigate('/fund');
-    else navigate('/stock-list-import');
+    if (val === 'backtest') {
+      navigate('/strategy-backtest');
+    } else if (val === 'stock') {
+      navigate('/stock');
+    } else if (val === 'fund') {
+      navigate('/fund');
+    } else {
+      navigate('/stock-list-import');
+    }
   };
 
   const renderItem = (stock: Stock, index: number, list: Stock[], urlFn: (s: Stock) => string) => (
@@ -125,7 +134,18 @@ export default function Sidebar() {
 
       {section !== 'list' && (
         <div className={styles.search}>
-          {section === 'stock' ? <StockSearch size="middle" /> : <FundSearch size="middle" />}
+          {section === 'fund' ? (
+            <FundSearch size="middle" />
+          ) : (
+            <StockSearch
+              size="middle"
+              onSelect={
+                section === 'backtest'
+                  ? (stock) => navigate(`/strategy-backtest/${stock.code}`)
+                  : undefined
+              }
+            />
+          )}
         </div>
       )}
 
@@ -133,6 +153,14 @@ export default function Sidebar() {
         <div>
           {stockFavorites.map((stock, index) =>
             renderItem(stock, index, stockFavorites, (s) => `/stock/${s.market}/${s.code}`),
+          )}
+        </div>
+      )}
+
+      {section === 'backtest' && (
+        <div>
+          {stockFavorites.map((stock, index) =>
+            renderItem(stock, index, stockFavorites, (s) => `/strategy-backtest/${s.code}`),
           )}
         </div>
       )}

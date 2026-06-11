@@ -36,6 +36,7 @@ export interface KlineBar {
     ma20: number | null;
     ma60: number | null;
   };
+  signal?: 'buy' | 'sell' | null;
 }
 
 export interface KlineResponse {

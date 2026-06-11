@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Typography, Descriptions, Spin, Tag, Button, Tooltip } from 'antd';
-import { StarOutlined, StarFilled } from '@ant-design/icons';
+import { StarOutlined, StarFilled, LineChartOutlined } from '@ant-design/icons';
 import { stocksApi } from '../../api/stock';
 import KLineChart from '../../components/KLineChart';
 import StockMonitorButton from '../../components/StockMonitorButton';
@@ -18,6 +18,7 @@ function formatNumber(n: number | null, digits = 2): string {
 
 export default function StockDetail() {
   const { market, code } = useParams<{ market: string; code: string }>();
+  const navigate = useNavigate();
   const [info, setInfo] = useState<StockInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const { favorites, addStock, removeStock } = useFavoritesStore();
@@ -64,11 +65,20 @@ export default function StockDetail() {
           </Tooltip>
         )}
         {market && code && (
-          <StockMonitorButton
-            market={market as 'A' | 'HK'}
-            code={code}
-            stockName={info?.name ?? code ?? ''}
-          />
+          <>
+            <Tooltip title="策略回测">
+              <Button
+                type="text"
+                icon={<LineChartOutlined />}
+                onClick={() => navigate(`/strategy-backtest/${code}`)}
+              />
+            </Tooltip>
+            <StockMonitorButton
+              market={market as 'A' | 'HK'}
+              code={code}
+              stockName={info?.name ?? code ?? ''}
+            />
+          </>
         )}
       </div>
 

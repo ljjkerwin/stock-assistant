@@ -4,6 +4,7 @@ import type {
   StockInfo,
   KlineResponse,
   KlinePeriod,
+  KlineBar,
   MonitorRule,
   MonitorMessage,
   FundInfo,
@@ -84,4 +85,34 @@ export const monitorApi = {
 
   clearMessages: (): Promise<void> =>
     api.delete('/monitor/messages').then(() => undefined),
+};
+
+interface BacktestResult {
+  priceChangePercent: number;
+  returnPercent: number;
+  maxDrawdown: number;
+  sharpeRatio: number;
+  tradeCount: number;
+  trades: Array<{
+    buyTime: string;
+    buyPrice: number;
+    sellTime: string;
+    sellPrice: number;
+    profit: number;
+  }>;
+  klines: KlineBar[];
+}
+
+export const strategyApi = {
+  backtest: (params: {
+    market: 'A' | 'HK';
+    code: string;
+    startDate: string;
+    endDate: string;
+    period: KlinePeriod;
+    strategy: string;
+  }): Promise<BacktestResult> =>
+    api
+      .get<BacktestResult>('/strategy/backtest', { params })
+      .then((r) => r.data),
 };

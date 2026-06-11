@@ -93,10 +93,13 @@ pnpm dev
 | GET | `/api/fund/:code` | 获取基金基本信息 + 最新净值 + 实时估值 |
 | GET | `/api/fund/:code/nav?limit=` | 获取基金历史净值数据（默认 120 条，最多 1000） |
 | GET | `/api/fund/:code/holdings` | 获取基金最近两期前10大持仓股（季报） |
+| GET | `/api/strategy/backtest?market=&code=&startDate=&endDate=&period=&strategy=` | 策略回测（返回回测结果、K线数据、交易信号） |
 
 `market` 取值：`A`（A股 + 场内ETF）/ `HK`（港股）
 
 `period` 枚举：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
+
+策略取值：`趋势策略`（MA5穿越MA10）
 
 ---
 
@@ -160,6 +163,14 @@ pnpm dev
 - 持仓数据源：`fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc`，返回 JS 变量，解析其中 content HTML；先取当年，不足三期则补拉上一年；最多返回最近三期
 - 持仓表格列结构因季报新旧而不同，同一基金不同期的列数和列顺序均可能不同；`detectRatioIdx` 方法扫描每个 block 的表头行，定位含"净值"文本的列索引，从而精准读取占净值比例，不依赖固定列号
 - `FundHolding` 字段：`rank`、`code`、`name`、`latestPrice`（最新价，number|null）、`marketValue`（占净值比例 %，number|null）
+
+### 策略回测模块（`StrategyModule`）
+- 路由：`/strategy-backtest/:code`，`code` 为股票代码（如 `600000` 或 `00700`）
+- 后端 `StrategyService` 提供策略回测接口，支持指定时间区间、K线周期、回测策略
+- 趋势策略：基于 MA5 穿越 MA10 的买卖信号，买入条件为 MA5 从下方穿越 MA10，卖出条件为 MA5 从上方穿越 MA10
+- 指标计算：MACD、MA5/10/20/60 在后端计算后返回，KDJ 和 RSI 暂时简化实现（用于扩展），可在未来优化
+- 回测结果包含：区间涨跌、回测收益、最大回撤、夏普比率、交易次数、交易详情、带有交易信号的 K线数据
+- K线图复用 `KLineChart` 组件，支持通过 `initialData` 参数传入回测返回的 K线数据，禁用自动轮询
 
 ### 状态管理（Zustand）
 - 收藏列表和当前选中股票均通过 `favoritesStore` 管理
