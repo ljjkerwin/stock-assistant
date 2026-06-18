@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { KlineService } from '../kline/kline.service';
-import { computeKlineAttrs, type KlineBar } from '../kline/kline.service';
+import { getStrategy, strategyNames } from './strategies';
+import type { StrategyBar, Trade } from './strategies';
 
 type KlinePeriod = 'timeshare' | '1min' | '5min' | '15min' | '30min' | '60min' | 'daily' | 'weekly';
 
@@ -11,7 +12,7 @@ interface BacktestParams {
   endDate: string; // YYYY-MM-DD
   period: KlinePeriod;
   strategy: string;
-  historicalPeriods?: number; // extra K-lines to prepend before startDate for indicator warmup (e.g. MA60)
+  historicalPeriods?: number; // 回测起点前额外预取的 K 线根数（用于 cumulHold 连续性等）
 }
 
 export interface TradeRecord {
@@ -29,25 +30,8 @@ export interface BacktestResult {
   sharpeRatio: number; // 夏普比率
   tradeCount: number; // 买卖动作总次数（买入算一次、卖出算一次）
   trades: TradeRecord[];
-  klines: KlineBarWithSignal[];
+  klines: StrategyBar[];
   backtestStartTime: string | null; // 回测区间第一根 K 线的时间，用于图表标注
-}
-
-interface Trade {
-  buyTime: string;
-  buyPrice: number;
-  buyReason: string;
-  sellTime: string;
-  sellPrice: number;
-  sellReason: string;
-  profit: number;
-  forcedClose?: boolean; // 回测结束时仍持仓的末根强制平仓：仅用于计算收益，不标记卖出信号/记录
-}
-
-interface KlineBarWithSignal extends KlineBar {
-  signal?: 'buy' | 'sell' | null;
-  shouldHold?: boolean; // 当前 K 线是否处于值得持仓的状态（由策略判定）
-  cumulHold?: number; // 当前 K 线之前连续 shouldHold 的根数（不含自身，遇 false 归零）
 }
 
 @Injectable()
@@ -57,13 +41,16 @@ export class StrategyService {
   async backtest(params: BacktestParams): Promise<BacktestResult> {
     const { market, code, startDate, endDate, period, strategy, historicalPeriods = 70 } = params;
 
-    if (!['趋势策略'].includes(strategy)) {
-      throw new BadRequestException(`Unknown strategy: ${strategy}`);
+    const strategyImpl = getStrategy(strategy);
+    if (!strategyImpl) {
+      throw new BadRequestException(
+        `Unknown strategy: ${strategy}. Available: ${strategyNames().join(', ')}`,
+      );
     }
 
-    // 获取K线数据
+    // 获取 K 线数据（指标 macd/ma/rsi/attrs 已由接口层 KlineService 计算并附带）
     const klineResp = await this.klineService.getKline(market, code, period);
-    const bars = klineResp.data;
+    const bars = klineResp.data as StrategyBar[];
     if (!bars || bars.length === 0) {
       throw new BadRequestException('No kline data available');
     }
@@ -89,32 +76,24 @@ export class StrategyService {
       throw new BadRequestException('No data in the specified date range');
     }
 
-    // 向前多取 historicalPeriods 根 K 线用于指标预热（确保 MA60 等在回测起点有效）
+    // 向前多取 historicalPeriods 根 K 线（指标已在全量序列上算好，此处仅为 cumulHold 等连续性预热）
     const histStartIndex = Math.max(0, startIndexInFull - historicalPeriods);
     const allBars = barsToEnd.slice(histStartIndex);
 
     // 回测区间在 allBars 中的起始索引，策略只从此处开始开仓
     const testStartIndex = startIndexInFull - histStartIndex;
 
-    // Keep track of which bars are in the actual test range
+    // 回测范围内的 K 线（用于区间涨跌等指标）
     const filtered = allBars.filter((bar) => {
       const barTs = parseTime(bar.time);
       return barTs >= startTs && barTs <= endTs;
     });
 
-    // 计算技术指标 - 使用所有历史数据以确保指标准确
-    const barsWithIndicators = this.calculateIndicators(allBars);
+    // 执行策略：策略层消费接口层指标，输出买卖信号与交易
+    const { trades, signals } = strategyImpl.run({ bars: allBars, testStartIndex });
 
-    // 执行策略回测 - 在完整数据上运行，但仅从 testStartIndex 开始开仓
-    let trades: Trade[] = [];
-    let signals: (string | null)[] = [];
-
-    if (strategy === '趋势策略') {
-      ({ trades, signals } = this.trendStrategy(barsWithIndicators, testStartIndex));
-    }
-
-    // 标记信号并过滤回测范围内的交易
-    const klineWithSignals = barsWithIndicators.map((bar, i) => ({
+    // 标记信号
+    const klineWithSignals: StrategyBar[] = allBars.map((bar, i) => ({
       ...bar,
       signal: signals[i] as 'buy' | 'sell' | null,
     }));
@@ -143,10 +122,10 @@ export class StrategyService {
     }
 
     // 计算最大回撤
-    const maxDrawdown = this.calculateMaxDrawdown(klineWithSignals, tradesInRange);
+    const maxDrawdown = this.calculateMaxDrawdown(tradesInRange);
 
     // 计算夏普比率（假设无风险利率为0）
-    const sharpeRatio = this.calculateSharpeRatio(klineWithSignals, tradesInRange);
+    const sharpeRatio = this.calculateSharpeRatio(tradesInRange);
 
     const tradeRecords: TradeRecord[] = [];
     for (const trade of tradesInRange) {
@@ -180,241 +159,7 @@ export class StrategyService {
     };
   }
 
-  private calculateIndicators(bars: KlineBar[]): KlineBarWithSignal[] {
-    const result = bars.map((bar, i) => {
-      // 保留接口层（KlineService）计算的 rsi 等字段，仅重算 MA / MACD
-      const out: KlineBarWithSignal = { ...bar };
-
-      // Update MA values
-      out.ma = {
-        ma5: this.calculateMA(bars, i, 5),
-        ma10: this.calculateMA(bars, i, 10),
-        ma20: this.calculateMA(bars, i, 20),
-        ma60: this.calculateMA(bars, i, 60),
-      };
-
-      // Update MACD values
-      const macd = this.calculateMACD(bars, i);
-      out.macd = {
-        dif: macd.macd,
-        dea: macd.signal,
-        bar: macd.hist,
-      };
-
-      return out;
-    });
-
-    // 基于重算后的 MA / MACD 重新计算 ljj 综合属性（attrs 依赖前一根 dif）
-    result.forEach((bar, i) => {
-      bar.attrs = computeKlineAttrs(bar, i > 0 ? result[i - 1].macd.dif : null);
-    });
-
-    return result;
-  }
-
-  private calculateMA(bars: KlineBar[], index: number, period: number): number | null {
-    if (index < period - 1) return null;
-    let sum = 0;
-    for (let i = index - period + 1; i <= index; i++) {
-      sum += bars[i].close;
-    }
-    return sum / period;
-  }
-
-  private calculateMACD(
-    bars: KlineBar[],
-    index: number,
-  ): { macd: number; signal: number; hist: number } {
-    const fastPeriod = 12;
-    const slowPeriod = 26;
-    const signalPeriod = 9;
-
-    const fastEMA = this.calculateEMA(bars, index, fastPeriod);
-    const slowEMA = this.calculateEMA(bars, index, slowPeriod);
-    const macd = fastEMA - slowEMA;
-
-    // 简化实现：使用简单平均作为信号线
-    let signalSum = 0;
-    let count = 0;
-    for (let i = Math.max(0, index - signalPeriod + 1); i <= index; i++) {
-      const f = this.calculateEMA(bars, i, fastPeriod);
-      const s = this.calculateEMA(bars, i, slowPeriod);
-      signalSum += f - s;
-      count++;
-    }
-    const signal = signalSum / count;
-    const hist = macd - signal;
-
-    return { macd, signal, hist };
-  }
-
-  private calculateEMA(bars: KlineBar[], index: number, period: number): number {
-    if (index < period - 1) {
-      let sum = 0;
-      for (let i = 0; i <= index; i++) {
-        sum += bars[i].close;
-      }
-      return sum / (index + 1);
-    }
-
-    const alpha = 2 / (period + 1);
-    let ema = 0;
-    for (let i = 0; i < period; i++) {
-      ema += bars[i].close;
-    }
-    ema /= period;
-
-    for (let i = period; i <= index; i++) {
-      ema = bars[i].close * alpha + ema * (1 - alpha);
-    }
-    return ema;
-  }
-
-  private calculateKDJ(bars: KlineBar[], index: number): { k: number; d: number; j: number } {
-    const period = 14;
-    if (index < period - 1) {
-      return { k: 50, d: 50, j: 50 };
-    }
-
-    let highest = bars[index - period + 1].high;
-    let lowest = bars[index - period + 1].low;
-
-    for (let i = index - period + 1; i <= index; i++) {
-      highest = Math.max(highest, bars[i].high);
-      lowest = Math.min(lowest, bars[i].low);
-    }
-
-    // 简化实现：RSV的简单平均
-    let kdjSum = 0;
-    for (let i = Math.max(0, index - 2); i <= index; i++) {
-      let h = bars[Math.max(0, i - period + 1)].high;
-      let l = bars[Math.max(0, i - period + 1)].low;
-      for (let j = Math.max(0, i - period + 1); j <= i; j++) {
-        h = Math.max(h, bars[j].high);
-        l = Math.min(l, bars[j].low);
-      }
-      const r = h - l;
-      kdjSum += r === 0 ? 50 : ((bars[i].close - l) / r) * 100;
-    }
-    const k = kdjSum / 3;
-    const d = (k + 50 + 50) / 3;
-    const j = 3 * k - 2 * d;
-
-    return { k, d, j };
-  }
-
-  private calculateRSI(bars: KlineBar[], index: number): number {
-    const period = 14;
-    if (index < period) {
-      return 50;
-    }
-
-    let upSum = 0;
-    let downSum = 0;
-
-    for (let i = index - period; i < index; i++) {
-      const change = bars[i + 1].close - bars[i].close;
-      if (change > 0) {
-        upSum += change;
-      } else {
-        downSum += Math.abs(change);
-      }
-    }
-
-    const rs = upSum / downSum;
-    return 100 - 100 / (1 + rs);
-  }
-
-  private trendStrategy(
-    bars: KlineBarWithSignal[],
-    testStartIndex: number,
-  ): {
-    trades: Trade[];
-    signals: (string | null)[];
-  } {
-    const trades: Trade[] = [];
-    const signals: Array<string | null> = Array(bars.length).fill(null) as Array<string | null>;
-    let position = false;
-    let buyTime = '';
-    let buyPrice = 0;
-    let buyReason = '';
-
-    // 第一步：为所有 K 线预计算 shouldHold（综合属性 KMACD+KRSI+KMA 同时满足时值得持仓）
-    for (let i = 0; i < bars.length; i++) {
-      const { kmacd, krsi, kma } = bars[i].attrs;
-      bars[i].shouldHold = kmacd && krsi && kma;
-    }
-
-    // cumulHold：当前 K 线之前连续 shouldHold 的根数（不含自身，遇 false 归零）
-    // 递推 cumulHold[i] = shouldHold[i-1] ? cumulHold[i-1] + 1 : 0，首根为 0
-    for (let i = 0; i < bars.length; i++) {
-      bars[i].cumulHold = i > 0 && bars[i - 1].shouldHold ? (bars[i - 1].cumulHold ?? 0) + 1 : 0;
-    }
-
-    // K 线强度过滤：买入要求当日上涨（changePercent > 0），避免在阴线/平盘时买入
-    const isStrongCandle = (bar: KlineBarWithSignal): boolean =>
-      bar.changePercent != null && bar.changePercent > 0;
-
-    // 第二步：回测起点若已处于持仓区间且当根 K 线强度达标，立即买入，不等待穿越信号
-    const startBar = bars[testStartIndex];
-    if (startBar?.shouldHold && isStrongCandle(startBar)) {
-      position = true;
-      buyTime = startBar.time;
-      buyPrice = startBar.close;
-      buyReason = '回测起点 shouldHold 为 true 且 K 线强度达标，立即建仓';
-      signals[testStartIndex] = 'buy';
-    }
-
-    // 第三步：逐根 K 线处理买卖信号（从 testStartIndex + 1 开始）
-    for (let i = Math.max(1, testStartIndex + 1); i < bars.length; i++) {
-      const bar = bars[i];
-      const prevBar = bars[i - 1];
-
-      if (bar.ma.ma5 == null || bar.ma.ma10 == null) continue;
-
-      // 买入：shouldHold 由 false 转为 true，且当根 K 线强度达标（避免中阴线买入）
-      if (!position && !prevBar.shouldHold && bar.shouldHold && isStrongCandle(bar)) {
-        position = true;
-        buyTime = bar.time;
-        buyPrice = bar.close;
-        buyReason = 'shouldHold 由 false 转为 true 且 K 线强度达标';
-        signals[i] = 'buy';
-      } else if (position && !bar.shouldHold) {
-        // 卖出：shouldHold 转为 false（与买入互斥，同一根 K 线不同时触发）
-        position = false;
-        trades.push({
-          buyTime,
-          buyPrice,
-          buyReason,
-          sellTime: bar.time,
-          sellPrice: bar.close,
-          sellReason: 'shouldHold 由 true 转为 false',
-          profit: bar.close - buyPrice,
-        });
-        signals[i] = 'sell';
-      }
-    }
-
-    // 如果还有未平仓位置，以最后一根K线收盘价平仓
-    // 该末根平仓标记为 forcedClose：仅用于计算回测收益，不在图表上打卖出信号、也不生成卖出交易记录
-    if (position && bars.length > 0) {
-      const lastBar = bars[bars.length - 1];
-      trades.push({
-        buyTime,
-        buyPrice,
-        buyReason,
-        sellTime: lastBar.time,
-        sellPrice: lastBar.close,
-        sellReason: '策略回测结束，强制平仓',
-        profit: lastBar.close - buyPrice,
-        forcedClose: true,
-      });
-    }
-
-    return { trades, signals };
-  }
-
-  private calculateMaxDrawdown(bars: KlineBarWithSignal[], trades: Trade[]): number {
+  private calculateMaxDrawdown(trades: Trade[]): number {
     if (trades.length === 0) {
       return 0;
     }
@@ -432,7 +177,7 @@ export class StrategyService {
     return maxDrawdown;
   }
 
-  private calculateSharpeRatio(bars: KlineBarWithSignal[], trades: Trade[]): number {
+  private calculateSharpeRatio(trades: Trade[]): number {
     if (trades.length === 0) {
       return 0;
     }

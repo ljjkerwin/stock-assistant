@@ -24,13 +24,16 @@ stock-assistant/
 │   │   ├── Sidebar/             # 左侧面板（顶端 Select 切换股票/基金模式）
 │   │   ├── KLineChart/          # K线图公共组件（封装 Lightweight Charts）
 │   │   ├── NavChart/            # 基金净值折线图组件（封装 Lightweight Charts）
+│   │   ├── HoldingKlinePopup/   # hover 弹出近期日 K 线图（持仓/列表页复用）
 │   │   ├── StockSearch/         # 股票搜索组件
 │   │   ├── FundSearch/          # 基金搜索组件
+│   │   ├── MonitorCenter/       # 左下角消息通知中心弹窗
 │   │   └── StockMonitorButton/  # 个股监控规则按钮（嵌入详情页标题栏）
 │   ├── pages/
 │   │   ├── Home/           # 首页（暂空）
 │   │   ├── StockDetail/    # 股票详情页
 │   │   ├── FundDetail/     # 基金详情页（路由 /fund/:code）
+│   │   ├── StrategyBacktest/     # 策略回测页（路由 /strategy-backtest/:code）
 │   │   └── StockListImport/      # 股票列表页（路由 /stock-list-import，导入文件查看，数据不入库）
 │   ├── store/
 │   │   └── favoritesStore.ts  # Zustand 全局状态
@@ -39,9 +42,11 @@ stock-assistant/
 │   └── types/                 # TypeScript 类型定义
 ├── backend/src/
 │   ├── stocks/                # 股票搜索 + 基本信息接口
-│   ├── kline/                 # K线数据接口（统一封装多市场数据源）
+│   ├── kline/                 # K线数据接口（统一封装多市场数据源，含指标计算）
 │   ├── fund/                  # 基金净值接口（东方财富 lsjz + 实时估值）
 │   ├── favorites/             # 收藏夹 CRUD + SQLite 实体
+│   ├── monitor/               # 监控规则 + 触发消息 + SSE 推送 + 邮件通知
+│   ├── strategy/              # 策略回测（strategies/ 下为可扩展策略实现）
 │   ├── cache.ts               # MemCache + 交易时段感知 TTL
 │   ├── app.module.ts
 │   └── main.ts
@@ -107,7 +112,7 @@ pnpm dev
 
 ### K线图（`KLineChart` 组件）
 - 分时图渲染折线图，其他周期渲染蜡烛线
-- 副图包含成交量（柱状图，涨红跌绿）和 MACD(4,35,4)
+- 副图包含成交量（柱状图，涨红跌绿）和 MACD(12,26,9)
 - MACD 由**后端计算**后随 K 线数据一并返回，前端不做指标计算
 - 每根 K 线附带 `changePercent` 字段（当日涨跌幅 %，相对前一根 K 线收盘价，保留两位小数；首根无前收为 null），在 `KlineService.calcMACD` 中统一计算，回测接口的 K 线数据同样携带；主图 legend hover 时优先用该字段展示涨跌幅
 - 三个图（主图、量图、MACD 图）各有 legend，鼠标在任意图区移动时三者同步更新；`applyData` 将 bars 存入 `barsRef`，`updateAllLegends(time)` 按时间查表统一刷新
@@ -169,16 +174,47 @@ pnpm dev
 - `FundHolding` 字段：`rank`、`code`、`name`、`latestPrice`（最新价，number|null）、`marketValue`（占净值比例 %，number|null）
 
 ### 策略回测模块（`StrategyModule`）
-- 路由：`/strategy-backtest/:code`，`code` 为股票代码（如 `600000` 或 `00700`）
-- 后端 `StrategyService` 提供策略回测接口，支持指定时间区间、K线周期、回测策略
-- 趋势策略：基于 ljj 综合属性判断每根 K 线是否"值得持仓"（`shouldHold = KMACD && KRSI && KMA`，即三个属性同时满足，属性定义见下方 ljj 副图说明）；回测起点时若 `shouldHold` 已为 true **且当根 K 线强度达标**，则立即建仓（不等待信号），避免错过区间初始涨幅；此后买入需同时满足「`shouldHold` 由 false→true」**且当根 K 线强度达标**；K 线强度达标定义为 `changePercent > 0`（当日上涨），用于避免在阴线/平盘时买入；卖出条件为「`shouldHold` 由 true→false」（与买入互斥，同一根 K 线不同时触发）；由于 KMA 属性本身已含「收盘价 > MA10」，跌破 MA10 时 `shouldHold` 自然转 false 触发卖出，无需单独判断；`shouldHold` 字段随 K 线数据一并返回，可供前端其他功能使用；同时返回 `cumulHold` 字段，表示当前 K 线之前连续 `shouldHold` 为 true 的根数（不含自身，遇 false 归零，递推 `cumulHold[i] = shouldHold[i-1] ? cumulHold[i-1] + 1 : 0`，首根为 0），目前仅作为数据字段返回、前端暂不绘图。回测结束时若仍持仓，则以最后一根 K 线收盘价做「末根强制平仓」（`forcedClose`）：其盈亏照常计入回测收益、最大回撤、夏普比率和交易次数，但**不在 K 线图上标记卖出信号、也不生成卖出交易记录**（交易记录中该笔只保留买入行）。交易次数按买卖动作计数（买入算一次、卖出算一次，故为完整交易笔数 × 2，含末根强制平仓的买卖各一次）
-- 指标计算：MACD、MA5/10/20/60、RSI 在**接口层 `KlineService.calcMACD`** 中计算后随每条 K 线返回（`StrategyService` 仅重算 MACD/MA，RSI 透传）；RSI 以 `rsi` 对象返回，目前仅含 `rsi6`（6 周期，通达信口径 Wilder 平滑 `RSI = avgGain/(avgGain+avgLoss)*100`，首根 K 线无前收返回 null），其他周期需要时再扩展；KDJ 和 `StrategyService` 中原 14 周期 RSI 为简化实现（用于扩展），可在未来优化
-- 回测结果包含：区间涨跌、回测收益、最大回撤、夏普比率、交易次数、交易详情、带有交易信号的 K线数据
-- 页面标题栏右侧提供收藏（星标）按钮，复用 `favoritesStore`（`addStock`/`removeStock`）切换收藏状态；标题展示股票名称（通过 `stocksApi.getInfo` 获取，缺失时回退为代码）
-- 回测配置（K线周期、策略、开始/结束时间）前端 localStorage 缓存：以**全局单条「最近一次回测配置」**形式存储（key `backtest:params`，不再按股票代码分组）；刷新页面或切换股票时自动套用该配置（market 始终由股票代码推断，不入缓存）。回测结果另以 `backtest:result` 缓存（key 含 `code|market|period|strategy|startDate|endDate`），仅当当前股票 + 配置与缓存完全一致时回填并显示「已缓存」标签
-- K线图复用 `KLineChart` 组件，支持通过 `initialData` 参数传入回测返回的 K线数据，禁用自动轮询
-- K线图通过 `showRsi` 开关启用常规 RSI 副图（仅回测页传 `true`）：只画 RSI6（6 个交易日）曲线，数据取 K 线的 `rsi.rsi6` 字段
-- K线图通过 `showLjj` 开关启用「ljj」自定义副图（仅回测页传 `true`，不影响其他页面）：用堆叠柱状图展示每根 K 线满足的综合属性数，每满足一个属性柱高 +1，不同属性不同颜色。**属性在后端计算**，随每根 K 线以 `attrs` 对象返回（布尔字段 `kmacd` / `krsi` / `kma`），由 `KlineService` 导出的纯函数 `computeKlineAttrs(bar, prevDif)` 统一计算；接口层 `calcMACD` 与回测层 `StrategyService.calculateIndicators`（重算 MA/MACD 后）均调用它。当前属性（按堆叠优先级自底向上）：KMACD（橙色，柱底）= `dif > 0` 且 `macd.dif - macd.dea > -0.1`（DIF 接近或高于 DEA）且 DIF 上升（`dif[i] - dif[i-1] > -0.06`，允许 0.06 以内的微跌）；KRSI（蓝色，中部）= 6 个交易日 RSI 值 `rsi.rsi6 >= 50`；KMA（绿色，顶部）= 收盘价 `close > ma10` 且 `ma5 > ma10`。前端按优先级顺序将满足的属性自底向上紧凑堆叠（柱高 0~3），用 3 个 Histogram series 叠加模拟（lightweight-charts 无原生堆叠）：先画整柱(顶段色)，再依次覆盖较矮的中段、底段露出各色带；副图 legend 显示 `KMACD/KRSI/KMA` 的 ✓/✗
+
+**路由与接口**
+- 前端路由：`/strategy-backtest/:code`，`code` 为股票代码（如 `600000` 或 `00700`），market 由代码推断
+- 后端 `StrategyService` 提供回测接口，支持指定时间区间、K 线周期、回测策略
+- 回测结果包含：区间涨跌、回测收益、最大回撤、夏普比率、交易次数、交易详情、带交易信号的 K 线数据
+- 交易次数按买卖动作计数（买入一次、卖出一次，即完整交易笔数 × 2，含末根强制平仓的买卖各一次）
+
+**分层架构（指标 vs 策略）**
+- 「股票指标」（MACD/MA/RSI/`attrs`）由**接口层 `KlineService.calcMACD`** 统一计算并随每根 K 线返回，策略层只读消费、不重算
+- 「策略信息」（`shouldHold`/`cumulHold`/买卖信号/交易）由各策略自行计算
+- `StrategyService.backtest` 是通用 runner：拉取 K 线 → 按区间截取并预热 → 调用策略 → 计算通用回测指标（收益/最大回撤/夏普）
+
+**策略抽象与扩展**
+- `backend/src/strategy/strategies/` 下：`strategy.interface.ts` 定义 `Strategy` 接口（`run({ bars, testStartIndex })` → `{ trades, signals }`，纯函数）；`trend.strategy.ts` 为趋势策略实现；`index.ts` 维护「名称→策略实例」注册表
+- **新增策略**：实现 `Strategy` 接口并在 `index.ts` 的 `STRATEGIES` 数组注册即可，`backtest()` 与 controller 无需改动
+
+**趋势策略（`趋势策略`）**
+- 持仓判断：基于 ljj 综合属性，`shouldHold = KMACD && KRSI && KMA`（三属性同时满足，定义见「ljj 副图」）
+- 买入：回测起点时若 `shouldHold` 已为 true 且当根 K 线强度达标，则立即建仓（不等信号，避免错过区间初始涨幅）；此后买入需「`shouldHold` 由 false→true」且当根强度达标。K 线强度达标 = `changePercent > 0`（当日上涨），用于避免在阴线/平盘买入
+- 卖出：「`shouldHold` 由 true→false」（与买入互斥，同根 K 线不同时触发）。因 KMA 属性已含「收盘价 > MA10」，跌破 MA10 时 `shouldHold` 自然转 false 触发卖出，无需单独判断
+- 末根强制平仓（`forcedClose`）：回测结束仍持仓时以最后一根收盘价平仓，盈亏照常计入收益/回撤/夏普/交易次数，但**不在图上标卖出信号、不生成卖出交易记录**（交易记录该笔只保留买入行）
+- 随 K 线返回的策略字段：`shouldHold`（可供前端复用）；`cumulHold`（当前 K 线之前连续 `shouldHold` 为 true 的根数，不含自身、遇 false 归零，`cumulHold[i] = shouldHold[i-1] ? cumulHold[i-1] + 1 : 0`，首根为 0，目前仅返回、前端暂不绘图）
+
+**指标计算（接口层统一口径）**
+- MACD(12,26,9)（标准参数，全项目统一）、MA5/10/20/60、RSI 均在 `KlineService.calcMACD` 计算后随每条 K 线返回，回测层直接消费、不重算，故回测信号与 K 线图指标完全一致
+- RSI 以 `rsi` 对象返回，目前仅含 `rsi6`（6 周期，通达信口径 Wilder 平滑 `RSI = avgGain/(avgGain+avgLoss)*100`，首根 K 线无前收返回 null），其他周期需要时再扩展
+
+**前端页面**
+- 标题栏右侧提供收藏（星标）按钮，复用 `favoritesStore`（`addStock`/`removeStock`）；标题展示股票名称（`stocksApi.getInfo` 获取，缺失时回退为代码）
+- localStorage 缓存：回测配置以**全局单条「最近一次回测配置」**存储（key `backtest:params`，不按股票分组），刷新或切换股票时自动套用（market 不入缓存，由代码推断）；回测结果以 `backtest:result` 缓存（key 含 `code|market|period|strategy|startDate|endDate`），仅当当前股票 + 配置与缓存完全一致时回填并显示「已缓存」标签
+- K 线图复用 `KLineChart` 组件，通过 `initialData` 传入回测返回的 K 线数据并禁用自动轮询
+
+**K 线图副图（仅回测页启用）**
+- `showRsi`：常规 RSI 副图，只画 RSI6（6 个交易日）曲线，数据取 K 线的 `rsi.rsi6`
+- `showLjj`：「ljj」自定义副图，用堆叠柱状图展示每根 K 线满足的综合属性数（每满足一个属性柱高 +1，不同属性不同色）
+  - 属性在后端计算，随每根 K 线以 `attrs` 对象返回（布尔字段 `kmacd`/`krsi`/`kma`），由 `KlineService` 导出的纯函数 `computeKlineAttrs(bar, prevDif)` 在 `calcMACD` 中统一计算（回测层直接复用）
+  - 属性定义（按堆叠优先级自底向上）：
+    - **KMACD**（橙色，柱底）：`dif > 0` 且 `macd.dif - macd.dea > -0.1`（DIF 接近或高于 DEA）且 DIF 上升（`dif[i] - dif[i-1] > -0.06`，允许 0.06 以内微跌）
+    - **KRSI**（蓝色，中部）：`rsi.rsi6 >= 50`
+    - **KMA**（绿色，顶部）：`close > ma10` 且 `ma5 > ma10`
+  - 渲染：用 3 个 Histogram series 叠加模拟堆叠（lightweight-charts 无原生堆叠）——先画整柱(顶段色)，再依次覆盖较矮的中段、底段露出各色带；副图 legend 显示 `KMACD/KRSI/KMA` 的 ✓/✗
 
 ### 状态管理（Zustand）
 - 收藏列表和当前选中股票均通过 `favoritesStore` 管理

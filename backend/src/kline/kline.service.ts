@@ -342,14 +342,14 @@ export class KlineService {
     throw new Error('unreachable');
   }
 
-  // ── MACD(4,35,4) ──────────────────────────────────────────────────────────
+  // ── MACD(12,26,9) ─────────────────────────────────────────────────────────
 
   calcMACD(bars: RawBar[]): KlineBar[] {
     const closes = bars.map((b) => b.close);
-    const emaShort = this.calcEMA(closes, 4);
-    const emaLong = this.calcEMA(closes, 35);
+    const emaShort = this.calcEMA(closes, 12);
+    const emaLong = this.calcEMA(closes, 26);
     const dif = emaShort.map((v, i) => v - emaLong[i]);
-    const dea = this.calcEMA(dif, 4);
+    const dea = this.calcEMA(dif, 9);
     const macdBar = dif.map((v, i) => (v - dea[i]) * 2);
     const ma5 = this.calcSMA(closes, 5);
     const ma10 = this.calcSMA(closes, 10);

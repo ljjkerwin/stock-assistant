@@ -116,14 +116,6 @@ const PERIODS: { value: KlinePeriod; label: string }[] = [
 
 const STRATEGIES = ['趋势策略'];
 
-const STRATEGY_DETAILS: Record<string, string[]> = {
-  趋势策略: [
-    'shouldHold = KMACD & KRSI & KMA 三个属性同时满足',
-    '买入：回测起点 shouldHold 为 true 立即建仓；此后 shouldHold 由 false 转为 true 时买入',
-    '卖出：shouldHold 由 true 转为 false 时卖出',
-  ],
-};
-
 // ── component ─────────────────────────────────────────────────────────────
 
 export default function StrategyBacktest() {
@@ -314,11 +306,6 @@ export default function StrategyBacktest() {
                     onChange={setStrategy}
                     options={STRATEGIES.map((s) => ({ value: s, label: s }))}
                   />
-                  {STRATEGY_DETAILS[strategy]?.map((line, i) => (
-                    <Typography.Text key={i} type="secondary" style={{ display: 'block', fontSize: 11, marginTop: 4, lineHeight: '1.6' }}>
-                      {line}
-                    </Typography.Text>
-                  ))}
                 </div>
               </Col>
               <Col span={6}>
