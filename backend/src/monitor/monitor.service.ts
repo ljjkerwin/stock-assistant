@@ -9,21 +9,9 @@ import { KlineService } from '../kline/kline.service';
 import { EmailService } from './email.service';
 import { isTrading, isTradingMarket } from '../cache';
 import { CreateRuleDto } from './dto/create-rule.dto';
+import { evaluateRule, MaValues } from './rule-evaluator';
 
 const POLL_INTERVAL_MS = 30_000;
-const COOLDOWN_MS = 30 * 60_000;
-
-type MaPeriod = 'ma5' | 'ma10' | 'ma20' | 'ma60';
-type MaValues = {
-  ma5: number | null;
-  ma10: number | null;
-  ma20: number | null;
-  ma60: number | null;
-};
-
-function isMaPeriod(v: string | null): v is MaPeriod {
-  return v === 'ma5' || v === 'ma10' || v === 'ma20' || v === 'ma60';
-}
 
 @Injectable()
 export class MonitorService implements OnModuleInit, OnModuleDestroy {
@@ -157,62 +145,26 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     currentPrice: number,
     maValues: MaValues | null,
   ): Promise<boolean> {
-    const now = Date.now();
-    const cooledDown = rule.lastTriggeredAt == null || now - rule.lastTriggeredAt >= COOLDOWN_MS;
+    const res = evaluateRule(rule, currentPrice, maValues);
 
-    if (rule.type === 'price_above' && rule.targetPrice != null) {
-      if (currentPrice >= rule.targetPrice) {
-        if (cooledDown) {
-          await this.fire(rule, currentPrice, rule.targetPrice);
-          return true;
-        }
-        this.logger.debug(`[轮询] 规则 #${rule.id} 冷却中 (price_above)，跳过`);
-      }
-      return false;
-    }
-
-    if (rule.type === 'price_below' && rule.targetPrice != null) {
-      if (currentPrice <= rule.targetPrice) {
-        if (cooledDown) {
-          await this.fire(rule, currentPrice, rule.targetPrice);
-          return true;
-        }
-        this.logger.debug(`[轮询] 规则 #${rule.id} 冷却中 (price_below)，跳过`);
-      }
-      return false;
-    }
-
-    if (
-      (rule.type === 'ma_cross_above' || rule.type === 'ma_cross_below') &&
-      maValues != null &&
-      isMaPeriod(rule.maPeriod)
-    ) {
-      const maValue = maValues[rule.maPeriod];
-      if (maValue == null) return false;
-
-      const isAboveNow = currentPrice > maValue;
-
-      if (rule.prevAboveMA == null) {
-        // 首次检查：记录初始状态，不触发
-        await this.ruleRepo.update(rule.id, { prevAboveMA: isAboveNow });
+    if (res.nextPrevAboveMA !== rule.prevAboveMA) {
+      await this.ruleRepo.update(rule.id, { prevAboveMA: res.nextPrevAboveMA });
+      if (rule.prevAboveMA === null && res.nextPrevAboveMA !== null) {
         this.logger.debug(
-          `[轮询] 规则 #${rule.id} 初始化均线状态：价格${isAboveNow ? '在' : '在'}${rule.maPeriod.toUpperCase()}${isAboveNow ? '上方' : '下方'}`,
+          `[轮询] 规则 #${rule.id} 初始化均线状态：价格${res.nextPrevAboveMA ? '在' : '在'}${rule.maPeriod?.toUpperCase()}${res.nextPrevAboveMA ? '上方' : '下方'}`,
         );
-        return false;
       }
+    }
 
-      const wasAbove = rule.prevAboveMA;
-      // 无论是否触发，都更新当前状态
-      await this.ruleRepo.update(rule.id, { prevAboveMA: isAboveNow });
+    if (res.shouldFire && res.targetValue !== null) {
+      await this.fire(rule, currentPrice, res.targetValue);
+      return true;
+    }
 
-      const crossed =
-        rule.type === 'ma_cross_above' ? !wasAbove && isAboveNow : wasAbove && !isAboveNow;
-
-      if (crossed) {
-        if (cooledDown) {
-          await this.fire(rule, currentPrice, maValue);
-          return true;
-        }
+    if (res.reason === 'cooldown') {
+      if (rule.type === 'price_above' || rule.type === 'price_below') {
+        this.logger.debug(`[轮询] 规则 #${rule.id} 冷却中 (${rule.type})，跳过`);
+      } else {
         this.logger.debug(`[轮询] 规则 #${rule.id} 检测到均线穿越但冷却中，跳过`);
       }
     }

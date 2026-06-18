@@ -2,9 +2,11 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { Tabs, Spin, message } from 'antd';
 import {
   createChart,
+  createSeriesMarkers,
   ColorType,
   CrosshairMode,
   LineSeries,
+  LineStyle,
   CandlestickSeries,
   HistogramSeries,
 } from 'lightweight-charts';
@@ -26,7 +28,20 @@ import styles from './KLineChart.module.css';
 interface Props {
   market: 'A' | 'HK';
   code: string;
+  initialData?: { data: KlineBar[]; period?: KlinePeriod; backtestStartTime?: string | null };
+  zoomStorageKey?: string;
+  showPeriodTabs?: boolean;
+  showLjj?: boolean; // 显示 ljj 自定义副图（综合属性堆叠柱状图），仅策略回测页使用
+  showRsi?: boolean; // 显示常规 RSI 副图（RSI6 曲线），仅策略回测页使用
 }
+
+// ljj 副图属性颜色
+const LJJ_MACD_COLOR = '#ff9800'; // 属性 KMACD，位于柱底
+const LJJ_RSI_COLOR = '#1677ff'; // 属性 KRSI，叠加在中部
+const LJJ_MA_COLOR = '#52c41a'; // 属性 KMA，叠加在顶部
+
+// 常规 RSI 副图曲线颜色
+const RSI_LINE_COLOR = '#9C27B0';
 
 const PERIODS = Object.keys(PERIOD_LABELS) as KlinePeriod[];
 
@@ -79,30 +94,41 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
   return (t >= 570 && t < 720) || (t >= 780 && t < 960);
 }
 
-export default function KLineChart({ market, code }: Props) {
-  const [period, setPeriod] = useState<KlinePeriod>('timeshare');
+export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false }: Props) {
+  const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? 'timeshare');
   const [loading, setLoading] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
   const macdRef = useRef<HTMLDivElement>(null);
+  const rsiRef = useRef<HTMLDivElement>(null);
+  const ljjRef = useRef<HTMLDivElement>(null);
 
   const mainChartRef = useRef<IChartApi | null>(null);
   const volumeChartRef = useRef<IChartApi | null>(null);
   const macdChartRef = useRef<IChartApi | null>(null);
+  const rsiChartRef = useRef<IChartApi | null>(null);
+  const ljjChartRef = useRef<IChartApi | null>(null);
 
   const mainSeriesRef = useRef<ISeriesApi<SeriesType> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const difSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const deaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const macdBarSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const rsiSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const ljjTotalSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const ljjMidSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const ljjBottomSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const ma5SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma10SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma60SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const alignWidthRafRef = useRef<number | null>(null);
   const syncingRef = useRef(false);
+  const zoomStorageKeyRef = useRef<string | undefined>(undefined);
+  const zoomSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Data refs — used by legend updater to look up values by time
   const barsRef = useRef<KlineBar[]>([]);
@@ -113,11 +139,19 @@ export default function KLineChart({ market, code }: Props) {
   const mainLegendRef = useRef<HTMLDivElement>(null);
   const volLegendRef = useRef<HTMLDivElement>(null);
   const macdLegendRef = useRef<HTMLDivElement>(null);
+  const rsiLegendRef = useRef<HTMLDivElement>(null);
+  const ljjLegendRef = useRef<HTMLDivElement>(null);
 
   const initCharts = useCallback(() => {
     if (!containerRef.current || !volumeRef.current || !macdRef.current) return;
+    if (showRsi && !rsiRef.current) return;
+    if (showLjj && !ljjRef.current) return;
 
-    [mainChartRef, volumeChartRef, macdChartRef].forEach((ref) => {
+    if (alignWidthRafRef.current !== null) {
+      cancelAnimationFrame(alignWidthRafRef.current);
+      alignWidthRafRef.current = null;
+    }
+    [mainChartRef, volumeChartRef, macdChartRef, rsiChartRef, ljjChartRef].forEach((ref) => {
       ref.current?.remove();
       ref.current = null;
     });
@@ -131,6 +165,32 @@ export default function KLineChart({ market, code }: Props) {
 
     const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
     macdChartRef.current = macdChart;
+
+    let rsiChart: IChartApi | null = null;
+    if (showRsi && rsiRef.current) {
+      rsiChart = createChart(rsiRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+      rsiChartRef.current = rsiChart;
+    }
+
+    let ljjChart: IChartApi | null = null;
+    if (showLjj && ljjRef.current) {
+      ljjChart = createChart(ljjRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+      ljjChartRef.current = ljjChart;
+    }
+
+    // 参与时间轴 / 十字光标联动的全部图表
+    const charts: IChartApi[] = [mainChart, volumeChart, macdChart];
+    if (rsiChart) charts.push(rsiChart);
+    if (ljjChart) charts.push(ljjChart);
+
+    // 各图主 series 引用（用于十字光标定位），在 applyData 后填充
+    const primarySeriesRefs = new Map<IChartApi, () => ISeriesApi<SeriesType> | null>([
+      [mainChart, () => mainSeriesRef.current],
+      [volumeChart, () => volumeSeriesRef.current],
+      [macdChart, () => difSeriesRef.current],
+    ]);
+    if (rsiChart) primarySeriesRefs.set(rsiChart, () => rsiSeriesRef.current);
+    if (ljjChart) primarySeriesRefs.set(ljjChart, () => ljjTotalSeriesRef.current);
 
     // Unified legend updater — looks up bar by chart time and refreshes all three legends
     function updateAllLegends(time: Time) {
@@ -150,11 +210,24 @@ export default function KLineChart({ market, code }: Props) {
               `<span style="color:#1677FF">MA20:${m.ma20?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
               `<span style="color:#9C27B0">MA60:${m.ma60?.toFixed(3) ?? '--'}</span>`
             : '';
+          // 当日涨跌幅：优先用后端返回的 changePercent，缺失时回退按前一根收盘价计算，红涨绿跌
+          let pct = bar.changePercent ?? null;
+          if (pct == null && idx > 0) {
+            const prevClose = barsRef.current[idx - 1].close;
+            if (prevClose !== 0) pct = ((bar.close - prevClose) / prevClose) * 100;
+          }
+          let chgHtml = '';
+          if (pct != null) {
+            const color = pct >= 0 ? '#ef5350' : '#26a69a';
+            const sign = pct >= 0 ? '+' : '';
+            chgHtml = `&nbsp;&nbsp;<span style="color:${color}">涨跌幅:${sign}${pct.toFixed(2)}%</span>`;
+          }
           mainLegendRef.current.innerHTML =
             `<span>开:${bar.open.toFixed(3)}</span>&nbsp;&nbsp;` +
             `<span>高:${bar.high.toFixed(3)}</span>&nbsp;&nbsp;` +
             `<span>低:${bar.low.toFixed(3)}</span>&nbsp;&nbsp;` +
             `<span>收:${bar.close.toFixed(3)}</span>` +
+            chgHtml +
             maHtml;
         }
       }
@@ -170,72 +243,67 @@ export default function KLineChart({ market, code }: Props) {
           `<span style="color:#ff9800">DEA:${fmtNum(bar.macd.dea)}</span>&nbsp;&nbsp;` +
           `<span style="color:${barColor}">MACD:${fmtNum(bar.macd.bar)}</span>`;
       }
+
+      if (rsiLegendRef.current) {
+        rsiLegendRef.current.innerHTML = `<span style="color:${RSI_LINE_COLOR}">RSI6:${fmtNum(bar.rsi?.rsi6)}</span>`;
+      }
+
+      if (ljjLegendRef.current) {
+        const a = bar.attrs;
+        ljjLegendRef.current.innerHTML =
+          `<span style="color:${LJJ_MACD_COLOR}">KMACD:${a?.kmacd ? '✓' : '✗'}</span>&nbsp;&nbsp;` +
+          `<span style="color:${LJJ_RSI_COLOR}">KRSI:${a?.krsi ? '✓' : '✗'}</span>&nbsp;&nbsp;` +
+          `<span style="color:${LJJ_MA_COLOR}">KMA:${a?.kma ? '✓' : '✗'}</span>`;
+      }
     }
 
-    mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (range) {
-        volumeChart.timeScale().setVisibleLogicalRange(range);
-        macdChart.timeScale().setVisibleLogicalRange(range);
-      }
-    });
-    volumeChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (range) {
-        mainChart.timeScale().setVisibleLogicalRange(range);
-        macdChart.timeScale().setVisibleLogicalRange(range);
-      }
-    });
-    macdChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (range) {
-        mainChart.timeScale().setVisibleLogicalRange(range);
-        volumeChart.timeScale().setVisibleLogicalRange(range);
-      }
-    });
-
-    mainChart.subscribeCrosshairMove((param) => {
-      if (param.time) updateAllLegends(param.time);
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      if (param.time) {
-        if (volumeSeriesRef.current) volumeChart.setCrosshairPosition(0, param.time, volumeSeriesRef.current);
-        if (difSeriesRef.current) macdChart.setCrosshairPosition(0, param.time, difSeriesRef.current);
-      } else {
-        volumeChart.clearCrosshairPosition();
-        macdChart.clearCrosshairPosition();
-      }
-      syncingRef.current = false;
+    // 时间轴范围联动：任一图表缩放/平移时同步其余图表，主图额外持久化 zoom
+    charts.forEach((chart) => {
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (!range) return;
+        charts.forEach((other) => {
+          if (other !== chart) other.timeScale().setVisibleLogicalRange(range);
+        });
+        if (chart === mainChart && zoomStorageKeyRef.current) {
+          if (zoomSaveTimerRef.current) clearTimeout(zoomSaveTimerRef.current);
+          zoomSaveTimerRef.current = setTimeout(() => {
+            try {
+              localStorage.setItem(`kline:zoom:${zoomStorageKeyRef.current!}`, JSON.stringify(range));
+            } catch { /* localStorage unavailable */ }
+          }, 500);
+        }
+      });
     });
 
-    volumeChart.subscribeCrosshairMove((param) => {
-      if (param.time) updateAllLegends(param.time);
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      if (param.time) {
-        if (mainSeriesRef.current) mainChart.setCrosshairPosition(0, param.time, mainSeriesRef.current);
-        if (difSeriesRef.current) macdChart.setCrosshairPosition(0, param.time, difSeriesRef.current);
-      } else {
-        mainChart.clearCrosshairPosition();
-        macdChart.clearCrosshairPosition();
-      }
-      syncingRef.current = false;
+    // 十字光标联动：任一图表移动时同步刷新所有 legend 并在其余图表定位光标
+    charts.forEach((chart) => {
+      chart.subscribeCrosshairMove((param) => {
+        if (param.time) updateAllLegends(param.time);
+        if (syncingRef.current) return;
+        syncingRef.current = true;
+        charts.forEach((other) => {
+          if (other === chart) return;
+          const series = primarySeriesRefs.get(other)?.();
+          if (param.time && series) {
+            other.setCrosshairPosition(0, param.time, series);
+          } else if (!param.time) {
+            other.clearCrosshairPosition();
+          }
+        });
+        syncingRef.current = false;
+      });
     });
+  }, [showLjj, showRsi]);
 
-    macdChart.subscribeCrosshairMove((param) => {
-      if (param.time) updateAllLegends(param.time);
-      if (syncingRef.current) return;
-      syncingRef.current = true;
-      if (param.time) {
-        if (mainSeriesRef.current) mainChart.setCrosshairPosition(0, param.time, mainSeriesRef.current);
-        if (volumeSeriesRef.current) volumeChart.setCrosshairPosition(0, param.time, volumeSeriesRef.current);
-      } else {
-        mainChart.clearCrosshairPosition();
-        volumeChart.clearCrosshairPosition();
-      }
-      syncingRef.current = false;
-    });
-  }, []);
-
-  const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod, preserveViewport = false) => {
+  const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod, preserveViewport = false, backtestStartTime?: string | null) => {
     if (!mainChartRef.current || !volumeChartRef.current || !macdChartRef.current) return;
+
+    // 所有已激活的图表（RSI、ljj 为可选副图）
+    const activeCharts: IChartApi[] = [mainChartRef.current, volumeChartRef.current, macdChartRef.current];
+    if (rsiChartRef.current) activeCharts.push(rsiChartRef.current);
+    if (ljjChartRef.current) activeCharts.push(ljjChartRef.current);
+    const setAllRange = (range: LogicalRange) => activeCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(range));
+    const fitAll = () => activeCharts.forEach((c) => c.timeScale().fitContent());
 
     // Save current viewport before clearing series so it can be restored after refresh
     let savedRange: LogicalRange | null = null;
@@ -247,9 +315,7 @@ export default function KLineChart({ market, code }: Props) {
     const interactionOpts = isTimeshare
       ? { handleScale: false, handleScroll: false }
       : { handleScale: true, handleScroll: true };
-    [mainChartRef.current, volumeChartRef.current, macdChartRef.current].forEach((c) =>
-      c?.applyOptions(interactionOpts),
-    );
+    activeCharts.forEach((c) => c.applyOptions(interactionOpts));
 
     if (isTimeshare && bars.length > 0) {
       const latestDate = bars[bars.length - 1].time.split(' ')[0];
@@ -278,6 +344,16 @@ export default function KLineChart({ market, code }: Props) {
     [difSeriesRef, deaSeriesRef, macdBarSeriesRef].forEach((ref) => {
       if (ref.current) {
         macdChartRef.current!.removeSeries(ref.current);
+        ref.current = null;
+      }
+    });
+    if (rsiSeriesRef.current && rsiChartRef.current) {
+      rsiChartRef.current.removeSeries(rsiSeriesRef.current);
+      rsiSeriesRef.current = null;
+    }
+    [ljjTotalSeriesRef, ljjMidSeriesRef, ljjBottomSeriesRef].forEach((ref) => {
+      if (ref.current && ljjChartRef.current) {
+        ljjChartRef.current.removeSeries(ref.current);
         ref.current = null;
       }
     });
@@ -330,6 +406,36 @@ export default function KLineChart({ market, code }: Props) {
         );
         ref.current = series;
       });
+    }
+
+    // Buy/sell markers (only present when data comes from strategy backtest)
+    const markers: Parameters<typeof createSeriesMarkers>[1] = bars
+      .filter((b) => b.signal === 'buy' || b.signal === 'sell')
+      .map((b) =>
+        b.signal === 'buy'
+          ? { time: toChartTime(b.time) as Time, position: 'belowBar' as const, color: '#ef5350', shape: 'arrowUp' as const, text: '买' }
+          : { time: toChartTime(b.time) as Time, position: 'aboveBar' as const, color: '#26a69a', shape: 'arrowDown' as const, text: '卖' },
+      );
+
+    // 回测起始标记
+    if (backtestStartTime) {
+      const startBar = bars.find((b) => b.time === backtestStartTime);
+      if (startBar) {
+        markers.unshift({
+          time: toChartTime(startBar.time) as Time,
+          position: 'belowBar' as const,
+          color: '#1677ff',
+          shape: 'square' as const,
+          text: '回测起始',
+        });
+      }
+    }
+
+    // markers 必须按时间升序
+    markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+
+    if (markers.length > 0) {
+      createSeriesMarkers(mainSeriesRef.current!, markers);
     }
 
     const volSeries = volumeChartRef.current.addSeries(HistogramSeries, {
@@ -385,28 +491,109 @@ export default function KLineChart({ market, code }: Props) {
     );
     macdBarSeriesRef.current = macdBarSeries;
 
-    if (preserveViewport && savedRange) {
-      mainChartRef.current.timeScale().setVisibleLogicalRange(savedRange);
-      volumeChartRef.current.timeScale().setVisibleLogicalRange(savedRange);
-      macdChartRef.current.timeScale().setVisibleLogicalRange(savedRange);
-    } else if (isTimeshare || bars.length === 0) {
-      mainChartRef.current.timeScale().fitContent();
-      volumeChartRef.current.timeScale().fitContent();
-      macdChartRef.current.timeScale().fitContent();
-    } else {
-      const defaultVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
-      const from = Math.max(0, bars.length - defaultVisible);
-      const range = { from, to: bars.length - 1 };
-      mainChartRef.current.timeScale().setVisibleLogicalRange(range);
-      volumeChartRef.current.timeScale().setVisibleLogicalRange(range);
-      macdChartRef.current.timeScale().setVisibleLogicalRange(range);
+    // 常规 RSI 副图：仅 RSI6 曲线
+    if (rsiChartRef.current) {
+      const rsiSeries = rsiChartRef.current.addSeries(LineSeries, {
+        color: RSI_LINE_COLOR,
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+      rsiSeries.setData(
+        bars
+          .filter((b) => b.rsi?.rsi6 != null)
+          .map((b) => ({ time: toChartTime(b.time), value: b.rsi!.rsi6! } as LineData)),
+      );
+      // 50 中轴虚线
+      rsiSeries.createPriceLine({
+        price: 50,
+        color: '#999',
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: '50',
+      });
+      rsiSeriesRef.current = rsiSeries;
     }
 
-    requestAnimationFrame(() => {
-      const charts = [mainChartRef.current, volumeChartRef.current, macdChartRef.current];
-      const maxWidth = Math.max(...charts.map((c) => c?.priceScale('right').width() ?? 0));
+    // ljj 副图：综合属性堆叠柱状图（属性由后端计算，见 KlineBar.attrs）
+    // lightweight-charts 无原生堆叠，用 3 个 Histogram 叠加模拟：每根 K 线满足的属性
+    // 按固定优先级 [KMACD 底 → KRSI 中 → KMA 顶] 自下而上紧凑堆叠，柱高 = 满足数(0~3)。
+    // 画法：先画整柱(顶段色)，再依次覆盖较矮的中段、底段，露出各自颜色的色带。
+    if (ljjChartRef.current) {
+      // 优先级顺序：数组靠前者位于柱底
+      const ljjOrder: { key: 'kmacd' | 'krsi' | 'kma'; color: string }[] = [
+        { key: 'kmacd', color: LJJ_MACD_COLOR },
+        { key: 'krsi', color: LJJ_RSI_COLOR },
+        { key: 'kma', color: LJJ_MA_COLOR },
+      ];
+      // 每根 K 线满足属性的颜色（按优先级顺序，自底向上）
+      const slotsPerBar = bars.map((b) => ljjOrder.filter((a) => b.attrs?.[a.key]).map((a) => a.color));
+
+      // layer 0 在最底层（绘制顺序最先），显示顶段；layer 2 最后绘制，露出底段
+      const makeLayer = (layer: number, ref: typeof ljjTotalSeriesRef) => {
+        const series = ljjChartRef.current!.addSeries(HistogramSeries, {
+          priceScaleId: 'right',
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        series.setData(
+          bars.map((b, i) => {
+            const slots = slotsPerBar[i];
+            const count = slots.length;
+            const value = count > layer ? count - layer : 0;
+            // 该层露出的色带对应自顶向下第 layer 个已满足属性
+            const color = count > layer ? slots[count - 1 - layer] : LJJ_MACD_COLOR;
+            return { time: toChartTime(b.time), value, color } as HistogramData;
+          }),
+        );
+        ref.current = series;
+      };
+      makeLayer(0, ljjTotalSeriesRef);
+      makeLayer(1, ljjMidSeriesRef);
+      makeLayer(2, ljjBottomSeriesRef);
+    }
+
+    if (preserveViewport && savedRange) {
+      setAllRange(savedRange);
+    } else if (isTimeshare || bars.length === 0) {
+      fitAll();
+    } else {
+      // Restore persisted zoom if available
+      let restoredZoom: LogicalRange | null = null;
+      if (zoomStorageKeyRef.current) {
+        try {
+          const s = localStorage.getItem(`kline:zoom:${zoomStorageKeyRef.current}`);
+          restoredZoom = s ? (JSON.parse(s) as LogicalRange) : null;
+        } catch { /* localStorage unavailable */ }
+      }
+
+      if (restoredZoom) {
+        setAllRange(restoredZoom);
+      } else if (backtestStartTime) {
+        // 回测模式：以回测起始点为锚，前留少量历史上下文
+        const startIdx = bars.findIndex((b) => b.time === backtestStartTime);
+        const from = startIdx >= 0 ? Math.max(0, startIdx - 5) : 0;
+        setAllRange({ from, to: bars.length - 1 });
+      } else {
+        const defaultVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
+        const from = Math.max(0, bars.length - defaultVisible);
+        setAllRange({ from, to: bars.length - 1 });
+      }
+    }
+
+    if (alignWidthRafRef.current !== null) cancelAnimationFrame(alignWidthRafRef.current);
+    alignWidthRafRef.current = requestAnimationFrame(() => {
+      alignWidthRafRef.current = null;
+      // 图表可能在下一帧前被销毁/重建（initCharts 或卸载），需重新读取当前实例
+      const liveCharts: IChartApi[] = [mainChartRef.current, volumeChartRef.current, macdChartRef.current]
+        .concat(rsiChartRef.current ?? [], ljjChartRef.current ?? [])
+        .filter((c): c is IChartApi => c != null);
+      // 若实例已被替换（首个不再是当时捕获的主图），说明本次对齐已过期
+      if (liveCharts.length === 0 || liveCharts[0] !== activeCharts[0]) return;
+      const maxWidth = Math.max(...liveCharts.map((c) => c.priceScale('right').width()));
       if (maxWidth > 0) {
-        charts.forEach((c) => c?.applyOptions({ rightPriceScale: { minimumWidth: maxWidth } }));
+        liveCharts.forEach((c) => c.applyOptions({ rightPriceScale: { minimumWidth: maxWidth } }));
       }
     });
   }, []);
@@ -433,29 +620,44 @@ export default function KLineChart({ market, code }: Props) {
   );
 
   useEffect(() => {
+    zoomStorageKeyRef.current = zoomStorageKey;
+  }, [zoomStorageKey]);
+
+  useEffect(() => {
     initCharts();
   }, [initCharts]);
 
   useEffect(() => {
     if (!code) return;
-    void loadData(market, code, period);
 
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      if (isInTradingHours(market)) {
-        void loadData(market, code, period, true);
-      }
-    }, 30000);
+    if (initialData) {
+      applyData(initialData.data, period, false, initialData.backtestStartTime ?? undefined);
+      // Don't auto-refresh for initial data
+      if (timerRef.current) clearInterval(timerRef.current);
+    } else {
+      void loadData(market, code, period);
+
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        if (isInTradingHours(market)) {
+          void loadData(market, code, period, true);
+        }
+      }, 30000);
+    }
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [market, code, period, loadData]);
+  }, [market, code, period, loadData, initialData, applyData]);
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      [mainChartRef, volumeChartRef, macdChartRef].forEach((ref) => {
+      if (alignWidthRafRef.current !== null) {
+        cancelAnimationFrame(alignWidthRafRef.current);
+        alignWidthRafRef.current = null;
+      }
+      [mainChartRef, volumeChartRef, macdChartRef, rsiChartRef, ljjChartRef].forEach((ref) => {
         ref.current?.remove();
         ref.current = null;
       });
@@ -466,13 +668,15 @@ export default function KLineChart({ market, code }: Props) {
 
   return (
     <div className={styles.wrapper}>
-      <Tabs
-        activeKey={period}
-        onChange={(k) => setPeriod(k as KlinePeriod)}
-        items={tabItems}
-        size="small"
-        className={styles.tabs}
-      />
+      {showPeriodTabs && (
+        <Tabs
+          activeKey={period}
+          onChange={(k) => setPeriod(k as KlinePeriod)}
+          items={tabItems}
+          size="small"
+          className={styles.tabs}
+        />
+      )}
       <Spin spinning={loading}>
         <div className={styles.subWrapper}>
           <div ref={mainLegendRef} className={styles.subLegend} />
@@ -486,6 +690,18 @@ export default function KLineChart({ market, code }: Props) {
           <div ref={macdLegendRef} className={styles.subLegend}>DIF: --&nbsp;&nbsp;DEA: --&nbsp;&nbsp;MACD: --</div>
           <div ref={macdRef} className={styles.sub} />
         </div>
+        {showRsi && (
+          <div className={styles.subWrapper}>
+            <div ref={rsiLegendRef} className={styles.subLegend}>RSI6: --</div>
+            <div ref={rsiRef} className={styles.sub} />
+          </div>
+        )}
+        {showLjj && (
+          <div className={styles.subWrapper}>
+            <div ref={ljjLegendRef} className={styles.subLegend}>ljj&nbsp;&nbsp;KMACD: --&nbsp;&nbsp;KRSI: --&nbsp;&nbsp;KMA: --</div>
+            <div ref={ljjRef} className={styles.sub} />
+          </div>
+        )}
       </Spin>
     </div>
   );

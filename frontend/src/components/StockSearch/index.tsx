@@ -13,9 +13,10 @@ interface Option {
 
 interface Props {
   size?: 'small' | 'middle' | 'large';
+  onSelect?: (stock: Stock) => void;
 }
 
-export default function StockSearch({ size = 'middle' }: Props) {
+export default function StockSearch({ size = 'middle', onSelect: onSelectProp }: Props) {
   const [options, setOptions] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
   const queryRef = useRef('');
@@ -50,7 +51,11 @@ export default function StockSearch({ size = 'middle' }: Props) {
   };
 
   const onSelect = (_value: string, option: Option) => {
-    navigate(`/stock/${option.stock.market}/${option.stock.code}`);
+    if (onSelectProp) {
+      onSelectProp(option.stock);
+    } else {
+      navigate(`/stock/${option.stock.market}/${option.stock.code}`);
+    }
   };
 
   return (

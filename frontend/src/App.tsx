@@ -6,6 +6,7 @@ import Home from './pages/Home';
 import StockDetail from './pages/StockDetail';
 import FundDetail from './pages/FundDetail';
 import StockListImport from './pages/StockListImport';
+import StrategyBacktest from './pages/StrategyBacktest';
 import MonitorCenter from './components/MonitorCenter';
 import styles from './App.module.css';
 
@@ -24,6 +25,8 @@ export default function App() {
             <Route path="/fund" element={<Home />} />
             <Route path="/fund/:code" element={<FundDetail />} />
             <Route path="/stock-list-import" element={<StockListImport />} />
+            <Route path="/strategy-backtest" element={<StrategyBacktest />} />
+            <Route path="/strategy-backtest/:code" element={<StrategyBacktest />} />
           </Routes>
         </main>
       </div>

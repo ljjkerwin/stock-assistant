@@ -11,7 +11,7 @@
 | 前端状态管理 | Zustand |
 | 后端框架 | Node.js + NestJS |
 | 数据存储 | SQLite（通过 TypeORM） |
-| 股票数据源 | 东方财富（搜索 + 行情）、新浪财经（A股K线）、Yahoo Finance（港股K线） |
+| 股票数据源 | 东方财富（搜索 + 行情）；K线：腾讯财经（A股/ETF 全周期 + 港股日/周线，日/周线前复权）+ Yahoo Finance（港股分时/分钟线） |
 
 ---
 
@@ -40,9 +40,9 @@
 │  ┌──────▼──────┐ ┌─▼──────────────────┐ │
 │  │   SQLite    │ │    外部数据源       │ │
 │  │ (收藏/配置) │ │ 东方财富(搜索/行情)│ │
-│  └─────────────┘ │ 新浪(A股K线)       │ │
-│                  │ Yahoo(港股K线)     │ │
-│                  └────────────────────┘ │
+│  │             │ │ 腾讯(K线前复权)    │ │
+│  │             │ │ Yahoo(港股分钟)    │ │
+│  └─────────────┘ └────────────────────┘ │
 └─────────────────────────────────────────┘
 ```
 
@@ -171,7 +171,11 @@ period 枚举值：
       "low": 1695.0,
       "close": 1730.0,
       "volume": 12345678,
-      "macd": { "dif": 5.2, "dea": 3.1, "bar": 4.2 }
+      "changePercent": 1.76,
+      "macd": { "dif": 5.2, "dea": 3.1, "bar": 4.2 },
+      "ma": { "ma5": 1720.0, "ma10": 1710.0, "ma20": 1700.0, "ma60": 1680.0 },
+      "rsi": { "rsi6": 62.5 },
+      "attrs": { "kmacd": true, "krsi": true, "kma": false }
     }
   ]
 }
@@ -217,7 +221,7 @@ interface KLineChartProps {
 
 ## 后端 K线服务统一封装
 
-`KlineService` 屏蔽不同市场的数据源差异，对上层提供统一接口：
+`KlineService` 屏蔽不同市场/周期的数据源差异，对上层提供统一接口。`fetchBars` 按周期与市场路由数据源：
 
 ```typescript
 @Injectable()
@@ -229,15 +233,27 @@ export class KlineService {
     const cached = this.klineCache.get(`${market}:${code}:${period}`);
     if (cached) return cached;
 
-    const raw = market === 'A'
-      ? await this.fetchSina(code, period)   // 新浪财经 A股K线
-      : await this.fetchYahoo(code, period)  // Yahoo Finance 港股K线
+    const raw = await this.fetchBars(market, code, period);
     const bars = this.calcMACD(raw)          // 统一在后端计算 MACD(4,35,4)
     this.klineCache.set(key, bars, tradingTtl(t, o));
     return bars;
   }
+
+  private fetchBars(market, code, period) {
+    // 日/周线（需前复权）：A股/ETF 与港股均走腾讯 fqkline（qfq）
+    if (period === 'daily' || period === 'weekly') return this.fetchTencentFq(market, code, period);
+    // 分时/分钟线（不复权）：A股/ETF 走腾讯 mkline，港股走 Yahoo
+    return market === 'A' ? this.fetchTencentMin(code, period) : this.fetchYahoo(code, period);
+  }
 }
 ```
+
+数据源选型与细节：
+- **为何不用东方财富/新浪**：东方财富 push2his 按 IP 强限流（几次请求即拒连），新浪 getKLineData 不支持复权——故 K线主源改用**腾讯财经 ifzq**（原生前复权、抓取宽松、国内直连）
+- **日/周线（前复权）**：腾讯 `web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=symbol,day|week,,,500,qfq`；A股/ETF 取返回的 `qfqday`/`qfqweek`，港股取 `day`/`week`（港股日线行尾附带分红对象，忽略）
+- **分时/分钟线（不复权）**：A股/ETF 腾讯 `ifzq.gtimg.cn/appstock/app/kline/mkline`（周期码 `m1/m5/m15/m30/m60`，分时用 `m1`）；港股腾讯不提供分钟线，走 Yahoo `query1.finance.yahoo.com/v8/finance/chart`
+- 腾讯 symbol：港股 `hk`+5 位（`hk00700`）；A股/ETF 沪市（`6`/`5` 开头）`sh`、深市 `sz`
+- 腾讯每行均为数组 `[时间, 开, 收, 高, 低, 量, ...]`（开-收-高-低顺序），`parseTencentRows` 统一解析
 
 MACD 指标在后端统一计算后随 K 线数据一并返回，前端无需自行计算。
 
