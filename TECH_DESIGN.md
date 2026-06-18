@@ -171,7 +171,11 @@ period 枚举值：
       "low": 1695.0,
       "close": 1730.0,
       "volume": 12345678,
-      "macd": { "dif": 5.2, "dea": 3.1, "bar": 4.2 }
+      "changePercent": 1.76,
+      "macd": { "dif": 5.2, "dea": 3.1, "bar": 4.2 },
+      "ma": { "ma5": 1720.0, "ma10": 1710.0, "ma20": 1700.0, "ma60": 1680.0 },
+      "rsi": { "rsi6": 62.5 },
+      "attrs": { "kmacd": true, "krsi": true, "kma": false }
     }
   ]
 }

@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { KlineService } from '../kline/kline.service';
-import type { KlineBar } from '../kline/kline.service';
+import { computeKlineAttrs, type KlineBar } from '../kline/kline.service';
 
 type KlinePeriod = 'timeshare' | '1min' | '5min' | '15min' | '30min' | '60min' | 'daily' | 'weekly';
 
@@ -19,7 +19,7 @@ export interface TradeRecord {
   time: string;
   price: number;
   reason: string;
-  profit?: number; // 仅卖出记录包含
+  profit?: number; // 盈亏百分比 %，仅卖出记录包含
 }
 
 export interface BacktestResult {
@@ -27,7 +27,7 @@ export interface BacktestResult {
   returnPercent: number; // 回测收益 %
   maxDrawdown: number; // 最大回撤 %
   sharpeRatio: number; // 夏普比率
-  tradeCount: number; // 完整买卖次数（一买一卖算一次）
+  tradeCount: number; // 买卖动作总次数（买入算一次、卖出算一次）
   trades: TradeRecord[];
   klines: KlineBarWithSignal[];
   backtestStartTime: string | null; // 回测区间第一根 K 线的时间，用于图表标注
@@ -41,11 +41,13 @@ interface Trade {
   sellPrice: number;
   sellReason: string;
   profit: number;
+  forcedClose?: boolean; // 回测结束时仍持仓的末根强制平仓：仅用于计算收益，不标记卖出信号/记录
 }
 
 interface KlineBarWithSignal extends KlineBar {
   signal?: 'buy' | 'sell' | null;
   shouldHold?: boolean; // 当前 K 线是否处于值得持仓的状态（由策略判定）
+  cumulHold?: number; // 当前 K 线之前连续 shouldHold 的根数（不含自身，遇 false 归零）
 }
 
 @Injectable()
@@ -154,13 +156,16 @@ export class StrategyService {
         price: trade.buyPrice,
         reason: trade.buyReason,
       });
-      tradeRecords.push({
-        type: 'sell',
-        time: trade.sellTime,
-        price: trade.sellPrice,
-        reason: trade.sellReason,
-        profit: trade.profit,
-      });
+      // 末根强制平仓不生成卖出记录，但其盈亏仍计入 returnPercent 等指标
+      if (!trade.forcedClose) {
+        tradeRecords.push({
+          type: 'sell',
+          time: trade.sellTime,
+          price: trade.sellPrice,
+          reason: trade.sellReason,
+          profit: ((trade.sellPrice - trade.buyPrice) / trade.buyPrice) * 100,
+        });
+      }
     }
 
     return {
@@ -168,7 +173,7 @@ export class StrategyService {
       returnPercent,
       maxDrawdown,
       sharpeRatio,
-      tradeCount: tradesInRange.length,
+      tradeCount: tradesInRange.length * 2, // 每笔交易含一次买入 + 一次卖出（末根强制平仓的卖出也计入）
       trades: tradeRecords,
       klines: klineWithSignals,
       backtestStartTime: testStartIndex >= 0 ? (allBars[testStartIndex]?.time ?? null) : null,
@@ -176,11 +181,12 @@ export class StrategyService {
   }
 
   private calculateIndicators(bars: KlineBar[]): KlineBarWithSignal[] {
-    return bars.map((bar, i) => {
-      const result: KlineBarWithSignal = { ...bar };
+    const result = bars.map((bar, i) => {
+      // 保留接口层（KlineService）计算的 rsi 等字段，仅重算 MA / MACD
+      const out: KlineBarWithSignal = { ...bar };
 
       // Update MA values
-      result.ma = {
+      out.ma = {
         ma5: this.calculateMA(bars, i, 5),
         ma10: this.calculateMA(bars, i, 10),
         ma20: this.calculateMA(bars, i, 20),
@@ -189,14 +195,21 @@ export class StrategyService {
 
       // Update MACD values
       const macd = this.calculateMACD(bars, i);
-      result.macd = {
+      out.macd = {
         dif: macd.macd,
         dea: macd.signal,
         bar: macd.hist,
       };
 
-      return result;
+      return out;
     });
+
+    // 基于重算后的 MA / MACD 重新计算 ljj 综合属性（attrs 依赖前一根 dif）
+    result.forEach((bar, i) => {
+      bar.attrs = computeKlineAttrs(bar, i > 0 ? result[i - 1].macd.dif : null);
+    });
+
+    return result;
   }
 
   private calculateMA(bars: KlineBar[], index: number, period: number): number | null {
@@ -326,19 +339,29 @@ export class StrategyService {
     let buyPrice = 0;
     let buyReason = '';
 
-    // 第一步：为所有 K 线预计算 shouldHold（MA5 >= MA10 时值得持仓）
+    // 第一步：为所有 K 线预计算 shouldHold（综合属性 KMACD+KRSI+KMA 同时满足时值得持仓）
     for (let i = 0; i < bars.length; i++) {
-      const { ma5, ma10 } = bars[i].ma;
-      bars[i].shouldHold = ma5 != null && ma10 != null && ma5 >= ma10;
+      const { kmacd, krsi, kma } = bars[i].attrs;
+      bars[i].shouldHold = kmacd && krsi && kma;
     }
 
-    // 第二步：回测起点若已处于持仓区间，立即买入，不等待穿越信号
+    // cumulHold：当前 K 线之前连续 shouldHold 的根数（不含自身，遇 false 归零）
+    // 递推 cumulHold[i] = shouldHold[i-1] ? cumulHold[i-1] + 1 : 0，首根为 0
+    for (let i = 0; i < bars.length; i++) {
+      bars[i].cumulHold = i > 0 && bars[i - 1].shouldHold ? (bars[i - 1].cumulHold ?? 0) + 1 : 0;
+    }
+
+    // K 线强度过滤：买入要求当日上涨（changePercent > 0），避免在阴线/平盘时买入
+    const isStrongCandle = (bar: KlineBarWithSignal): boolean =>
+      bar.changePercent != null && bar.changePercent > 0;
+
+    // 第二步：回测起点若已处于持仓区间且当根 K 线强度达标，立即买入，不等待穿越信号
     const startBar = bars[testStartIndex];
-    if (startBar?.shouldHold) {
+    if (startBar?.shouldHold && isStrongCandle(startBar)) {
       position = true;
       buyTime = startBar.time;
       buyPrice = startBar.close;
-      buyReason = `回测起点 MA5(${startBar.ma.ma5!.toFixed(3)}) >= MA10(${startBar.ma.ma10!.toFixed(3)})，立即建仓`;
+      buyReason = '回测起点 shouldHold 为 true 且 K 线强度达标，立即建仓';
       signals[testStartIndex] = 'buy';
     }
 
@@ -349,37 +372,31 @@ export class StrategyService {
 
       if (bar.ma.ma5 == null || bar.ma.ma10 == null) continue;
 
-      // 买入：shouldHold 从 false 转为 true（MA5 向上穿越 MA10）
-      if (!position && !prevBar.shouldHold && bar.shouldHold) {
+      // 买入：shouldHold 由 false 转为 true，且当根 K 线强度达标（避免中阴线买入）
+      if (!position && !prevBar.shouldHold && bar.shouldHold && isStrongCandle(bar)) {
         position = true;
         buyTime = bar.time;
         buyPrice = bar.close;
-        buyReason = `MA5(${bar.ma.ma5.toFixed(3)}) 上穿 MA10(${bar.ma.ma10.toFixed(3)})`;
+        buyReason = 'shouldHold 由 false 转为 true 且 K 线强度达标';
         signals[i] = 'buy';
-      } else {
-        // 卖出：股价跌破 MA10 或 MA5 下穿 MA10（与买入互斥，同一根 K 线不同时触发）
-        const priceBelowMa10 = bar.close < bar.ma.ma10;
-        const ma5CrossedBelowMa10 = prevBar.shouldHold && !bar.shouldHold;
-        if (position && (priceBelowMa10 || ma5CrossedBelowMa10)) {
-          position = false;
-          const sellReason = priceBelowMa10
-            ? `收盘价(${bar.close.toFixed(3)}) 跌破 MA10(${bar.ma.ma10.toFixed(3)})`
-            : `MA5(${bar.ma.ma5.toFixed(3)}) 下穿 MA10(${bar.ma.ma10.toFixed(3)})`;
-          trades.push({
-            buyTime,
-            buyPrice,
-            buyReason,
-            sellTime: bar.time,
-            sellPrice: bar.close,
-            sellReason,
-            profit: bar.close - buyPrice,
-          });
-          signals[i] = 'sell';
-        }
+      } else if (position && !bar.shouldHold) {
+        // 卖出：shouldHold 转为 false（与买入互斥，同一根 K 线不同时触发）
+        position = false;
+        trades.push({
+          buyTime,
+          buyPrice,
+          buyReason,
+          sellTime: bar.time,
+          sellPrice: bar.close,
+          sellReason: 'shouldHold 由 true 转为 false',
+          profit: bar.close - buyPrice,
+        });
+        signals[i] = 'sell';
       }
     }
 
     // 如果还有未平仓位置，以最后一根K线收盘价平仓
+    // 该末根平仓标记为 forcedClose：仅用于计算回测收益，不在图表上打卖出信号、也不生成卖出交易记录
     if (position && bars.length > 0) {
       const lastBar = bars[bars.length - 1];
       trades.push({
@@ -390,8 +407,8 @@ export class StrategyService {
         sellPrice: lastBar.close,
         sellReason: '策略回测结束，强制平仓',
         profit: lastBar.close - buyPrice,
+        forcedClose: true,
       });
-      signals[bars.length - 1] = 'sell';
     }
 
     return { trades, signals };

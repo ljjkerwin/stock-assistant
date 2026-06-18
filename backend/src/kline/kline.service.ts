@@ -84,6 +84,7 @@ export interface KlineBar {
   low: number;
   close: number;
   volume: number;
+  changePercent: number | null; // 当日涨跌幅 %（相对前一根 K 线收盘价；首根无前收为 null）
   macd: {
     dif: number;
     dea: number;
@@ -94,6 +95,34 @@ export interface KlineBar {
     ma10: number | null;
     ma20: number | null;
     ma60: number | null;
+  };
+  rsi: {
+    rsi6: number | null;
+    // 其他周期（如 rsi12、rsi24）暂不计算，需要时再扩展
+  };
+  // 「ljj」综合属性（布尔），用于回测页 ljj 副图堆叠柱状图
+  attrs: {
+    kmacd: boolean; // dif > 0 且 dif - dea > -0.02 且 DIF 较前值上升（dif/prevDif > 0.99）
+    krsi: boolean; // rsi6 >= 50
+    kma: boolean; // 收盘价 > MA10 且 MA5 > MA10
+  };
+}
+
+/**
+ * 计算单根 K 线的「ljj」综合属性。纯函数，供接口层与回测层共用。
+ * @param bar 已含 macd / ma / rsi / close 的 K 线
+ * @param prevDif 前一根 K 线的 macd.dif（首根传 null）
+ */
+export function computeKlineAttrs(
+  bar: Pick<KlineBar, 'close' | 'macd' | 'ma' | 'rsi'>,
+  prevDif: number | null,
+): KlineBar['attrs'] {
+  const { dif, dea } = bar.macd;
+  const { ma5, ma10 } = bar.ma;
+  return {
+    kmacd: dif > 0 && dif - dea > -0.1 && prevDif != null && (dif > prevDif || dif / prevDif > 0.99),
+    krsi: (bar.rsi.rsi6 ?? 0) >= 50,
+    kma: ma10 != null && ma5 != null && bar.close > ma10 && ma5 > ma10,
   };
 }
 
@@ -264,9 +293,14 @@ export class KlineService {
     const ma10 = this.calcSMA(closes, 10);
     const ma20 = this.calcSMA(closes, 20);
     const ma60 = this.calcSMA(closes, 60);
+    const rsi6 = this.calcRSI(closes, 6);
 
-    return bars.map((bar, i) => ({
+    const result: KlineBar[] = bars.map((bar, i) => ({
       ...bar,
+      changePercent:
+        i > 0 && closes[i - 1] !== 0
+          ? parseFloat((((bar.close - closes[i - 1]) / closes[i - 1]) * 100).toFixed(2))
+          : null,
       macd: {
         dif: parseFloat(dif[i].toFixed(4)),
         dea: parseFloat(dea[i].toFixed(4)),
@@ -278,7 +312,50 @@ export class KlineService {
         ma20: ma20[i],
         ma60: ma60[i],
       },
+      rsi: {
+        rsi6: rsi6[i],
+      },
+      attrs: { kmacd: false, krsi: false, kma: false },
     }));
+
+    // attrs 依赖前一根的 dif，单独再遍历一次（使用四舍五入后的 dif，与前端历史行为一致）
+    result.forEach((bar, i) => {
+      bar.attrs = computeKlineAttrs(bar, i > 0 ? result[i - 1].macd.dif : null);
+    });
+
+    return result;
+  }
+
+  /**
+   * RSI 序列（通达信口径，Wilder 平滑）。
+   * RSI = SMA(涨幅, N, 1) / (SMA(涨幅, N, 1) + SMA(跌幅, N, 1)) * 100
+   * 首根无前收，返回 null。
+   */
+  private calcRSI(data: number[], period: number): (number | null)[] {
+    const n = data.length;
+    const result: (number | null)[] = new Array<number | null>(n).fill(null);
+    if (n < 2) return result;
+
+    let avgGain = 0;
+    let avgLoss = 0;
+    for (let i = 1; i < n; i++) {
+      const change = data[i] - data[i - 1];
+      const gain = change > 0 ? change : 0;
+      const loss = change < 0 ? -change : 0;
+
+      if (i === 1) {
+        avgGain = gain;
+        avgLoss = loss;
+      } else {
+        avgGain = (gain + avgGain * (period - 1)) / period;
+        avgLoss = (loss + avgLoss * (period - 1)) / period;
+      }
+
+      const denom = avgGain + avgLoss;
+      result[i] = parseFloat((denom === 0 ? 50 : (avgGain / denom) * 100).toFixed(2));
+    }
+
+    return result;
   }
 
   private calcSMA(data: number[], period: number): (number | null)[] {

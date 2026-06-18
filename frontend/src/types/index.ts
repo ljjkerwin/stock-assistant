@@ -25,6 +25,7 @@ export interface KlineBar {
   low: number;
   close: number;
   volume: number;
+  changePercent: number | null; // 当日涨跌幅 %（相对前一根 K 线收盘价；首根无前收为 null）
   macd: {
     dif: number;
     dea: number;
@@ -36,7 +37,18 @@ export interface KlineBar {
     ma20: number | null;
     ma60: number | null;
   };
+  rsi: {
+    rsi6: number | null; // RSI6 指标（通达信口径）；其他周期暂不计算
+  };
+  // 「ljj」综合属性（后端计算），用于回测页 ljj 副图
+  attrs: {
+    kmacd: boolean; // dif > 0 且 dif - dea > -0.02 且 DIF 上升（dif/prevDif > 0.99）
+    krsi: boolean; // rsi6 >= 50
+    kma: boolean; // 收盘价 > MA10 且 MA5 > MA10
+  };
   signal?: 'buy' | 'sell' | null;
+  shouldHold?: boolean; // 当前 K 线是否处于值得持仓的状态（由策略判定）
+  cumulHold?: number; // 当前 K 线之前连续 shouldHold 的根数（不含自身，遇 false 归零）
 }
 
 export interface KlineResponse {
