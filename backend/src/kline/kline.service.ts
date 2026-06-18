@@ -3,29 +3,39 @@ import axios from 'axios';
 import { yahooGet } from '../yahoo-session';
 import { MemCache, tradingTtl } from '../cache';
 
-// ── Sina (A-shares) ──────────────────────────────────────────────────────────
+// ── 腾讯财经（A股/ETF 全周期 + 港股日/周线；日/周线前复权 qfq）────────────────
+//
+// 数据源选型说明：东方财富 push2his 按 IP 强限流（几次请求即拒连），不适合做主源；
+// 新浪 getKLineData 不支持复权。腾讯 ifzq 接口原生支持前复权且对抓取宽松、国内直连。
 
-const SINA_HEADERS = {
+const TENCENT_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  Referer: 'https://finance.sina.com.cn/',
+  Referer: 'https://gu.qq.com/',
 };
 
-// quotes.sina.cn supports all scales including scale=1; money.finance.sina.com.cn returns null for scale=1
-const SINA_KLINE_URL =
-  'https://quotes.sina.cn/cn/api/json_v2.php/CN_MarketDataService.getKLineData';
+const TENCENT_FQKLINE_URL = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get'; // 日/周线，支持 qfq 前复权
+const TENCENT_MKLINE_URL = 'https://ifzq.gtimg.cn/appstock/app/kline/mkline'; // 分钟线（不复权，仅 A股/ETF）
 
-const SINA_SCALE_MAP: Record<string, number> = {
-  '1min': 1,
-  '5min': 5,
-  '15min': 15,
-  '30min': 30,
-  '60min': 60,
-  daily: 240,
-  weekly: 1680,
+// 周期 → 腾讯 fqkline 周期码（日/周线，前复权）
+const TENCENT_FQ_MAP: Record<string, string> = {
+  daily: 'day',
+  weekly: 'week',
 };
 
-// ── Yahoo Finance (HK stocks) ────────────────────────────────────────────────
+// 周期 → 腾讯 mkline 分钟周期码（A股/ETF 分时与分钟线，不复权；分时用 m1）
+const TENCENT_MIN_MAP: Record<string, string> = {
+  timeshare: 'm1',
+  '1min': 'm1',
+  '5min': 'm5',
+  '15min': 'm15',
+  '30min': 'm30',
+  '60min': 'm60',
+};
+
+const TENCENT_LIMIT = 500;
+
+// ── Yahoo Finance（港股分时/分钟线，不复权）──────────────────────────────────
 
 const YAHOO_INTERVAL_MAP: Record<string, string> = {
   timeshare: '1m',
@@ -51,13 +61,9 @@ const YAHOO_RANGE_MAP: Record<string, string> = {
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 
-interface SinaBar {
-  day: string;
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
+interface TencentKlineResponse {
+  code?: number;
+  data?: Record<string, Record<string, unknown>>;
 }
 
 interface YahooChartResult {
@@ -102,7 +108,7 @@ export interface KlineBar {
   };
   // 「ljj」综合属性（布尔），用于回测页 ljj 副图堆叠柱状图
   attrs: {
-    kmacd: boolean; // dif > 0 且 dif - dea > -0.02 且 DIF 较前值上升（dif/prevDif > 0.99）
+    kmacd: boolean; // dif > 0 且 dif - dea > -0.1 且 DIF 较前值上升（dif - prevDif > -0.06，允许微跌）
     krsi: boolean; // rsi6 >= 50
     kma: boolean; // 收盘价 > MA10 且 MA5 > MA10
   };
@@ -120,7 +126,7 @@ export function computeKlineAttrs(
   const { dif, dea } = bar.macd;
   const { ma5, ma10 } = bar.ma;
   return {
-    kmacd: dif > 0 && dif - dea > -0.1 && prevDif != null && (dif > prevDif || dif / prevDif > 0.99),
+    kmacd: dif > 0 && dif - dea > -0.1 && prevDif != null && dif - prevDif > -0.06,
     krsi: (bar.rsi.rsi6 ?? 0) >= 50,
     kma: ma10 != null && ma5 != null && bar.close > ma10 && ma5 > ma10,
   };
@@ -171,8 +177,7 @@ export class KlineService {
 
     let raw: RawBar[] = [];
     try {
-      raw =
-        market === 'A' ? await this.fetchSina(code, period) : await this.fetchYahoo(code, period);
+      raw = await this.fetchBars(market, code, period);
     } catch (err) {
       const msg = (err as Error).message;
       const status = (err as { response?: { status?: number } }).response?.status;
@@ -188,32 +193,89 @@ export class KlineService {
     return { code, market, period, data: bars };
   }
 
-  // ── Sina (A-shares) ────────────────────────────────────────────────────────
-
-  private async fetchSina(code: string, period: string): Promise<RawBar[]> {
-    const symbol = code.startsWith('6') || code.startsWith('5') ? `sh${code}` : `sz${code}`;
-
-    const isTimeshare = period === 'timeshare';
-    const scale = isTimeshare ? 1 : (SINA_SCALE_MAP[period] ?? 240);
-    const datalen = isTimeshare ? 240 : 500;
-    const url = `${SINA_KLINE_URL}?symbol=${symbol}&scale=${scale}&ma=no&datalen=${datalen}`;
-    const data = await this.get<SinaBar[]>(url, SINA_HEADERS);
-    return this.parseSinaBars(data);
+  /**
+   * 路由：
+   * - 日/周线（需前复权）：A股/ETF 与港股均走腾讯 fqkline（qfq）
+   * - 分时/分钟线（不复权）：A股/ETF 走腾讯 mkline；港股走 Yahoo（腾讯不提供港股分钟线）
+   */
+  private async fetchBars(market: 'A' | 'HK', code: string, period: string): Promise<RawBar[]> {
+    if (period === 'daily' || period === 'weekly') {
+      return this.fetchTencentFq(market, code, period);
+    }
+    return market === 'A' ? this.fetchTencentMin(code, period) : this.fetchYahoo(code, period);
   }
 
-  private parseSinaBars(data: unknown): RawBar[] {
-    if (!Array.isArray(data)) return [];
-    return (data as SinaBar[]).map((item) => ({
-      time: item.day,
-      open: parseFloat(item.open),
-      high: parseFloat(item.high),
-      low: parseFloat(item.low),
-      close: parseFloat(item.close),
-      volume: parseFloat(item.volume),
-    }));
+  // ── 腾讯财经 ─────────────────────────────────────────────────────────────────
+
+  /**
+   * 腾讯 symbol：港股 `hk` + 5 位代码（如 hk00700）；
+   * A股/ETF `6`/`5` 开头用 `sh`（沪市，含 51xxxx ETF），其余用 `sz`（深市，含 15xxxx ETF）。
+   */
+  private buildTencentSymbol(market: 'A' | 'HK', code: string): string {
+    if (market === 'HK') {
+      const num = parseInt(code, 10);
+      return `hk${num.toString().padStart(5, '0')}`;
+    }
+    return (code.startsWith('6') || code.startsWith('5') ? 'sh' : 'sz') + code;
   }
 
-  // ── Yahoo Finance (HK stocks) ──────────────────────────────────────────────
+  /** 日/周线前复权（fqkline?...,qfq）。A股/ETF 返回 `qfqday`/`qfqweek`，港股返回 `day`/`week`。 */
+  private async fetchTencentFq(
+    market: 'A' | 'HK',
+    code: string,
+    period: string,
+  ): Promise<RawBar[]> {
+    const symbol = this.buildTencentSymbol(market, code);
+    const pk = TENCENT_FQ_MAP[period] ?? 'day';
+    const url = `${TENCENT_FQKLINE_URL}?param=${symbol},${pk},,,${TENCENT_LIMIT},qfq`;
+    const resp = await this.get<TencentKlineResponse>(url, TENCENT_HEADERS);
+    const node = resp?.data?.[symbol];
+    const rows = (node?.[`qfq${pk}`] ?? node?.[pk]) as unknown[] | undefined;
+    return this.parseTencentRows(rows);
+  }
+
+  /** 分时/分钟线（mkline，不复权，仅 A股/ETF）。返回键即周期码（m1/m5/...）。 */
+  private async fetchTencentMin(code: string, period: string): Promise<RawBar[]> {
+    const symbol = this.buildTencentSymbol('A', code);
+    const mk = TENCENT_MIN_MAP[period] ?? 'm5';
+    const url = `${TENCENT_MKLINE_URL}?param=${symbol},${mk},,${TENCENT_LIMIT}`;
+    const resp = await this.get<TencentKlineResponse>(url, TENCENT_HEADERS);
+    const rows = resp?.data?.[symbol]?.[mk] as unknown[] | undefined;
+    return this.parseTencentRows(rows);
+  }
+
+  /**
+   * 解析腾讯 K 线行：每行为数组 `[时间, 开, 收, 高, 低, 量, ...]`（港股日线行尾附带分红对象，忽略）。
+   * 时间为 `YYYY-MM-DD`（日/周线）或 `YYYYMMDDHHMM`（分钟线），统一为图表所需格式。
+   */
+  private parseTencentRows(rows?: unknown[]): RawBar[] {
+    if (!Array.isArray(rows)) return [];
+    const bars: RawBar[] = [];
+    for (const row of rows) {
+      if (!Array.isArray(row)) continue;
+      const r = row as string[];
+      const time = this.fmtTencentTime(r[0]);
+      const open = parseFloat(r[1]);
+      const close = parseFloat(r[2]);
+      const high = parseFloat(r[3]);
+      const low = parseFloat(r[4]);
+      const volume = parseFloat(r[5]);
+      if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) continue;
+      bars.push({ time, open, high, low, close, volume: isNaN(volume) ? 0 : volume });
+    }
+    return bars;
+  }
+
+  /** `YYYYMMDDHHMM` → `YYYY-MM-DD HH:MM`；已含 `-` 的日期串原样返回。 */
+  private fmtTencentTime(raw: string): string {
+    if (raw.includes('-')) return raw;
+    if (raw.length === 12) {
+      return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)} ${raw.slice(8, 10)}:${raw.slice(10, 12)}`;
+    }
+    return raw;
+  }
+
+  // ── Yahoo Finance（港股分时/分钟线）──────────────────────────────────────────
 
   private async fetchYahoo(code: string, period: string): Promise<RawBar[]> {
     const symbol = this.buildYahooHKSymbol(code);

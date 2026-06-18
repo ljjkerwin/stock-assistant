@@ -107,7 +107,7 @@ describe('KlineService', () => {
     };
 
     describe('KMACD', () => {
-      it('满足：dif>0 且 dif-dea>-0.02 且 dif 上升', () => {
+      it('满足：dif>0 且 dif-dea>-0.1 且 dif 上升', () => {
         const bar = { ...base, macd: { dif: 1, dea: 1, bar: 0 } };
         expect(computeKlineAttrs(bar, 0.5).kmacd).toBe(true);
       });
@@ -117,27 +117,32 @@ describe('KlineService', () => {
         expect(computeKlineAttrs(bar, -1).kmacd).toBe(false);
       });
 
-      it('满足：dif-dea 略高于 -0.02 边界', () => {
-        const bar = { ...base, macd: { dif: 0.99, dea: 1, bar: 0 } }; // dif-dea = -0.01
+      it('满足：dif-dea 略高于 -0.1 边界', () => {
+        const bar = { ...base, macd: { dif: 0.91, dea: 1, bar: 0 } }; // dif-dea = -0.09
         expect(computeKlineAttrs(bar, 0.5).kmacd).toBe(true);
       });
 
-      it('不满足：dif-dea 恰好等于 -0.02（严格大于）', () => {
-        const bar = { ...base, macd: { dif: 0.98, dea: 1, bar: 0 } }; // dif-dea = -0.02
+      it('不满足：dif-dea 触及 -0.1 边界（严格大于）', () => {
+        const bar = { ...base, macd: { dif: 1, dea: 1.1, bar: 0 } }; // dif-dea ≈ -0.1
         expect(computeKlineAttrs(bar, 0.5).kmacd).toBe(false);
       });
 
-      it('不满足：dif-dea < -0.02（DIF 距 DEA 太远）', () => {
-        const bar = { ...base, macd: { dif: 1, dea: 2, bar: 0 } };
+      it('不满足：dif-dea < -0.1（DIF 距 DEA 太远）', () => {
+        const bar = { ...base, macd: { dif: 0.89, dea: 1, bar: 0 } }; // dif-dea = -0.11
         expect(computeKlineAttrs(bar, 0.5).kmacd).toBe(false);
       });
 
-      it('满足：dif 微跌但在 1% 容差内（dif/prevDif > 0.99）', () => {
-        const bar = { ...base, macd: { dif: 0.995, dea: 1, bar: 0 } };
+      it('满足：DIF 微跌但在 0.06 容差内（dif - prevDif > -0.06）', () => {
+        const bar = { ...base, macd: { dif: 0.96, dea: 1, bar: 0 } }; // dif-prevDif = -0.04
         expect(computeKlineAttrs(bar, 1).kmacd).toBe(true);
       });
 
-      it('不满足：dif 跌幅超过 1% 容差', () => {
+      it('不满足：DIF 跌幅超过 0.06 容差', () => {
+        const bar = { ...base, macd: { dif: 0.9, dea: 0.9, bar: 0 } }; // dif-prevDif = -0.1
+        expect(computeKlineAttrs(bar, 1).kmacd).toBe(false);
+      });
+
+      it('不满足：DIF 大幅下降', () => {
         const bar = { ...base, macd: { dif: 1, dea: 1, bar: 0 } };
         expect(computeKlineAttrs(bar, 1.5).kmacd).toBe(false);
       });
