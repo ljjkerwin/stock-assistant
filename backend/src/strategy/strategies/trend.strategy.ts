@@ -7,7 +7,7 @@ import type {
 } from './strategy.interface';
 
 /**
- * 趋势策略。
+ * 日线趋势策略。
  *
  * 基于接口层计算的「ljj 综合属性」判断每根 K 线是否值得持仓：
  *   shouldHold = KMACD && KRSI && KMA（三个属性同时满足）。
@@ -17,7 +17,7 @@ import type {
  * - 回测结束仍持仓则以末根收盘价强制平仓（forcedClose，不打卖出信号/不生成卖出记录）。
  */
 export class TrendStrategy implements Strategy {
-  readonly name = '趋势策略';
+  readonly name = '日线趋势策略';
 
   run({ bars, testStartIndex }: StrategyContext): StrategyRunResult {
     const trades: Trade[] = [];

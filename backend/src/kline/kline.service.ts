@@ -110,7 +110,7 @@ export interface KlineBar {
   attrs: {
     kmacd: boolean; // dif > 0 且 dif - dea > -0.1 且 DIF 较前值上升（dif - prevDif > -0.06，允许微跌）
     krsi: boolean; // rsi6 >= 50
-    kma: boolean; // 收盘价 > MA10 且 MA5 > MA10
+    kma: boolean; // 收盘价 > MA10 且 MA5 / MA10 > 0.995
   };
 }
 
@@ -128,7 +128,7 @@ export function computeKlineAttrs(
   return {
     kmacd: dif > 0 && dif - dea > -0.1 && prevDif != null && dif - prevDif > -0.06,
     krsi: (bar.rsi.rsi6 ?? 0) >= 50,
-    kma: ma10 != null && ma5 != null && bar.close > ma10 && ma5 > ma10,
+    kma: ma10 != null && ma5 != null && bar.close > ma10 && ma5 / ma10 > 0.995,
   };
 }
 

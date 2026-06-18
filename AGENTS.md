@@ -104,7 +104,7 @@ pnpm dev
 
 `period` 枚举：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
 
-策略取值：`趋势策略`（MA5穿越MA10）
+策略取值：`日线趋势策略`（MA5穿越MA10）
 
 ---
 
@@ -187,10 +187,10 @@ pnpm dev
 - `StrategyService.backtest` 是通用 runner：拉取 K 线 → 按区间截取并预热 → 调用策略 → 计算通用回测指标（收益/最大回撤/夏普）
 
 **策略抽象与扩展**
-- `backend/src/strategy/strategies/` 下：`strategy.interface.ts` 定义 `Strategy` 接口（`run({ bars, testStartIndex })` → `{ trades, signals }`，纯函数）；`trend.strategy.ts` 为趋势策略实现；`index.ts` 维护「名称→策略实例」注册表
+- `backend/src/strategy/strategies/` 下：`strategy.interface.ts` 定义 `Strategy` 接口（`run({ bars, testStartIndex })` → `{ trades, signals }`，纯函数）；`trend.strategy.ts` 为日线趋势策略实现；`index.ts` 维护「名称→策略实例」注册表
 - **新增策略**：实现 `Strategy` 接口并在 `index.ts` 的 `STRATEGIES` 数组注册即可，`backtest()` 与 controller 无需改动
 
-**趋势策略（`趋势策略`）**
+**日线趋势策略（`日线趋势策略`）**
 - 持仓判断：基于 ljj 综合属性，`shouldHold = KMACD && KRSI && KMA`（三属性同时满足，定义见「ljj 副图」）
 - 买入：回测起点时若 `shouldHold` 已为 true 且当根 K 线强度达标，则立即建仓（不等信号，避免错过区间初始涨幅）；此后买入需「`shouldHold` 由 false→true」且当根强度达标。K 线强度达标 = `changePercent > 0`（当日上涨），用于避免在阴线/平盘买入
 - 卖出：「`shouldHold` 由 true→false」（与买入互斥，同根 K 线不同时触发）。因 KMA 属性已含「收盘价 > MA10」，跌破 MA10 时 `shouldHold` 自然转 false 触发卖出，无需单独判断
@@ -213,7 +213,7 @@ pnpm dev
   - 属性定义（按堆叠优先级自底向上）：
     - **KMACD**（橙色，柱底）：`dif > 0` 且 `macd.dif - macd.dea > -0.1`（DIF 接近或高于 DEA）且 DIF 上升（`dif[i] - dif[i-1] > -0.06`，允许 0.06 以内微跌）
     - **KRSI**（蓝色，中部）：`rsi.rsi6 >= 50`
-    - **KMA**（绿色，顶部）：`close > ma10` 且 `ma5 > ma10`
+    - **KMA**（绿色，顶部）：`close > ma10` 且 `ma5 / ma10 > 0.995`
   - 渲染：用 3 个 Histogram series 叠加模拟堆叠（lightweight-charts 无原生堆叠）——先画整柱(顶段色)，再依次覆盖较矮的中段、底段露出各色带；副图 legend 显示 `KMACD/KRSI/KMA` 的 ✓/✗
 
 ### 状态管理（Zustand）

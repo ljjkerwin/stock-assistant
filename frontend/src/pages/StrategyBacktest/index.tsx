@@ -114,7 +114,7 @@ const PERIODS: { value: KlinePeriod; label: string }[] = [
   { value: '60min', label: '60分钟' },
 ];
 
-const STRATEGIES = ['趋势策略'];
+const STRATEGIES = ['日线趋势策略'];
 
 // ── component ─────────────────────────────────────────────────────────────
 
@@ -122,10 +122,12 @@ export default function StrategyBacktest() {
   const { code } = useParams<{ code: string }>();
   const [market, setMarket] = useState<'A' | 'HK'>('A');
   const [period, setPeriod] = useState<KlinePeriod>('daily');
-  const [strategy, setStrategy] = useState('趋势策略');
+  const [strategy, setStrategy] = useState('日线趋势策略');
   const [startDate, setStartDate] = useState(dayjs().subtract(6, 'months'));
   const [endDate, setEndDate] = useState(dayjs());
   const [result, setResult] = useState<BacktestResult | null>(null);
+  // 当前展示结果对应的运行参数（区别于可能已被改动的表单状态），用于结果区信息展示
+  const [resultMeta, setResultMeta] = useState<CachedConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [fromCache, setFromCache] = useState(false);
   const [stockName, setStockName] = useState<string | null>(null);
@@ -172,12 +174,14 @@ export default function StrategyBacktest() {
       const cached = getCachedResult(key);
       if (cached) {
         setResult(cached);
+        setResultMeta({ period: saved.period, strategy: saved.strategy, startDate: saved.startDate, endDate: saved.endDate });
         setFromCache(true);
         return;
       }
     }
 
     setResult(null);
+    setResultMeta(null);
     setFromCache(false);
   }, [code]);
 
@@ -201,6 +205,7 @@ export default function StrategyBacktest() {
     try {
       const res = await strategyApi.backtest({ market, code, startDate: startStr, endDate: endStr, period, strategy });
       setResult(res);
+      setResultMeta({ period, strategy, startDate: startStr, endDate: endStr });
       setFromCache(false);
       setCachedResult(key, res);
       saveConfig({ period, strategy, startDate: startStr, endDate: endStr });
@@ -354,56 +359,59 @@ export default function StrategyBacktest() {
                   }
                   size="small"
                 >
-                  <Row gutter={[32, 16]}>
-                    <Col span={4}>
-                      <Statistic
-                        title="区间涨跌"
-                        value={result.priceChangePercent}
-                        precision={2}
-                        suffix="%"
-                        styles={{
-                          content: {
-                            color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
-                          },
-                        }}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="回测收益"
-                        value={result.returnPercent}
-                        precision={2}
-                        suffix="%"
-                        styles={{
-                          content: {
-                            color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
-                          },
-                        }}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="最大回撤"
-                        value={result.maxDrawdown}
-                        precision={2}
-                        suffix="%"
-                        styles={{ content: { color: '#26a69a' } }}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="夏普比率"
-                        value={result.sharpeRatio}
-                        precision={2}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="交易次数"
-                        value={result.tradeCount}
-                      />
-                    </Col>
-                  </Row>
+                  {resultMeta && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, marginBottom: 16, color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+                      <span>标的：{stockName ? `${stockName} ` : ''}{code}（{market === 'A' ? 'A股' : '港股'}）</span>
+                      <span>K线周期：{PERIODS.find((p) => p.value === resultMeta.period)?.label ?? resultMeta.period}</span>
+                      <span>策略：{resultMeta.strategy}</span>
+                      <span>回测时间区间：{resultMeta.startDate} ~ {resultMeta.endDate}</span>
+                    </div>
+                  )}
+                  <div className={styles.statRow}>
+                    <Statistic
+                      className={styles.hStat}
+                      title="区间涨跌："
+                      value={result.priceChangePercent}
+                      precision={2}
+                      suffix="%"
+                      styles={{
+                        content: {
+                          color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
+                        },
+                      }}
+                    />
+                    <Statistic
+                      className={styles.hStat}
+                      title="回测收益："
+                      value={result.returnPercent}
+                      precision={2}
+                      suffix="%"
+                      styles={{
+                        content: {
+                          color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
+                        },
+                      }}
+                    />
+                    <Statistic
+                      className={styles.hStat}
+                      title="最大回撤："
+                      value={result.maxDrawdown}
+                      precision={2}
+                      suffix="%"
+                      styles={{ content: { color: '#26a69a' } }}
+                    />
+                    <Statistic
+                      className={styles.hStat}
+                      title="夏普比率："
+                      value={result.sharpeRatio}
+                      precision={2}
+                    />
+                    <Statistic
+                      className={styles.hStat}
+                      title="交易次数："
+                      value={result.tradeCount}
+                    />
+                  </div>
                 </Card>
               </Col>
 

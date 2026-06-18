@@ -20,3 +20,23 @@
   font-weight: 500;
   font-size: 14px;
 }
+
+/* 回测结果指标行：横向排列、自动换行，列间留出充足间距 */
+.statRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 48px;
+}
+
+/* Statistic 左右结构：标题在左、数值在右。
+   className 直接作用于 Statistic 根节点（同时带有 .ant-statistic），故用自身选择器 */
+.hStat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.hStat :global(.ant-statistic-title) {
+  margin-bottom: 0;
+}
