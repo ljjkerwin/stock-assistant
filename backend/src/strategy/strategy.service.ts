@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { KlineService } from '../kline/kline.service';
-import { getStrategy, strategyNames } from './strategies';
+import { getStrategy, strategyIds } from './strategies';
 import type { StrategyBar, Trade } from './strategies';
 
 type KlinePeriod = 'timeshare' | '1min' | '5min' | '15min' | '30min' | '60min' | 'daily' | 'weekly';
@@ -44,7 +44,7 @@ export class StrategyService {
     const strategyImpl = getStrategy(strategy);
     if (!strategyImpl) {
       throw new BadRequestException(
-        `Unknown strategy: ${strategy}. Available: ${strategyNames().join(', ')}`,
+        `Unknown strategy: ${strategy}. Available: ${strategyIds().join(', ')}`,
       );
     }
 
@@ -124,8 +124,8 @@ export class StrategyService {
     // 计算最大回撤
     const maxDrawdown = this.calculateMaxDrawdown(tradesInRange);
 
-    // 计算夏普比率（假设无风险利率为0）
-    const sharpeRatio = this.calculateSharpeRatio(tradesInRange);
+    // 计算夏普比率（基于净值逐周期收益率，按 K 线周期年化；假设无风险利率为 0）
+    const sharpeRatio = this.calculateSharpeRatio(filtered, tradesInRange, period);
 
     const tradeRecords: TradeRecord[] = [];
     for (const trade of tradesInRange) {
@@ -177,17 +177,71 @@ export class StrategyService {
     return maxDrawdown;
   }
 
-  private calculateSharpeRatio(trades: Trade[]): number {
-    if (trades.length === 0) {
+  /** A 股一年约 252 个交易日（年化基准）。 */
+  private static readonly TRADING_DAYS_PER_YEAR = 252;
+  /** A 股每个交易日（240 分钟连续竞价）各周期的 K 线根数，用于日内周期的夏普年化。 */
+  private static readonly BARS_PER_DAY: Record<string, number> = {
+    '1min': 240,
+    '5min': 48,
+    '15min': 16,
+    '30min': 8,
+    '60min': 4,
+  };
+
+  /**
+   * 夏普年化因子 √(每年周期数)，按 K 线周期自适应：
+   * - daily → √252；weekly → √52；日内（Nmin）→ √(252 × 每日根数)。
+   * - 未知/分时等退化为日线基准（√252）。
+   */
+  private annualizationFactor(period: string): number {
+    const D = StrategyService.TRADING_DAYS_PER_YEAR;
+    if (period === 'weekly') return Math.sqrt(52);
+    if (period === 'daily') return Math.sqrt(D);
+    const barsPerDay = StrategyService.BARS_PER_DAY[period];
+    return Math.sqrt(barsPerDay ? D * barsPerDay : D);
+  }
+
+  /**
+   * 年化夏普比率（无风险利率假设为 0）。
+   *
+   * 按**净值曲线的逐周期收益率**计算，而非「每笔交易收益率」——后者在交易笔数少、收益率彼此
+   * 接近时分母（标准差）会塌缩，产出 ±10~±30 的伪值。做法：
+   * - 持仓期（入场后到卖出，含卖出根）按收盘 mark-to-market：`close[i]/close[i-1]-1`；
+   * - 空仓期收益率记 0（持有现金）。
+   * - Sharpe = mean / std × 年化因子（按周期自适应，见 {@link annualizationFactor}；样本标准差 ÷(N-1)）。
+   *
+   * 空仓期纳入样本，使「少量、低离散」的交易不再塌缩分母；标的若几乎不开仓，Sharpe 趋近 0。
+   */
+  private calculateSharpeRatio(bars: StrategyBar[], trades: Trade[], period: string): number {
+    const n = bars.length;
+    if (n < 2 || trades.length === 0) {
       return 0;
     }
 
-    const returns: number[] = trades.map((t) => ((t.sellPrice - t.buyPrice) / t.buyPrice) * 100);
+    const indexByTime = new Map<string, number>();
+    bars.forEach((b, i) => indexByTime.set(b.time, i));
 
-    const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-    const variance = returns.reduce((sum, r) => sum + (r - avgReturn) ** 2, 0) / returns.length;
+    // 标记持仓日：入场日以收盘价买入，当日不计收益；其后每日（含卖出日）按收盘 mark-to-market
+    const held = new Array<boolean>(n).fill(false);
+    for (const t of trades) {
+      const buyIdx = indexByTime.get(t.buyTime);
+      const sellIdx = indexByTime.get(t.sellTime);
+      if (buyIdx == null || sellIdx == null) continue;
+      for (let i = buyIdx + 1; i <= sellIdx; i++) held[i] = true;
+    }
+
+    const daily: number[] = [];
+    for (let i = 1; i < n; i++) {
+      daily.push(held[i] ? bars[i].close / bars[i - 1].close - 1 : 0);
+    }
+    if (daily.length < 2) {
+      return 0;
+    }
+
+    const mean = daily.reduce((a, b) => a + b, 0) / daily.length;
+    const variance = daily.reduce((sum, r) => sum + (r - mean) ** 2, 0) / (daily.length - 1);
     const stdDev = Math.sqrt(variance);
 
-    return stdDev === 0 ? 0 : avgReturn / stdDev;
+    return stdDev === 0 ? 0 : (mean / stdDev) * this.annualizationFactor(period);
   }
 }

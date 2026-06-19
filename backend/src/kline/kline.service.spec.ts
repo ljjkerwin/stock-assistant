@@ -174,8 +174,14 @@ describe('KlineService', () => {
         const bar = { ...base, close: 100, ma: { ma5: 105, ma10: 100, ma20: null, ma60: null } };
         expect(computeKlineAttrs(bar, null).kma).toBe(false);
       });
-      it('不满足：ma5<=ma10', () => {
-        const bar = { ...base, close: 110, ma: { ma5: 100, ma10: 100, ma20: null, ma60: null } };
+      it('满足：ma5 略低于 ma10 但 ma5/ma10 > 0.995（容差内）', () => {
+        // ma5/ma10 = 99.6/100 = 0.996 > 0.995，仍视为满足
+        const bar = { ...base, close: 110, ma: { ma5: 99.6, ma10: 100, ma20: null, ma60: null } };
+        expect(computeKlineAttrs(bar, null).kma).toBe(true);
+      });
+      it('不满足：ma5/ma10 <= 0.995', () => {
+        // ma5/ma10 = 99/100 = 0.99 <= 0.995
+        const bar = { ...base, close: 110, ma: { ma5: 99, ma10: 100, ma20: null, ma60: null } };
         expect(computeKlineAttrs(bar, null).kma).toBe(false);
       });
       it('不满足：ma 为 null', () => {

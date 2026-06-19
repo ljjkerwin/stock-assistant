@@ -17,6 +17,7 @@ import type {
  * - 回测结束仍持仓则以末根收盘价强制平仓（forcedClose，不打卖出信号/不生成卖出记录）。
  */
 export class TrendStrategy implements Strategy {
+  readonly id = 'trend';
   readonly name = '日线趋势策略';
 
   run({ bars, testStartIndex }: StrategyContext): StrategyRunResult {

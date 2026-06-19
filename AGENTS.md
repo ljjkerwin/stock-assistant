@@ -98,13 +98,14 @@ pnpm dev
 | GET | `/api/fund/:code` | 获取基金基本信息 + 最新净值 + 实时估值 |
 | GET | `/api/fund/:code/nav?limit=` | 获取基金历史净值数据（默认 120 条，最多 1000） |
 | GET | `/api/fund/:code/holdings` | 获取基金最近两期前10大持仓股（季报） |
+| GET | `/api/strategy/list` | 策略清单（返回 `{ id, name }[]`，`id` 为稳定标识、`name` 为可变展示名） |
 | GET | `/api/strategy/backtest?market=&code=&startDate=&endDate=&period=&strategy=` | 策略回测（返回回测结果、K线数据、交易信号） |
 
 `market` 取值：`A`（A股 + 场内ETF）/ `HK`（港股）
 
 `period` 枚举：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
 
-策略取值：`日线趋势策略`（MA5穿越MA10）
+`strategy` 取**策略 id**（稳定标识，非展示名；展示名可改而 id 不变）：`trend`（日线趋势策略，综合属性持仓）、`trend2`（日线趋势策略2，自适应双模式：趋势骑乘 + 反弹，注意有过拟合）、`trend3`（经典框架-趋势跟随，突破 + ATR 跟踪止损，样本外验证）、`trend4`（经典框架-趋势跟随+分层止损，trend3 入场 + 棘轮三段止损）。可用策略及展示名以 `GET /api/strategy/list` 为准
 
 ---
 
@@ -184,18 +185,47 @@ pnpm dev
 **分层架构（指标 vs 策略）**
 - 「股票指标」（MACD/MA/RSI/`attrs`）由**接口层 `KlineService.calcMACD`** 统一计算并随每根 K 线返回，策略层只读消费、不重算
 - 「策略信息」（`shouldHold`/`cumulHold`/买卖信号/交易）由各策略自行计算
-- `StrategyService.backtest` 是通用 runner：拉取 K 线 → 按区间截取并预热 → 调用策略 → 计算通用回测指标（收益/最大回撤/夏普）
+- `StrategyService.backtest` 是通用 runner：拉取 K 线 → 按区间截取并预热 → 调用策略 → 计算通用回测指标（收益/最大回撤/夏普）。夏普为**净值逐周期收益率的年化夏普**（持仓期按收盘 mark-to-market、空仓期记 0，样本标准差 × 年化因子），非「每笔交易收益率」口径，避免少量交易塌缩分母产出伪值；年化因子按 K 线周期自适应：daily=√252、weekly=√52、日内 Nmin=√(252×每日根数)（A 股 240 分钟/日，如 5min=√(252×48)）
 
 **策略抽象与扩展**
-- `backend/src/strategy/strategies/` 下：`strategy.interface.ts` 定义 `Strategy` 接口（`run({ bars, testStartIndex })` → `{ trades, signals }`，纯函数）；`trend.strategy.ts` 为日线趋势策略实现；`index.ts` 维护「名称→策略实例」注册表
-- **新增策略**：实现 `Strategy` 接口并在 `index.ts` 的 `STRATEGIES` 数组注册即可，`backtest()` 与 controller 无需改动
+- `backend/src/strategy/strategies/` 下：`strategy.interface.ts` 定义 `Strategy` 接口（`readonly id`（稳定标识，注册表键与接口 `strategy` 参数取值，一经确定不可改）、`readonly name`（展示名，可随时改）、`run({ bars, testStartIndex })` → `{ trades, signals }`，纯函数）；`trend.strategy.ts`（id `trend`）、`trend2.strategy.ts`（id `trend2`）、`trend3.strategy.ts`（id `trend3`）、`trend4.strategy.ts`（id `trend4`）为各策略实现；`index.ts` 维护「id→策略实例」注册表，并导出 `listStrategies()`（`{ id, name }[]`）供接口层
+- **新增策略**：实现 `Strategy` 接口（含唯一 `id` 与 `name`）并在 `index.ts` 的 `STRATEGIES` 数组注册即可，`backtest()`、controller 与前端均无需改动——前端策略下拉通过 `GET /api/strategy/list` 动态获取
+- **改策略名**：只改对应策略实现的 `name` 字段；`id` 不变，已存的回测配置与缓存不受影响（用 id 识别，不会因改名失效）
 
-**日线趋势策略（`日线趋势策略`）**
+**日线趋势策略（id `trend`）**
 - 持仓判断：基于 ljj 综合属性，`shouldHold = KMACD && KRSI && KMA`（三属性同时满足，定义见「ljj 副图」）
 - 买入：回测起点时若 `shouldHold` 已为 true 且当根 K 线强度达标，则立即建仓（不等信号，避免错过区间初始涨幅）；此后买入需「`shouldHold` 由 false→true」且当根强度达标。K 线强度达标 = `changePercent > 0`（当日上涨），用于避免在阴线/平盘买入
 - 卖出：「`shouldHold` 由 true→false」（与买入互斥，同根 K 线不同时触发）。因 KMA 属性已含「收盘价 > MA10」，跌破 MA10 时 `shouldHold` 自然转 false 触发卖出，无需单独判断
 - 末根强制平仓（`forcedClose`）：回测结束仍持仓时以最后一根收盘价平仓，盈亏照常计入收益/回撤/夏普/交易次数，但**不在图上标卖出信号、不生成卖出交易记录**（交易记录该笔只保留买入行）
 - 随 K 线返回的策略字段：`shouldHold`（可供前端复用）；`cumulHold`（当前 K 线之前连续 `shouldHold` 为 true 的根数，不含自身、遇 false 归零，`cumulHold[i] = shouldHold[i-1] ? cumulHold[i-1] + 1 : 0`，首根为 0，目前仅返回、前端暂不绘图）
+
+**日线趋势策略2（id `trend2`）—— 自适应双模式（趋势骑乘 + 反弹）**
+- 设计定位：单一固定策略无法同时应对「强趋势单边上涨」与「震荡/阴跌」，故 v2 内置行情识别，按当前 K 线自动切换两种模式（两模式以 MACD 零轴方向天然互斥，同一根优先判定趋势模式）；由 `trend2.strategy.ts` 实现
+- 趋势成熟度指标 `TAR = MA20/MA60`（中期均线相对长期均线的位置），用于评估趋势/下跌的严重程度，给两种模式各加一道「极端行情」门槛（仅在 MA60 可用时生效）
+- **趋势骑乘模式**（强趋势，吃主升浪）：入场需 `MA5 > MA10 > MA20`（多头排列）且 `close > MA10` 且 `MA10` 拐头向上且当日上涨且 `dif > dea` 且 `dif > 前一日 dif` 且 `dif > 0`（零轴上方走强），并通过**强趋势闸门**——价格乖离 `close/MA20 ≥ EXT_GATE`（默认 1.06）且 MA20 日斜率 `(MA20/前一日MA20 - 1)×100 ≥ SLOPE_GATE_PCT`（默认 0.6）、且 `TAR ≤ TAR_OVERHEAT_MAX`（默认 1.10，趋势未过热）；出场 `close < MA10`
+- **反弹模式**（震荡/阴跌后的底部反转，快进快出）：入场需 `close > MA10` 且 `close > MA20` 且 `MA5 > MA10` 且 `MA10` 拐头向上且当日上涨且 `dif > dea` 且 `dif > 前一日 dif` 且 `dif < 0`（零轴下方金叉）且 `RSI6 ∈ [REBOUND_RSI_MIN, REBOUND_RSI_MAX)`（默认 [55, 70)，反弹需有真实力度——既不接弱势死猫跳、也不追超买）、且 `TAR ≥ TAR_SEVERE_MIN`（默认 0.90，下跌不至过于严重，避免接飞刀）；出场 `close < MA5`
+- 开仓时记录模式，平仓按对应模式的出场条件（趋势→跌破 MA10、反弹→跌破 MA5）；买卖互斥，不在同根触发
+- 末根强制平仓（`forcedClose`）规则与 v1 一致
+- 随 K 线返回的策略字段：`shouldHold` 在 v2 定义为「趋势向上的可持仓状态」（`close > MA10 && MA5 > MA10`）；`cumulHold` 递推口径与 v1 相同
+- 可调参数 `EXT_GATE`/`SLOPE_GATE_PCT`/`REBOUND_RSI_MIN`/`REBOUND_RSI_MAX`/`TAR_OVERHEAT_MAX`/`TAR_SEVERE_MIN` 为 `trend2.strategy.ts` 顶部常量；所有入场条件均为**与价格刻度无关**的相对量（均线大小关系、零轴方向、价格对 MA20 的乖离比率、MA20 百分比斜率、RSI、MA20/MA60 比率），不含随股价高低失真的绝对阈值
+- ⚠️ **过拟合提示**：v2 的多个参数是在少量标的、单一区间上调出来的，27 只标的 × 多区间的样本外验证显示其聚合表现一般（训练窗中位数为负、牛市大幅跑输买入持有）。追求样本外稳健请优先用 `经典框架-趋势跟随`
+
+**经典框架-趋势跟随（id `trend3`）—— 突破 + ATR 跟踪止损**
+- 设计定位：业界经典趋势跟随框架（Donchian 突破 + 波动率止损 + 趋势过滤），刻意只用两个标准参数以换取样本外稳健性；由 `trend3.strategy.ts` 实现。已用 27 只标的 × 多区间样本外验证
+- 趋势过滤（regime）：仅在 `close > MA60` 且 `MA20 > MA60`（中期趋势向上）时做多
+- 入场：regime 成立下，收盘创近 `BREAKOUT_LOOKBACK` 日新高（默认 20，Donchian 突破）且当日上涨
+- 出场：ATR 跟踪止损——`收盘 < 入场以来最高收盘 − ATR_TRAIL_MULT × ATR(14)`（默认倍数 3）
+- ATR(14)（Wilder 平滑）、近 N 日最高收盘由策略在 bars 序列上自算（依赖回测预热区间）；MA/changePercent 取自接口层
+- 末根强制平仓（`forcedClose`）规则与 v1 一致；`shouldHold` 定义为中期上升趋势状态（`close > MA60 && MA20 > MA60`），`cumulHold` 递推口径同 v1
+- 可调参数 `BREAKOUT_LOOKBACK`/`ATR_PERIOD`/`ATR_TRAIL_MULT` 为 `trend3.strategy.ts` 顶部常量
+- **行为特征（样本外验证结论）**：价值在于**下跌/震荡市的回撤保护**（regime 过滤使其在弱势标的上大量空仓、收益接近 0 而非深亏），在单边上涨市**参与但滞后于买入持有**——这是趋势跟随的固有特征，不是缺陷；任何只做多的日线策略都难以在牛市稳定跑赢买入持有
+
+**经典框架-趋势跟随+分层止损（id `trend4`）—— trend3 入场 + 棘轮三段止损**
+- 设计定位：与 `trend3` 共用**完全相同的入场逻辑**（Donchian 突破 + regime 过滤），刻意让「止损方式」成为对比 trend3 时唯一变化的变量；由 `trend4.strategy.ts` 实现
+- 出场改为**棘轮式三段止损**（止损位只升不降）：① 初始止损 `买价 − INIT_MULT×ATR(入场日)`（默认 2）；② 保本止损——浮盈达 `BREAKEVEN_MULT×ATR(入场日)`（默认 1）后止损上移到买入价；③ ATR 跟踪止损（chandelier）`峰值收盘 − TRAIL_MULT×ATR(当日)`（默认 3）；三者取最高，收盘跌破即离场
+- 趋势过滤、突破入场、`shouldHold`/`cumulHold`、末根强制平仓均与 trend3 完全一致
+- 可调参数 `BREAKOUT_LOOKBACK`/`ATR_PERIOD`/`INIT_MULT`/`BREAKEVEN_MULT`/`TRAIL_MULT` 为 `trend4.strategy.ts` 顶部常量
+- **行为特征**：更紧的 2×ATR 初始止损 + 保本位显著减少大牛股利润回吐（回测中较 trend3 收益更高、回撤更低、夏普更优），代价是收紧止损偶有被洗
 
 **指标计算（接口层统一口径）**
 - MACD(12,26,9)（标准参数，全项目统一）、MA5/10/20/60、RSI 均在 `KlineService.calcMACD` 计算后随每条 K 线返回，回测层直接消费、不重算，故回测信号与 K 线图指标完全一致

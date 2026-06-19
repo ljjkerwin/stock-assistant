@@ -7,7 +7,6 @@ import {
   Select,
   DatePicker,
   Button,
-  Statistic,
   Table,
   Typography,
   Tag,
@@ -43,7 +42,7 @@ interface BacktestResult {
 
 interface CachedConfig {
   period: KlinePeriod;
-  strategy: string;
+  strategy: string; // 策略 id（稳定标识，展示名可变）
   startDate: string;
   endDate: string;
 }
@@ -114,15 +113,15 @@ const PERIODS: { value: KlinePeriod; label: string }[] = [
   { value: '60min', label: '60分钟' },
 ];
 
-const STRATEGIES = ['日线趋势策略'];
-
 // ── component ─────────────────────────────────────────────────────────────
 
 export default function StrategyBacktest() {
   const { code } = useParams<{ code: string }>();
   const [market, setMarket] = useState<'A' | 'HK'>('A');
   const [period, setPeriod] = useState<KlinePeriod>('daily');
-  const [strategy, setStrategy] = useState('日线趋势策略');
+  // 策略以 id 标识（后端注册表键），name 仅用于展示，改名不影响识别
+  const [strategies, setStrategies] = useState<{ id: string; name: string }[]>([]);
+  const [strategy, setStrategy] = useState('');
   const [startDate, setStartDate] = useState(dayjs().subtract(6, 'months'));
   const [endDate, setEndDate] = useState(dayjs());
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -144,6 +143,23 @@ export default function StrategyBacktest() {
       void addStock({ code, market, name: stockName ?? favoriteEntry?.name ?? code });
     }
   };
+
+  // Load the strategy list from the backend (single source of truth: id + name)
+  useEffect(() => {
+    strategyApi
+      .list()
+      .then(setStrategies)
+      .catch(() => setStrategies([]));
+  }, []);
+
+  // Ensure the selected strategy is a valid id; fall back to the first available.
+  // Handles legacy localStorage that stored a display name instead of an id.
+  useEffect(() => {
+    if (strategies.length === 0) return;
+    if (!strategies.some((s) => s.id === strategy)) {
+      setStrategy(strategies[0].id);
+    }
+  }, [strategies, strategy]);
 
   // Fetch stock name for the favorite label (falls back to code)
   useEffect(() => {
@@ -186,7 +202,7 @@ export default function StrategyBacktest() {
   }, [code]);
 
   const handleBacktest = async () => {
-    if (!code) return;
+    if (!code || !strategy) return;
 
     const startStr = startDate.format('YYYY-MM-DD');
     const endStr = endDate.format('YYYY-MM-DD');
@@ -307,9 +323,9 @@ export default function StrategyBacktest() {
                 <div className={styles.formGroup}>
                   <label>策略</label>
                   <Select
-                    value={strategy}
+                    value={strategy || undefined}
                     onChange={setStrategy}
-                    options={STRATEGIES.map((s) => ({ value: s, label: s }))}
+                    options={strategies.map((s) => ({ value: s.id, label: s.name }))}
                   />
                 </div>
               </Col>
@@ -363,54 +379,26 @@ export default function StrategyBacktest() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, marginBottom: 16, color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
                       <span>标的：{stockName ? `${stockName} ` : ''}{code}（{market === 'A' ? 'A股' : '港股'}）</span>
                       <span>K线周期：{PERIODS.find((p) => p.value === resultMeta.period)?.label ?? resultMeta.period}</span>
-                      <span>策略：{resultMeta.strategy}</span>
+                      <span>策略：{strategies.find((s) => s.id === resultMeta.strategy)?.name ?? resultMeta.strategy}</span>
                       <span>回测时间区间：{resultMeta.startDate} ~ {resultMeta.endDate}</span>
                     </div>
                   )}
                   <div className={styles.statRow}>
-                    <Statistic
-                      className={styles.hStat}
-                      title="区间涨跌："
-                      value={result.priceChangePercent}
-                      precision={2}
-                      suffix="%"
-                      styles={{
-                        content: {
-                          color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
-                        },
-                      }}
-                    />
-                    <Statistic
-                      className={styles.hStat}
-                      title="回测收益："
-                      value={result.returnPercent}
-                      precision={2}
-                      suffix="%"
-                      styles={{
-                        content: {
-                          color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
-                        },
-                      }}
-                    />
-                    <Statistic
-                      className={styles.hStat}
-                      title="最大回撤："
-                      value={result.maxDrawdown}
-                      precision={2}
-                      suffix="%"
-                      styles={{ content: { color: '#26a69a' } }}
-                    />
-                    <Statistic
-                      className={styles.hStat}
-                      title="夏普比率："
-                      value={result.sharpeRatio}
-                      precision={2}
-                    />
-                    <Statistic
-                      className={styles.hStat}
-                      title="交易次数："
-                      value={result.tradeCount}
-                    />
+                    <span>区间涨跌：<span style={{
+                      color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
+                    }}>{toPercent(result.priceChangePercent)}</span></span>
+
+                    <span>回测收益：<span style={{
+                      color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
+                    }}>{toPercent(result.returnPercent)}</span></span>
+
+                    <span>最大回撤：<span style={{
+                      color: '#26a69a',
+                    }}>{toPercent(result.maxDrawdown)}</span></span>
+
+                    <span>夏普比率：<span>{result.sharpeRatio.toFixed(2)}</span></span>
+
+                    <span>交易次数：<span>{result.tradeCount}</span></span>
                   </div>
                 </Card>
               </Col>
@@ -447,4 +435,10 @@ export default function StrategyBacktest() {
       </Card>
     </div>
   );
+}
+
+
+// 转成百分比，并保留两位小数，不要四舍五入
+function toPercent(value: number): string {
+  return (Math.floor(value * 100) / 100).toFixed(2) + '%';
 }

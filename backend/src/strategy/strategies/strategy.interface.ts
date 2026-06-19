@@ -45,7 +45,9 @@ export interface StrategyRunResult {
 
 /** 回测策略接口。实现为纯函数（不依赖外部状态），便于独立测试。 */
 export interface Strategy {
-  /** 策略名称，作为注册表键与接口 strategy 参数取值。 */
+  /** 稳定标识，作为注册表键与接口 strategy 参数取值；一经确定不可更改。 */
+  readonly id: string;
+  /** 展示名称，仅用于前端展示，可随时修改而不影响识别。 */
   readonly name: string;
   run(ctx: StrategyContext): StrategyRunResult;
 }

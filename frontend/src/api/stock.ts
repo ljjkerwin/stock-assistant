@@ -104,13 +104,16 @@ interface BacktestResult {
 }
 
 export const strategyApi = {
+  // 策略清单：稳定 id + 展示名称。回测以 id 标识策略，name 仅用于展示。
+  list: (): Promise<{ id: string; name: string }[]> =>
+    api.get<{ id: string; name: string }[]>('/strategy/list').then((r) => r.data),
   backtest: (params: {
     market: 'A' | 'HK';
     code: string;
     startDate: string;
     endDate: string;
     period: KlinePeriod;
-    strategy: string;
+    strategy: string; // 策略 id
   }): Promise<BacktestResult> =>
     api
       .get<BacktestResult>('/strategy/backtest', { params })
