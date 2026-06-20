@@ -35,6 +35,8 @@ export interface StrategyContext {
   bars: StrategyBar[];
   /** 回测区间起始索引；策略只从此处开始开仓。 */
   testStartIndex: number;
+  /** 标的是否为场内 ETF（由接口层按市场/代码推断）；策略可据此切换参数集，普通策略可忽略。 */
+  isEtf?: boolean;
 }
 
 /** 策略运行结果。signals 与 bars 等长，逐根对应买卖信号。 */

@@ -89,8 +89,11 @@ export class StrategyService {
       return barTs >= startTs && barTs <= endTs;
     });
 
+    // 场内 ETF 判定：A 市场且代码以 1/5 开头（沪 51x/56x/58x、深 15x/16x），供策略切换参数集
+    const isEtf = market === 'A' && /^[15]/.test(code);
+
     // 执行策略：策略层消费接口层指标，输出买卖信号与交易
-    const { trades, signals } = strategyImpl.run({ bars: allBars, testStartIndex });
+    const { trades, signals } = strategyImpl.run({ bars: allBars, testStartIndex, isEtf });
 
     // 标记信号
     const klineWithSignals: StrategyBar[] = allBars.map((bar, i) => ({

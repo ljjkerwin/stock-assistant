@@ -105,7 +105,7 @@ pnpm dev
 
 `period` 枚举：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
 
-`strategy` 取**策略 id**（稳定标识，非展示名；展示名可改而 id 不变）：`trend`（日线趋势策略，综合属性持仓）、`trend2`（日线趋势策略2，自适应双模式：趋势骑乘 + 反弹，注意有过拟合）、`trend3`（经典框架-趋势跟随，突破 + ATR 跟踪止损，样本外验证）、`trend4`（经典框架-趋势跟随+分层止损，trend3 入场 + 棘轮三段止损）。可用策略及展示名以 `GET /api/strategy/list` 为准
+`strategy` 取**策略 id**（稳定标识，非展示名；展示名可改而 id 不变）：`trend`（日线趋势策略，综合属性持仓）、`trend2`（日线趋势策略2，自适应双模式：趋势骑乘 + 反弹，注意有过拟合）、`trend3`（经典框架-趋势跟随，突破 + ATR 跟踪止损，样本外验证）、`trend5`（经典框架-趋势跟随+分层止损+趋势确认，trend3 框架 + 棘轮三段止损 + MA60 斜率确认 + 个股/ETF 双参数集，多区间样本调优的稳健版）、`trend6`（在 trend5 基础上加「收盘跌破 MA20 即卖」卖点）。可用策略及展示名以 `GET /api/strategy/list` 为准
 
 ---
 
@@ -188,7 +188,7 @@ pnpm dev
 - `StrategyService.backtest` 是通用 runner：拉取 K 线 → 按区间截取并预热 → 调用策略 → 计算通用回测指标（收益/最大回撤/夏普）。夏普为**净值逐周期收益率的年化夏普**（持仓期按收盘 mark-to-market、空仓期记 0，样本标准差 × 年化因子），非「每笔交易收益率」口径，避免少量交易塌缩分母产出伪值；年化因子按 K 线周期自适应：daily=√252、weekly=√52、日内 Nmin=√(252×每日根数)（A 股 240 分钟/日，如 5min=√(252×48)）
 
 **策略抽象与扩展**
-- `backend/src/strategy/strategies/` 下：`strategy.interface.ts` 定义 `Strategy` 接口（`readonly id`（稳定标识，注册表键与接口 `strategy` 参数取值，一经确定不可改）、`readonly name`（展示名，可随时改）、`run({ bars, testStartIndex })` → `{ trades, signals }`，纯函数）；`trend.strategy.ts`（id `trend`）、`trend2.strategy.ts`（id `trend2`）、`trend3.strategy.ts`（id `trend3`）、`trend4.strategy.ts`（id `trend4`）为各策略实现；`index.ts` 维护「id→策略实例」注册表，并导出 `listStrategies()`（`{ id, name }[]`）供接口层
+- `backend/src/strategy/strategies/` 下：`strategy.interface.ts` 定义 `Strategy` 接口（`readonly id`（稳定标识，注册表键与接口 `strategy` 参数取值，一经确定不可改）、`readonly name`（展示名，可随时改）、`run({ bars, testStartIndex, isEtf })` → `{ trades, signals }`，纯函数）；`StrategyContext.isEtf` 由 `backtest()` 按市场/代码推断（A 市场且代码 1/5 开头视为场内 ETF），供策略切换参数集（如 trend5 的 ETF 专用突破回看），普通策略可忽略该字段；`trend.strategy.ts`（id `trend`）、`trend2.strategy.ts`（id `trend2`）、`trend3.strategy.ts`（id `trend3`）、`trend5.strategy.ts`（id `trend5`）、`trend6.strategy.ts`（id `trend6`）为各策略实现；`index.ts` 维护「id→策略实例」注册表，并导出 `listStrategies()`（`{ id, name }[]`）供接口层
 - **新增策略**：实现 `Strategy` 接口（含唯一 `id` 与 `name`）并在 `index.ts` 的 `STRATEGIES` 数组注册即可，`backtest()`、controller 与前端均无需改动——前端策略下拉通过 `GET /api/strategy/list` 动态获取
 - **改策略名**：只改对应策略实现的 `name` 字段；`id` 不变，已存的回测配置与缓存不受影响（用 id 识别，不会因改名失效）
 
@@ -220,12 +220,18 @@ pnpm dev
 - 可调参数 `BREAKOUT_LOOKBACK`/`ATR_PERIOD`/`ATR_TRAIL_MULT` 为 `trend3.strategy.ts` 顶部常量
 - **行为特征（样本外验证结论）**：价值在于**下跌/震荡市的回撤保护**（regime 过滤使其在弱势标的上大量空仓、收益接近 0 而非深亏），在单边上涨市**参与但滞后于买入持有**——这是趋势跟随的固有特征，不是缺陷；任何只做多的日线策略都难以在牛市稳定跑赢买入持有
 
-**经典框架-趋势跟随+分层止损（id `trend4`）—— trend3 入场 + 棘轮三段止损**
-- 设计定位：与 `trend3` 共用**完全相同的入场逻辑**（Donchian 突破 + regime 过滤），刻意让「止损方式」成为对比 trend3 时唯一变化的变量；由 `trend4.strategy.ts` 实现
-- 出场改为**棘轮式三段止损**（止损位只升不降）：① 初始止损 `买价 − INIT_MULT×ATR(入场日)`（默认 2）；② 保本止损——浮盈达 `BREAKEVEN_MULT×ATR(入场日)`（默认 1）后止损上移到买入价；③ ATR 跟踪止损（chandelier）`峰值收盘 − TRAIL_MULT×ATR(当日)`（默认 3）；三者取最高，收盘跌破即离场
-- 趋势过滤、突破入场、`shouldHold`/`cumulHold`、末根强制平仓均与 trend3 完全一致
-- 可调参数 `BREAKOUT_LOOKBACK`/`ATR_PERIOD`/`INIT_MULT`/`BREAKEVEN_MULT`/`TRAIL_MULT` 为 `trend4.strategy.ts` 顶部常量
-- **行为特征**：更紧的 2×ATR 初始止损 + 保本位显著减少大牛股利润回吐（回测中较 trend3 收益更高、回撤更低、夏普更优），代价是收紧止损偶有被洗
+**经典框架-趋势跟随+分层止损+趋势确认（id `trend5`）—— trend3 框架 + 棘轮三段止损 + MA60 斜率确认（多区间样本调优的稳健版）**
+- 设计定位：在 `trend3` 入场框架（regime 过滤 + Donchian 突破 + 阳线）之上，把出场换成棘轮三段止损、入场加趋势确认，并区分个股/ETF 两套参数；由 `trend5.strategy.ts` 实现，经 `scripts/batch-backtest.mjs`（64 标的 × 4 区间）多 regime 样本调优
+- **棘轮式三段止损**（止损位只升不降）：① 初始止损 `买价 − initMult×ATR(入场日)`；② 保本止损——浮盈达 `breakevenMult×ATR(入场日)` 后止损上移到买入价；③ ATR 跟踪止损（chandelier）`峰值收盘 − trailMult×ATR(当日)`；三者取最高，收盘跌破即离场
+- **入场加趋势确认（核心）**：样本暴露最大失血点在**下跌市 whipsaw**（regime `close>MA60 && MA20>MA60` 在下跌初期/中继反弹仍成立，反复买突破被切），故额外要求 **MA60 自身上行**（`ma60[i] > ma60[i − ma60SlopeLookback]`，默认 10 日）；下跌市 MA60 走平/向下时整段空仓。抗过拟合（相对量、无绝对阈值），代价是上涨初期入场略滞后
+- **双参数集**：参数以 `STOCK_PARAMS` / `ETF_PARAMS` 两套常量组织在 `trend5.strategy.ts` 顶部（字段 `breakoutLookback`/`atrPeriod`/`initMult`/`breakevenMult`/`trailMult`/`ma60SlopeLookback`），`run()` 按 `ctx.isEtf` 选用。个股：突破 20、初始 2×、保本 1×、跟踪 **3.5**×ATR、斜率 10；ETF：**仅把突破回看 20→40**（低波动篮子假信号多，要求更强趋势确认），其余与个股一致——经 ETF 子样本验证优于更长(50+)/更短(30)或额外放宽止损
+- 趋势过滤、突破入场、`shouldHold`（=中期上升趋势状态）/`cumulHold`、末根强制平仓与 trend3 一致
+- **行为特征（样本聚合，64×4 区间）**：收益中位 −0.31%、收益均值 0.81%、回撤中位 3.55%、夏普中位 0.00，**现有策略中各项聚合指标最优**；价值在下跌/震荡市的回撤保护，单边上涨市参与但滞后买入持有（只做多趋势跟随的固有特征）
+
+**经典框架-趋势跟随+趋势确认+MA20 离场（id `trend6`）—— trend5 + 跌破 MA20 即卖**
+- 设计定位：在 `trend5` 基础上**只加一道卖点**——持仓期间「收盘跌破 MA20 即离场」，与原棘轮三段止损取**先触发者**；入场、双参数集、趋势确认均与 trend5 完全一致，使「MA20 离场」成为对比 trend5 时唯一变化的变量；由 `trend6.strategy.ts` 实现
+- 由于 MA20 通常高于 ATR 跟踪止损位，该条件多数情况下**更早触发**——用更敏感的均线离场换取更快止盈/止损、更小利润回吐，代价是趋势中途正常回踩到 MA20 可能被洗出；是否优于 trend5 以多区间样本回测为准
+- 参数集、`shouldHold`/`cumulHold`、末根强制平仓均与 trend5 一致
 
 **指标计算（接口层统一口径）**
 - MACD(12,26,9)（标准参数，全项目统一）、MA5/10/20/60、RSI 均在 `KlineService.calcMACD` 计算后随每条 K 线返回，回测层直接消费、不重算，故回测信号与 K 线图指标完全一致
@@ -268,6 +274,8 @@ pnpm dev
 **配置邮件通知**：复制 `backend/.env.example` 为 `backend/.env`，填入 163 邮箱账号和 SMTP 授权码。邮件日志搜索 `[邮件]` 前缀；未配置时后端启动日志会打印 `EMAIL_USER 或 EMAIL_PASS 未配置，邮件通知已禁用`。
 
 **切换数据库**：在 `backend/.env` 中同时填写 `MYSQL_HOST` / `MYSQL_USERNAME` / `MYSQL_PASSWORD` 三项即启用 MySQL；任一项缺失则自动使用本地 SQLite（`./stock-assistant.db`），无需改代码。
+
+**批量策略回测（多标的×多区间）**：`scripts/batch-backtest.mjs` 对「收藏夹有效标的 + 内置无偏抽样篮子（沪深300/中证500-1000/科创/宽基+行业ETF/港股，共 50 只）」跨 4 个时间区间调用 `/api/strategy/backtest`，汇总成**分布口径**（收益中位数、跑赢买入持有胜率、P25/P75 分位、回撤中位数、夏普中位数、空仓率），输出 `all_strategy_result_broad.md` 与明细 `batch_backtest_raw.csv`。需后端先在 3000 端口运行；标的篮子/区间在脚本顶部常量 `EXTRA`/`WINDOWS` 调整。`scripts/compare-strategies.mjs <id...> [--only=etf|stock]` 是配套的**快速 A/B 迭代工具**（复用同一篮子/区间，打印紧凑的按区间+总体分布对比，`--only=etf` 仅跑场内 ETF 子集），调策略参数时用它快速看多区间效果。
 
 **调试基金数据**：基金净值从东方财富 `https://api.fund.eastmoney.com/f10/lsjz` 拉取，实时估值从 `https://fundgz.1234567.com.cn/js/{code}.js` 拉取；逻辑在 `backend/src/fund/fund.service.ts`。基金详情页路由为 `/fund/:code`，直接在浏览器地址栏访问即可。
 

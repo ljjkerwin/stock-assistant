@@ -2,14 +2,16 @@ import type { Strategy } from './strategy.interface';
 import { TrendStrategy } from './trend.strategy';
 import { Trend2Strategy } from './trend2.strategy';
 import { Trend3Strategy } from './trend3.strategy';
-import { Trend4Strategy } from './trend4.strategy';
+import { Trend5Strategy } from './trend5.strategy';
+import { Trend6Strategy } from './trend6.strategy';
 
 // 注册所有可用策略：新增策略实现 Strategy 接口后加入此数组即可。
 const STRATEGIES: Strategy[] = [
   new TrendStrategy(),
   new Trend2Strategy(),
   new Trend3Strategy(),
-  new Trend4Strategy(),
+  new Trend5Strategy(),
+  new Trend6Strategy(),
 ];
 
 const registry = new Map<string, Strategy>(STRATEGIES.map((s) => [s.id, s]));
