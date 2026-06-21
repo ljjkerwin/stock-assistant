@@ -62,6 +62,7 @@ describe('FavoritesService', () => {
 
     it('adds a stock item to a stock-board list with sortOrder scoped to that list', async () => {
       watchListRepo.findOneBy.mockResolvedValue({ id: 1, boardType: 'stock' });
+      repo.findOneBy.mockResolvedValue(null);
       repo.count.mockResolvedValue(3);
 
       const result = await service.add({
@@ -79,6 +80,7 @@ describe('FavoritesService', () => {
 
     it('adds a fund item to a fund-board list', async () => {
       watchListRepo.findOneBy.mockResolvedValue({ id: 2, boardType: 'fund' });
+      repo.findOneBy.mockResolvedValue(null);
 
       const result = await service.add({
         code: '000001',
@@ -88,6 +90,32 @@ describe('FavoritesService', () => {
       });
 
       expect(result).toEqual(expect.objectContaining({ market: 'FUND', watchListId: 2 }));
+    });
+
+    it('returns the existing favorite without creating a duplicate when one already exists in the list', async () => {
+      watchListRepo.findOneBy.mockResolvedValue({ id: 1, boardType: 'stock' });
+      const existing = {
+        id: 5,
+        code: '600000',
+        market: 'A',
+        name: '浦发银行',
+        watchListId: 1,
+        sortOrder: 2,
+      };
+      repo.findOneBy.mockResolvedValue(existing);
+
+      const result = await service.add({
+        code: '600000',
+        market: 'A',
+        name: '浦发银行',
+        watchListId: 1,
+      });
+
+      expect(repo.findOneBy).toHaveBeenCalledWith({ watchListId: 1, code: '600000', market: 'A' });
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(repo.count).not.toHaveBeenCalled();
+      expect(result).toBe(existing);
     });
   });
 });

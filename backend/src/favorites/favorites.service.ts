@@ -32,6 +32,12 @@ export class FavoritesService {
     if (list.boardType !== expectedBoardType) {
       throw new BadRequestException(`标的市场 ${data.market} 与列表板块 ${list.boardType} 不匹配`);
     }
+    const existing = await this.repo.findOneBy({
+      watchListId: data.watchListId,
+      code: data.code,
+      market: data.market,
+    });
+    if (existing) return existing;
     const count = await this.repo.count({ where: { watchListId: data.watchListId } });
     const fav = this.repo.create({ ...data, sortOrder: count });
     return this.repo.save(fav);
