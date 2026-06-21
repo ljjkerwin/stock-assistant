@@ -28,6 +28,7 @@ function bar(
     changePercent: opts.chg,
     macd: { dif: opts.dif ?? 1, dea: opts.dea ?? 0, bar: 0 },
     ma: { ma5: opts.ma5 ?? close, ma10: opts.ma10 ?? close, ma20: opts.ma20, ma60: opts.ma60 },
+    boll: { upper: null, mid: null, lower: null },
     rsi: { rsi6: 50 },
     attrs: { kmacd: false, krsi: false, kma: false },
   };

@@ -27,6 +27,7 @@ function bar(
     macd: { dif: opts.dif, dea: opts.dea, bar: opts.dif - opts.dea },
     // ma60 默认取 ma10，使 TAR=MA20/MA60 落在正常区间；需测 TAR 门槛时显式传入 ma60。
     ma: { ma5: opts.ma5, ma10: opts.ma10, ma20: opts.ma20, ma60: opts.ma60 ?? opts.ma10 },
+    boll: { upper: null, mid: null, lower: null },
     rsi: { rsi6: opts.rsi ?? 50 },
     attrs: { kmacd: false, krsi: false, kma: false },
   };

@@ -102,6 +102,12 @@ export interface KlineBar {
     ma20: number | null;
     ma60: number | null;
   };
+  // BOLL(20,2) 布林带：中轨 = MA20，上/下轨 = 中轨 ± 2×总体标准差（通达信口径）
+  boll: {
+    upper: number | null;
+    mid: number | null;
+    lower: number | null;
+  };
   rsi: {
     rsi6: number | null;
     // 其他周期（如 rsi12、rsi24）暂不计算，需要时再扩展
@@ -355,6 +361,7 @@ export class KlineService {
     const ma10 = this.calcSMA(closes, 10);
     const ma20 = this.calcSMA(closes, 20);
     const ma60 = this.calcSMA(closes, 60);
+    const boll = this.calcBOLL(closes, 20, 2);
     const rsi6 = this.calcRSI(closes, 6);
 
     const result: KlineBar[] = bars.map((bar, i) => ({
@@ -374,6 +381,7 @@ export class KlineService {
         ma20: ma20[i],
         ma60: ma60[i],
       },
+      boll: boll[i],
       rsi: {
         rsi6: rsi6[i],
       },
@@ -418,6 +426,25 @@ export class KlineService {
     }
 
     return result;
+  }
+
+  /**
+   * BOLL 布林带序列。中轨为 N 周期 SMA，上/下轨为中轨 ± mult × 总体标准差
+   * （除数为 N，通达信/同花顺口径）。窗口不足 period 根时三轨均为 null。
+   */
+  private calcBOLL(data: number[], period: number, mult: number): KlineBar['boll'][] {
+    return data.map((_, i) => {
+      if (i < period - 1) return { upper: null, mid: null, lower: null };
+      const window = data.slice(i - period + 1, i + 1);
+      const mid = window.reduce((a, b) => a + b, 0) / period;
+      const variance = window.reduce((a, b) => a + (b - mid) ** 2, 0) / period;
+      const std = Math.sqrt(variance);
+      return {
+        upper: parseFloat((mid + mult * std).toFixed(4)),
+        mid: parseFloat(mid.toFixed(4)),
+        lower: parseFloat((mid - mult * std).toFixed(4)),
+      };
+    });
   }
 
   private calcSMA(data: number[], period: number): (number | null)[] {

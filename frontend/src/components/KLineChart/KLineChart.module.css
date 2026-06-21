@@ -31,3 +31,23 @@
 .sub {
   width: 100%;
 }
+
+.overlayToggle {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  z-index: 11;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 16px;
+  color: #333;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.overlayToggle:hover {
+  color: #1677ff;
+  border-color: #1677ff;
+}
