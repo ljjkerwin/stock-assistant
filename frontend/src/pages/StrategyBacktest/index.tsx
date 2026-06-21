@@ -16,8 +16,10 @@ import {
 import { StarOutlined, StarFilled } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import KLineChart from '../../components/KLineChart';
+import AddToListMenu from '../../components/AddToListMenu';
 import { strategyApi, stocksApi } from '../../api/stock';
 import { useFavoritesStore } from '../../store/favoritesStore';
+import { useWatchListStore } from '../../store/watchListStore';
 import type { KlinePeriod, KlineBar } from '../../types';
 import styles from './StrategyBacktest.module.css';
 
@@ -131,16 +133,29 @@ export default function StrategyBacktest() {
   const [fromCache, setFromCache] = useState(false);
   const [stockName, setStockName] = useState<string | null>(null);
 
-  const { favorites, addStock, removeStock } = useFavoritesStore();
-  const favoriteEntry = favorites.find((f) => f.market === market && f.code === code);
+  const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
+  const { stockLists, fetchLists } = useWatchListStore();
+  const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
+  const favoriteEntry =
+    defaultListId != null
+      ? (itemsByList[defaultListId] ?? []).find((f) => f.market === market && f.code === code)
+      : undefined;
   const isFavorited = !!favoriteEntry;
 
+  useEffect(() => {
+    fetchLists('stock');
+  }, [fetchLists]);
+
+  useEffect(() => {
+    if (defaultListId != null) fetchList(defaultListId);
+  }, [defaultListId, fetchList]);
+
   const toggleFavorite = () => {
-    if (!code) return;
+    if (!code || defaultListId == null) return;
     if (isFavorited) {
-      void removeStock(favoriteEntry!.id!);
+      void removeItem(favoriteEntry!.id!, defaultListId);
     } else {
-      void addStock({ code, market, name: stockName ?? favoriteEntry?.name ?? code });
+      void addToList(defaultListId, { code, market, name: stockName ?? favoriteEntry?.name ?? code });
     }
   };
 
@@ -302,6 +317,7 @@ export default function StrategyBacktest() {
                 onClick={toggleFavorite}
               />
             </Tooltip>
+            {code && <AddToListMenu boardType="stock" stock={{ code, market, name: stockName ?? code }} />}
           </span>
         }
         className={styles.card}

@@ -1,9 +1,10 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Upload, Button, Table, Typography, Space, Tag } from 'antd';
 import { UploadOutlined, FileExcelOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import HoldingKlinePopup from '../../components/HoldingKlinePopup';
 import { useFavoritesStore } from '../../store/favoritesStore';
+import { useWatchListStore } from '../../store/watchListStore';
 import styles from './StockListImport.module.css';
 
 const { Text, Title } = Typography;
@@ -102,11 +103,24 @@ export default function StockListImport() {
   const [parsed, setParsed] = useState<ParsedFile | null>(null);
   const [hovered, setHovered] = useState<HoveredStock | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { favorites, addStock } = useFavoritesStore();
+  const { itemsByList, fetchList, addToList } = useFavoritesStore();
+  const { stockLists, fetchLists } = useWatchListStore();
+  const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
 
-  const hoveredIsFavorited = hovered
-    ? favorites.some((f) => f.code === hovered.code && f.market === hovered.market)
-    : false;
+  useEffect(() => {
+    fetchLists('stock');
+  }, [fetchLists]);
+
+  useEffect(() => {
+    if (defaultListId != null) fetchList(defaultListId);
+  }, [defaultListId, fetchList]);
+
+  const hoveredIsFavorited =
+    hovered && defaultListId != null
+      ? (itemsByList[defaultListId] ?? []).some(
+          (f) => f.code === hovered.code && f.market === hovered.market,
+        )
+      : false;
 
   const handleFile = (file: File) => {
     const reader = new FileReader();
@@ -143,8 +157,8 @@ export default function StockListImport() {
   };
 
   const handleAddFavorite = () => {
-    if (!hovered) return;
-    addStock({ code: hovered.code, market: hovered.market, name: hovered.name });
+    if (!hovered || defaultListId == null) return;
+    addToList(defaultListId, { code: hovered.code, market: hovered.market, name: hovered.name });
   };
 
   const columns = parsed

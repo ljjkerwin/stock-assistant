@@ -10,6 +10,14 @@
   border-bottom: 1px solid #f0f0f0;
 }
 
+.listSwitcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
 .search {
   border-bottom: 1px solid #f0f0f0;
 }

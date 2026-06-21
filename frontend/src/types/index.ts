@@ -189,3 +189,12 @@ export interface MonitorMessage {
   triggeredAt: number;
   read: boolean;
 }
+
+export type BoardType = 'stock' | 'fund';
+
+export interface WatchList {
+  id: number;
+  name: string;
+  boardType: BoardType;
+  isDefault: boolean;
+}

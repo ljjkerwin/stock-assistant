@@ -5,7 +5,9 @@ import { StarOutlined, StarFilled } from '@ant-design/icons';
 import { fundApi } from '../../api/stock';
 import NavChart from '../../components/NavChart';
 import HoldingKlinePopup from '../../components/HoldingKlinePopup';
+import AddToListMenu from '../../components/AddToListMenu';
 import { useFavoritesStore } from '../../store/favoritesStore';
+import { useWatchListStore } from '../../store/watchListStore';
 import type { FundInfo, FundHoldingPeriod } from '../../types';
 import styles from './FundDetail.module.css';
 
@@ -24,9 +26,22 @@ export default function FundDetail() {
   const [holdingsLoading, setHoldingsLoading] = useState(false);
   const [hoveredHolding, setHoveredHolding] = useState<HoveredHolding | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { favorites, addStock, removeStock } = useFavoritesStore();
-  const favoriteEntry = favorites.find((f) => f.market === 'FUND' && f.code === code);
+  const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
+  const { fundLists, fetchLists } = useWatchListStore();
+  const defaultListId = fundLists.find((l) => l.isDefault)?.id ?? null;
+  const favoriteEntry =
+    defaultListId != null
+      ? (itemsByList[defaultListId] ?? []).find((f) => f.market === 'FUND' && f.code === code)
+      : undefined;
   const isFavorited = !!favoriteEntry;
+
+  useEffect(() => {
+    fetchLists('fund');
+  }, [fetchLists]);
+
+  useEffect(() => {
+    if (defaultListId != null) fetchList(defaultListId);
+  }, [defaultListId, fetchList]);
 
   useEffect(() => {
     if (!code) return;
@@ -97,14 +112,15 @@ export default function FundDetail() {
               icon={isFavorited ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
               onClick={() => {
                 if (isFavorited) {
-                  removeStock(favoriteEntry!.id!);
-                } else {
-                  addStock({ code, market: 'FUND', name: info?.name ?? code });
+                  removeItem(favoriteEntry!.id!, defaultListId!);
+                } else if (defaultListId != null) {
+                  addToList(defaultListId, { code, market: 'FUND', name: info?.name ?? code });
                 }
               }}
             />
           </Tooltip>
         )}
+        {code && <AddToListMenu boardType="fund" stock={{ code, market: 'FUND', name: info?.name ?? code }} />}
       </div>
 
       <Spin spinning={loading}>

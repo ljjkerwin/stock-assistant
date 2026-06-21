@@ -11,17 +11,28 @@ import type {
   FundNavResponse,
   FundSearchResult,
   FundHoldingPeriod,
+  WatchList,
+  BoardType,
 } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
 
 export const favoritesApi = {
-  list: () => api.get<Stock[]>('/favorites').then((r) => r.data),
-  add: (stock: { code: string; market: 'A' | 'HK' | 'FUND'; name: string }) =>
+  list: (watchListId: number) =>
+    api.get<Stock[]>('/favorites', { params: { watchListId } }).then((r) => r.data),
+  add: (stock: { code: string; market: 'A' | 'HK' | 'FUND'; name: string; watchListId: number }) =>
     api.post<Stock>('/favorites', stock).then((r) => r.data),
   remove: (id: number) => api.delete(`/favorites/${id}`),
   update: (id: number, data: { sortOrder?: number; pinned?: boolean }) =>
     api.patch<Stock>(`/favorites/${id}`, data).then((r) => r.data),
+};
+
+export const watchListsApi = {
+  list: (boardType: BoardType): Promise<WatchList[]> =>
+    api.get<WatchList[]>('/watchlists', { params: { boardType } }).then((r) => r.data),
+  create: (name: string, boardType: BoardType): Promise<WatchList> =>
+    api.post<WatchList>('/watchlists', { name, boardType }).then((r) => r.data),
+  remove: (id: number): Promise<void> => api.delete(`/watchlists/${id}`).then(() => undefined),
 };
 
 export const stocksApi = {
