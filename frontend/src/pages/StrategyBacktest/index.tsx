@@ -52,7 +52,8 @@ interface CachedConfig {
 // ── localStorage helpers ───────────────────────────────────────────────────
 
 // v2: 盈亏字段语义从「绝对价差」改为「百分比」，bump key 使旧缓存失效
-const RESULT_KEY = 'backtest:result:v2';
+// v3: K 线新增 boll 字段，bump key 丢弃不含 boll 的旧缓存（否则主图 BOLL 叠加画不出线）
+const RESULT_KEY = 'backtest:result:v3';
 const PARAMS_KEY = 'backtest:params';
 
 function buildKey(
