@@ -25,6 +25,32 @@ function pickDefaultId(lists: WatchList[]): number | null {
   return lists.find((l) => l.isDefault)?.id ?? lists[0]?.id ?? null;
 }
 
+function storageKey(boardType: BoardType): string {
+  return `watchList:current:${boardType}`;
+}
+
+function getSavedCurrentId(boardType: BoardType): number | null {
+  try {
+    const raw = localStorage.getItem(storageKey(boardType));
+    const id = raw == null ? NaN : Number(raw);
+    return Number.isFinite(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCurrentId(boardType: BoardType, id: number | null): void {
+  try {
+    if (id == null) {
+      localStorage.removeItem(storageKey(boardType));
+    } else {
+      localStorage.setItem(storageKey(boardType), String(id));
+    }
+  } catch (error) {
+    console.warn('保存标的列表选择失败', error);
+  }
+}
+
 export const useWatchListStore = create<WatchListStore>((set, get) => ({
   stockLists: [],
   fundLists: [],
@@ -34,15 +60,15 @@ export const useWatchListStore = create<WatchListStore>((set, get) => ({
   fetchLists: async (boardType) => {
     try {
       const lists = await watchListsApi.list(boardType);
+      const current = (boardType === 'stock' ? get().currentStockListId : get().currentFundListId) ?? getSavedCurrentId(boardType);
+      const stillExists = current != null && lists.some((l) => l.id === current);
+      const nextId = stillExists ? current : pickDefaultId(lists);
       if (boardType === 'stock') {
-        const current = get().currentStockListId;
-        const stillExists = current != null && lists.some((l) => l.id === current);
-        set({ stockLists: lists, currentStockListId: stillExists ? current : pickDefaultId(lists) });
+        set({ stockLists: lists, currentStockListId: nextId });
       } else {
-        const current = get().currentFundListId;
-        const stillExists = current != null && lists.some((l) => l.id === current);
-        set({ fundLists: lists, currentFundListId: stillExists ? current : pickDefaultId(lists) });
+        set({ fundLists: lists, currentFundListId: nextId });
       }
+      saveCurrentId(boardType, nextId);
     } catch (error) {
       message.error(extractErrorMessage(error));
     }
@@ -56,6 +82,7 @@ export const useWatchListStore = create<WatchListStore>((set, get) => ({
       } else {
         set((s) => ({ fundLists: [...s.fundLists, created], currentFundListId: created.id }));
       }
+      saveCurrentId(boardType, created.id);
       return created;
     } catch (error) {
       message.error(extractErrorMessage(error));
@@ -69,18 +96,16 @@ export const useWatchListStore = create<WatchListStore>((set, get) => ({
       if (boardType === 'stock') {
         set((s) => {
           const remaining = s.stockLists.filter((l) => l.id !== id);
-          return {
-            stockLists: remaining,
-            currentStockListId: s.currentStockListId === id ? pickDefaultId(remaining) : s.currentStockListId,
-          };
+          const nextId = s.currentStockListId === id ? pickDefaultId(remaining) : s.currentStockListId;
+          saveCurrentId(boardType, nextId);
+          return { stockLists: remaining, currentStockListId: nextId };
         });
       } else {
         set((s) => {
           const remaining = s.fundLists.filter((l) => l.id !== id);
-          return {
-            fundLists: remaining,
-            currentFundListId: s.currentFundListId === id ? pickDefaultId(remaining) : s.currentFundListId,
-          };
+          const nextId = s.currentFundListId === id ? pickDefaultId(remaining) : s.currentFundListId;
+          saveCurrentId(boardType, nextId);
+          return { fundLists: remaining, currentFundListId: nextId };
         });
       }
     } catch (error) {
@@ -94,5 +119,6 @@ export const useWatchListStore = create<WatchListStore>((set, get) => ({
     } else {
       set({ currentFundListId: id });
     }
+    saveCurrentId(boardType, id);
   },
 }));

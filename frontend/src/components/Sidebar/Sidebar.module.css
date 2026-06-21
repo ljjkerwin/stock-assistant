@@ -22,6 +22,12 @@
   border-bottom: 1px solid #f0f0f0;
 }
 
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .item {
   display: flex;
   align-items: center;

@@ -212,7 +212,7 @@ export default function Sidebar() {
       )}
 
       {(section === 'stock' || section === 'backtest') && (
-        <div>
+        <div className={styles.list}>
           {items.map((stock, index) =>
             renderItem(
               stock,
@@ -227,7 +227,7 @@ export default function Sidebar() {
       )}
 
       {section === 'fund' && (
-        <div>
+        <div className={styles.list}>
           {items.map((stock, index) => renderItem(stock, index, items, (s) => `/fund/${s.code}`))}
         </div>
       )}

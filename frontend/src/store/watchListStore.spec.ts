@@ -20,9 +20,30 @@ vi.mock('antd', async () => {
   };
 });
 
+function createLocalStorageMock(): Storage {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => (key in store ? store[key] : null),
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+    key: () => null,
+    length: 0,
+  };
+}
+
+vi.stubGlobal('localStorage', createLocalStorageMock());
+
 describe('watchListStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     useWatchListStore.setState({
       stockLists: [],
       fundLists: [],
@@ -119,6 +140,37 @@ describe('watchListStore', () => {
       await useWatchListStore.getState().deleteList(1, 'stock');
 
       expect(useWatchListStore.getState().currentStockListId).toBe(2);
+    });
+  });
+
+  describe('localStorage persistence', () => {
+    it('setCurrentList saves the selection to localStorage', () => {
+      useWatchListStore.getState().setCurrentList('stock', 1);
+
+      expect(localStorage.getItem('watchList:current:stock')).toBe('1');
+    });
+
+    it('fetchLists restores the selection saved in localStorage after a page refresh', async () => {
+      localStorage.setItem('watchList:current:stock', '1');
+      const lists: WatchList[] = [
+        { id: 1, name: '我的自选股', boardType: 'stock', isDefault: false },
+        { id: 2, name: '收藏夹', boardType: 'stock', isDefault: true },
+      ];
+      vi.mocked(watchListsApi.list).mockResolvedValue(lists);
+
+      await useWatchListStore.getState().fetchLists('stock');
+
+      expect(useWatchListStore.getState().currentStockListId).toBe(1);
+    });
+
+    it('fetchLists saves the picked default id to localStorage when the saved id no longer exists', async () => {
+      localStorage.setItem('watchList:current:stock', '99');
+      const lists: WatchList[] = [{ id: 2, name: '收藏夹', boardType: 'stock', isDefault: true }];
+      vi.mocked(watchListsApi.list).mockResolvedValue(lists);
+
+      await useWatchListStore.getState().fetchLists('stock');
+
+      expect(localStorage.getItem('watchList:current:stock')).toBe('2');
     });
   });
 });

@@ -37,6 +37,24 @@ describe('favoritesStore', () => {
       expect(favoritesApi.list).toHaveBeenCalledWith(7);
       expect(useFavoritesStore.getState().itemsByList[7]).toEqual(items);
     });
+
+    it('de-duplicates concurrent fetches of the same list into a single request', async () => {
+      const items: Stock[] = [{ id: 1, code: '600000', market: 'A', name: '浦发银行' }];
+      vi.mocked(favoritesApi.list).mockResolvedValue(items);
+
+      // 侧边栏与详情页在挂载时同时请求同一列表，应合并为一次请求
+      await Promise.all([
+        useFavoritesStore.getState().fetchList(1),
+        useFavoritesStore.getState().fetchList(1),
+      ]);
+
+      expect(favoritesApi.list).toHaveBeenCalledTimes(1);
+      expect(useFavoritesStore.getState().itemsByList[1]).toEqual(items);
+
+      // 请求完成后，后续拉取应重新发起（用于刷新数据）
+      await useFavoritesStore.getState().fetchList(1);
+      expect(favoritesApi.list).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('addToList', () => {
