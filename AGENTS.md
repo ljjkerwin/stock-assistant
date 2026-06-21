@@ -78,8 +78,8 @@ pnpm dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/favorites` | 获取收藏列表（pinned desc, sort_order asc） |
-| POST | `/api/favorites` | 添加收藏 |
+| GET | `/api/favorites?watchListId=` | 获取指定列表的收藏（`watchListId` 必需，pinned desc, sort_order asc） |
+| POST | `/api/favorites` | 添加收藏（body `{ code, market, name, watchListId }`，`watchListId` 必需；market 与列表板块不匹配时返回 400） |
 | DELETE | `/api/favorites/:id` | 删除收藏 |
 | PATCH | `/api/favorites/:id` | 更新排序 / 置顶状态 |
 | GET | `/api/watchlists?boardType=stock\|fund` | 获取该板块的标的列表（`isDefault` 列表「收藏夹」排最前，其余按创建时间升序） |
