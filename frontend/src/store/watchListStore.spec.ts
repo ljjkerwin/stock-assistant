@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { message } from 'antd';
 import { useWatchListStore } from './watchListStore';
 import { watchListsApi } from '../api/stock';
 import type { WatchList } from '../types';
@@ -10,6 +11,14 @@ vi.mock('../api/stock', () => ({
     remove: vi.fn(),
   },
 }));
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd');
+  return {
+    ...actual,
+    message: { ...actual.message, error: vi.fn() },
+  };
+});
 
 describe('watchListStore', () => {
   beforeEach(() => {
@@ -63,6 +72,18 @@ describe('watchListStore', () => {
       const state = useWatchListStore.getState();
       expect(state.fundLists).toEqual([created]);
       expect(state.currentFundListId).toBe(3);
+    });
+
+    it('shows an error message and resolves with undefined when the API call rejects', async () => {
+      vi.mocked(watchListsApi.create).mockRejectedValue({
+        response: { data: { message: '列表数量已达上限' } },
+      });
+
+      const result = await useWatchListStore.getState().createList('打新观察', 'fund');
+
+      expect(result).toBeUndefined();
+      expect(message.error).toHaveBeenCalledWith('列表数量已达上限');
+      expect(useWatchListStore.getState().fundLists).toEqual([]);
     });
   });
 

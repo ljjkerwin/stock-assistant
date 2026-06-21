@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { message } from 'antd';
 import { useFavoritesStore } from './favoritesStore';
 import { favoritesApi } from '../api/stock';
 import type { Stock } from '../types';
@@ -11,6 +12,14 @@ vi.mock('../api/stock', () => ({
     update: vi.fn(),
   },
 }));
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd');
+  return {
+    ...actual,
+    message: { ...actual.message, error: vi.fn() },
+  };
+});
 
 describe('favoritesStore', () => {
   beforeEach(() => {
@@ -51,6 +60,18 @@ describe('favoritesStore', () => {
         watchListId: 7,
       });
       expect(useFavoritesStore.getState().itemsByList[7]).toHaveLength(1);
+    });
+
+    it('shows an error message and does not throw when the API call rejects', async () => {
+      vi.mocked(favoritesApi.add).mockRejectedValue({
+        response: { data: { message: '标的市场 A 与列表板块 fund 不匹配' } },
+      });
+
+      await expect(
+        useFavoritesStore.getState().addToList(7, { code: '600000', market: 'A', name: '浦发银行' }),
+      ).resolves.toBeUndefined();
+
+      expect(message.error).toHaveBeenCalledWith('标的市场 A 与列表板块 fund 不匹配');
     });
   });
 
