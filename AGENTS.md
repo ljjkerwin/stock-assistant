@@ -82,6 +82,9 @@ pnpm dev
 | POST | `/api/favorites` | 添加收藏 |
 | DELETE | `/api/favorites/:id` | 删除收藏 |
 | PATCH | `/api/favorites/:id` | 更新排序 / 置顶状态 |
+| GET | `/api/watchlists?boardType=stock\|fund` | 获取该板块的标的列表（`isDefault` 列表「收藏夹」排最前，其余按创建时间升序） |
+| POST | `/api/watchlists` | 新建自定义标的列表，body `{ name, boardType }` |
+| DELETE | `/api/watchlists/:id` | 删除标的列表（默认列表「收藏夹」不可删，返回 400；级联删除列表内的收藏） |
 | GET | `/api/stocks/search?q=` | 按代码或名称搜索（A股 + 港股） |
 | GET | `/api/stocks/:market/:code` | 获取股票基本信息 |
 | GET | `/api/kline/:market/:code?period=` | 获取 K 线数据 |
