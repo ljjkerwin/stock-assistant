@@ -8,7 +8,7 @@ export class WatchList {
   @Column()
   name: string;
 
-  @Column({ name: 'board_type' })
+  @Column({ name: 'board_type', type: 'varchar' })
   boardType: 'stock' | 'fund';
 
   @Column({ name: 'is_default', default: false })

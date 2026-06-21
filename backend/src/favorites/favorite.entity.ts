@@ -14,7 +14,7 @@ export class Favorite {
   @Column()
   name: string;
 
-  @Column({ name: 'watch_list_id', nullable: true })
+  @Column({ name: 'watch_list_id', type: 'int', nullable: true })
   watchListId: number | null;
 
   @Column({ name: 'sort_order', default: 0 })
