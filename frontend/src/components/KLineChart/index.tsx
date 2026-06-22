@@ -31,8 +31,14 @@ interface Props {
   initialData?: { data: KlineBar[]; period?: KlinePeriod; backtestStartTime?: string | null };
   zoomStorageKey?: string;
   showPeriodTabs?: boolean;
+  // 外部受控周期：无 initialData 的拉取模式下指定周期（配合 showPeriodTabs=false 使用，如回测页预览）
+  period?: KlinePeriod;
   showLjj?: boolean; // 显示 ljj 自定义副图（综合属性堆叠柱状图），仅策略回测页使用
   showRsi?: boolean; // 显示常规 RSI 副图（RSI6 曲线），仅策略回测页使用
+  // 回测预览：拉取模式下将默认视口对齐到回测时间区间 [viewStartDate, viewEndDate]（YYYY-MM-DD），
+  // 使点击「开始回测」后视口不跳变；仅在无 initialData 的拉取模式下生效
+  viewStartDate?: string;
+  viewEndDate?: string;
 }
 
 // ljj 副图属性颜色
@@ -111,8 +117,8 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
   return (t >= 570 && t < 720) || (t >= 780 && t < 960);
 }
 
-export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false }: Props) {
-  const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? 'timeshare');
+export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
+  const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? controlledPeriod ?? 'timeshare');
   const [loading, setLoading] = useState(false);
   const [overlay, setOverlay] = useState<MainOverlay>(loadOverlay);
 
@@ -150,6 +156,8 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const syncingRef = useRef(false);
   const zoomStorageKeyRef = useRef<string | undefined>(undefined);
   const zoomSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewStartDateRef = useRef<string | undefined>(undefined);
+  const viewEndDateRef = useRef<string | undefined>(undefined);
 
   // Data refs — used by legend updater to look up values by time
   const barsRef = useRef<KlineBar[]>([]);
@@ -182,21 +190,21 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     const mainChart = createChart(containerRef.current, { ...CHART_OPTIONS, height: 300 });
     mainChartRef.current = mainChart;
 
-    const volumeChart = createChart(volumeRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+    const volumeChart = createChart(volumeRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
     volumeChartRef.current = volumeChart;
 
-    const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+    const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
     macdChartRef.current = macdChart;
 
     let rsiChart: IChartApi | null = null;
     if (showRsi && rsiRef.current) {
-      rsiChart = createChart(rsiRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+      rsiChart = createChart(rsiRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
       rsiChartRef.current = rsiChart;
     }
 
     let ljjChart: IChartApi | null = null;
     if (showLjj && ljjRef.current) {
-      ljjChart = createChart(ljjRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+      ljjChart = createChart(ljjRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
       ljjChartRef.current = ljjChart;
     }
 
@@ -623,6 +631,24 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       setAllRange(savedRange);
     } else if (isTimeshare || bars.length === 0) {
       fitAll();
+    } else if (viewStartDateRef.current && !backtestStartTime) {
+      // 回测预览：默认视口对齐回测时间区间 [viewStartDate, viewEndDate]，
+      // 优先于持久化 zoom，使点击回测后视口不跳到别的时间
+      const startDay = viewStartDateRef.current;
+      const endDay = viewEndDateRef.current;
+      const startIdx = bars.findIndex((b) => b.time.slice(0, 10) >= startDay);
+      let endIdx = bars.length - 1;
+      if (endDay) {
+        for (let i = bars.length - 1; i >= 0; i--) {
+          if (bars[i].time.slice(0, 10) <= endDay) {
+            endIdx = i;
+            break;
+          }
+        }
+      }
+      // 与回测结果视图一致：起点前留 5 根历史上下文
+      const from = startIdx >= 0 ? Math.max(0, startIdx - 5) : 0;
+      setAllRange({ from: Math.min(from, endIdx), to: endIdx });
     } else {
       // Restore persisted zoom if available
       let restoredZoom: LogicalRange | null = null;
@@ -687,6 +713,20 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   useEffect(() => {
     zoomStorageKeyRef.current = zoomStorageKey;
   }, [zoomStorageKey]);
+
+  // 回测预览：时间区间变化时更新 ref，并在拉取模式下就地重新取景（不重新拉取数据）
+  useEffect(() => {
+    viewStartDateRef.current = viewStartDate;
+    viewEndDateRef.current = viewEndDate;
+    if (!initialData && barsRef.current.length > 0 && periodRef.current !== 'timeshare') {
+      applyData(barsRef.current, periodRef.current, false);
+    }
+  }, [viewStartDate, viewEndDate, initialData, applyData]);
+
+  // 受控周期变化时同步内部 period（仅拉取模式，由父组件如回测页驱动）
+  useEffect(() => {
+    if (controlledPeriod) setPeriod(controlledPeriod);
+  }, [controlledPeriod]);
 
   // 切换主图叠加内容（均线/BOLL）时，用当前数据就地重绘（保持视口），无需重新拉取
   useEffect(() => {

@@ -381,72 +381,85 @@ export default function StrategyBacktest() {
           </Col>
 
           {result && (
-            <>
-              <Col span={24}>
-                <Card
-                  type="inner"
-                  title={
-                    <span>
-                      回测结果{fromCache && <Tag color="default" style={{ marginLeft: 8, fontSize: 11 }}>已缓存</Tag>}
-                    </span>
-                  }
-                  size="small"
-                >
-                  {resultMeta && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, marginBottom: 16, color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
-                      <span>标的：{stockName ? `${stockName} ` : ''}{code}（{market === 'A' ? 'A股' : '港股'}）</span>
-                      <span>K线周期：{PERIODS.find((p) => p.value === resultMeta.period)?.label ?? resultMeta.period}</span>
-                      <span>策略：{strategies.find((s) => s.id === resultMeta.strategy)?.name ?? resultMeta.strategy}</span>
-                      <span>回测时间区间：{resultMeta.startDate} ~ {resultMeta.endDate}</span>
-                    </div>
-                  )}
-                  <div className={styles.statRow}>
-                    <span>区间涨跌：<span style={{
-                      color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
-                    }}>{toPercent(result.priceChangePercent)}</span></span>
-
-                    <span>回测收益：<span style={{
-                      color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
-                    }}>{toPercent(result.returnPercent)}</span></span>
-
-                    <span>最大回撤：<span style={{
-                      color: '#26a69a',
-                    }}>{toPercent(result.maxDrawdown)}</span></span>
-
-                    <span>夏普比率：<span>{result.sharpeRatio.toFixed(2)}</span></span>
-
-                    <span>交易次数：<span>{result.tradeCount}</span></span>
+            <Col span={24}>
+              <Card
+                type="inner"
+                title={
+                  <span>
+                    回测结果{fromCache && <Tag color="default" style={{ marginLeft: 8, fontSize: 11 }}>已缓存</Tag>}
+                  </span>
+                }
+                size="small"
+              >
+                {resultMeta && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, marginBottom: 16, color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+                    <span>标的：{stockName ? `${stockName} ` : ''}{code}（{market === 'A' ? 'A股' : '港股'}）</span>
+                    <span>K线周期：{PERIODS.find((p) => p.value === resultMeta.period)?.label ?? resultMeta.period}</span>
+                    <span>策略：{strategies.find((s) => s.id === resultMeta.strategy)?.name ?? resultMeta.strategy}</span>
+                    <span>回测时间区间：{resultMeta.startDate} ~ {resultMeta.endDate}</span>
                   </div>
-                </Card>
-              </Col>
+                )}
+                <div className={styles.statRow}>
+                  <span>区间涨跌：<span style={{
+                    color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
+                  }}>{toPercent(result.priceChangePercent)}</span></span>
 
-              <Col span={24}>
-                <Card type="inner" title="K线图" size="small">
-                  <KLineChart
-                    market={market}
-                    code={code || ''}
-                    initialData={{ data: result.klines, period, backtestStartTime: result.backtestStartTime }}
-                    zoomStorageKey={code}
-                    showPeriodTabs={false}
-                    showRsi
-                    showLjj
-                  />
-                </Card>
-              </Col>
+                  <span>回测收益：<span style={{
+                    color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
+                  }}>{toPercent(result.returnPercent)}</span></span>
 
-              {result.trades.length > 0 && (
-                <Col span={24}>
-                  <Card type="inner" title="交易记录" size="small">
-                    <Table
-                      dataSource={result.trades.map((t, i) => ({ ...t, key: i }))}
-                      columns={tradeColumns}
-                      pagination={false}
-                      size="small"
-                    />
-                  </Card>
-                </Col>
+                  <span>最大回撤：<span style={{
+                    color: '#26a69a',
+                  }}>{toPercent(result.maxDrawdown)}</span></span>
+
+                  <span>夏普比率：<span>{result.sharpeRatio.toFixed(2)}</span></span>
+
+                  <span>交易次数：<span>{result.tradeCount}</span></span>
+                </div>
+              </Card>
+            </Col>
+          )}
+
+          {/* K线图：回测前即展示（拉取所选周期 K 线，仅不渲染买卖点）；回测后用结果数据并叠加买卖信号 */}
+          <Col span={24}>
+            <Card type="inner" title="K线图" size="small">
+              {result ? (
+                <KLineChart
+                  market={market}
+                  code={code || ''}
+                  initialData={{ data: result.klines, period, backtestStartTime: result.backtestStartTime }}
+                  zoomStorageKey={code}
+                  showPeriodTabs={false}
+                  showRsi
+                  showLjj
+                />
+              ) : (
+                <KLineChart
+                  market={market}
+                  code={code || ''}
+                  period={period}
+                  zoomStorageKey={code}
+                  showPeriodTabs={false}
+                  showRsi
+                  showLjj
+                  viewStartDate={startDate.format('YYYY-MM-DD')}
+                  viewEndDate={endDate.format('YYYY-MM-DD')}
+                />
               )}
-            </>
+            </Card>
+          </Col>
+
+          {result && result.trades.length > 0 && (
+            <Col span={24}>
+              <Card type="inner" title="交易记录" size="small">
+                <Table
+                  dataSource={result.trades.map((t, i) => ({ ...t, key: i }))}
+                  columns={tradeColumns}
+                  pagination={false}
+                  size="small"
+                />
+              </Card>
+            </Col>
           )}
         </Row>
       </Card>

@@ -237,7 +237,8 @@ pnpm dev
 **前端页面**
 - 标题栏右侧提供收藏（星标）按钮，复用 `favoritesStore`（`addStock`/`removeStock`）；标题展示股票名称（`stocksApi.getInfo` 获取，缺失时回退为代码）
 - localStorage 缓存：回测配置以**全局单条「最近一次回测配置」**存储（key `backtest:params`，不按股票分组），刷新或切换股票时自动套用（market 不入缓存，由代码推断）；回测结果以 `backtest:result` 缓存（key 含 `code|market|period|strategy|startDate|endDate`），仅当当前股票 + 配置与缓存完全一致时回填并显示「已缓存」标签
-- K 线图复用 `KLineChart` 组件，通过 `initialData` 传入回测返回的 K 线数据并禁用自动轮询
+- K 线图复用 `KLineChart` 组件：**回测前即展示**——未回测时以拉取模式按所选周期渲染 K 线（含均线/BOLL/MACD/RSI/ljj 副图），仅不渲染买卖点（普通 K 线无 `signal` 字段），周期通过受控 `period` prop 由页面下拉驱动、随交易时段自动轮询；回测后改用 `initialData` 传入回测返回的 K 线数据（叠加买卖信号与回测起始标记）并禁用自动轮询。`KLineChart` 的 `period` prop 为拉取模式下的外部受控周期（配合 `showPeriodTabs=false`），有 `initialData` 时以其 `period` 为准
+- **回测前预览视口对齐回测区间**：回测页通过 `viewStartDate`/`viewEndDate`（YYYY-MM-DD）prop 把当前表单的开始/结束时间传给拉取模式的预览图，预览默认视口取 `[viewStartDate−5根, viewEndDate]`（与回测结果视图同样前留 5 根历史上下文），**优先于持久化 zoom**；表单时间区间变化时就地重新取景（不重新拉取），从而点击「开始回测」后视口不跳到别的时间。该 prop 仅在无 `initialData` 的拉取模式下生效
 
 **K 线图副图（仅回测页启用）**
 - `showRsi`：常规 RSI 副图，只画 RSI6（6 个交易日）曲线，数据取 K 线的 `rsi.rsi6`
