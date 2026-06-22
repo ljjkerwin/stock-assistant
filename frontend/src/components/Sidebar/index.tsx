@@ -162,13 +162,6 @@ export default function Sidebar() {
 
       {boardType && (
         <div className={styles.listSwitcher}>
-          <Select
-            value={currentListId ?? undefined}
-            options={lists.map((l) => ({ value: l.id, label: l.name }))}
-            onChange={(id) => setCurrentList(boardType, id)}
-            style={{ flex: 1 }}
-            size="small"
-          />
           <Tooltip title="新建列表">
             <Button
               type="text"
@@ -177,6 +170,15 @@ export default function Sidebar() {
               onClick={() => setAddListOpen(true)}
             />
           </Tooltip>
+          
+          <Select
+            value={currentListId ?? undefined}
+            options={lists.map((l) => ({ value: l.id, label: l.name }))}
+            onChange={(id) => setCurrentList(boardType, id)}
+            style={{ flex: 1 }}
+            size="small"
+          />
+
           {currentList && !currentList.isDefault && (
             <Popconfirm
               title={`确定删除列表「${currentList.name}」？`}
