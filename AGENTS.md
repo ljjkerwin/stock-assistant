@@ -108,7 +108,7 @@ pnpm dev
 
 `period` 枚举：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
 
-`strategy` 取**策略 id**（稳定标识，非展示名；展示名可改而 id 不变）：`trend2`（日线趋势策略2，自适应双模式：趋势骑乘 + 反弹，注意有过拟合）、`trend5`（经典框架-趋势跟随+分层止损+趋势确认，经典趋势跟随入场框架 + 棘轮三段止损 + MA60 斜率确认 + 个股/ETF 双参数集，多区间样本调优的稳健版）、`trend8`（全新独立框架：趋势骑乘式入场 + 自适应 Parabolic SAR 离场 + 高潮反转日离场，针对「沿趋势骨上行→加速大涨→冲高快速回落」类标的，目标吃满主升浪并贴顶离场）。可用策略及展示名以 `GET /api/strategy/list` 为准
+`strategy` 取**策略 id**（稳定标识，非展示名；展示名可改而 id 不变）：`trend2`（日线趋势策略2，自适应双模式：趋势骑乘 + 反弹，注意有过拟合）、`trend5`（经典框架-趋势跟随+分层止损+趋势确认，经典趋势跟随入场框架 + 棘轮三段止损 + MA60 斜率确认 + 个股/ETF 双参数集，多区间样本调优的稳健版）、`trend8`（全新独立框架：趋势骑乘式入场 + 自适应 Parabolic SAR 离场 + 高潮反转日离场，针对「沿趋势骨上行→加速大涨→冲高快速回落」类标的，目标吃满主升浪并贴顶离场）、`pullback15`（15分钟·趋势自适应，面向 15min 周期：上升趋势过滤 + **regime 自适应双模式入场**（普通趋势走回调金叉、强趋势走 onset 骑乘）+ 趋势持有·确认破位才离场，用于判断 A 股短波段买卖点）。可用策略及展示名以 `GET /api/strategy/list` 为准
 
 ---
 
@@ -229,6 +229,17 @@ pnpm dev
 - 参数集见 `trend8.strategy.ts` 顶部 `STOCK_PARAMS`/`ETF_PARAMS`（字段 `ma60SlopeLookback`/`afStart`/`afStep`/`afMaxBase`/`afMaxHot`/`sarInitLookback`/`extGatePct`/`climaxDropPct`；ETF 集过热/高潮阈值相应放低，仅用于泛化）；`shouldHold`（中期上升趋势状态）/`cumulHold`/末根强制平仓口径与其他趋势策略一致
 - **行为特征（「高点处理」38 标的 × 2026 区间实测）**：收益中位优于 trend5（如 2026-01-13~06-18 区间收益中位 25.87 vs trend5 13.88；2026-04-01~06-18 区间 26.54 vs 17.77），夏普中位亦最高；对「暴力 blow-off」标的提升显著（贴顶离场），代价是对「长多浪」标的会更早离场、回撤中位偏高（属「锁定主升浪、少回吐」定位的固有取舍）
 
+**15分钟·趋势自适应（id `pullback15`）—— 上升趋势过滤 + regime 自适应双模式入场（回调金叉 / 强趋势 onset 骑乘）+ 趋势持有·确认破位才离场**
+- 设计定位：面向 **15min K 线**的多周期趋势策略，帮助判断 A 股标的的短波段买卖点；由 `pullback15.strategy.ts` 实现，与其他策略共用接口层指标。用「慢周期代理」（15min 上的 MA60 ≈ 近 4 个交易日中枢）定方向，只在中期上升趋势中做多，并**按趋势强弱切换两种入场**：普通趋势用「趋势内回调金叉」，强趋势用「多头排列铺开首根骑乘」，之后趋势持有、确认破位才离场
+- **趋势过滤（regime，复用 trend5 口径）**：`close>MA60 && MA20>MA60 && MA60 上行`（`ma60[i] > ma60[i − MA60_SLOPE_LOOKBACK]`，默认 16 根 ≈1 交易日），下跌/走平市整段空仓
+- **入场（两模式，取先满足）**：
+  - **① 回调金叉（普通上升趋势）**：regime 成立 + MACD 金叉（`dif` 上穿 `dea`）+ 当日阳线（`changePercent>0`）+ RSI6 未超买（`< RSI_OVERBOUGHT`，默认 75）。**不要求 `dif>0`**——regime 已保证趋势向上，零轴下方的较深回调金叉恰是好买点；RSI 上限用于在震荡/普通趋势里避免追高接最后一棒
+  - **② 强趋势 onset 骑乘（强趋势）**：在**强趋势** `isStrongUp`（`MA5>MA10>MA20>MA60` 且 MA60 上行 且 `close>MA20`）**刚由假转真的那一根（onset）** + MACD 多头（`dif>dea`）即入场，**放开 RSI 上限、不要求新鲜金叉/阳线**。修复点：强趋势单边上行时 MACD 一路 `dif>dea` 不再产生新鲜金叉、RSI6 长期 80+ 被超买上限挡死，原单一回调金叉入场整段主升浪一笔进不去（实测 600498 烽火通信 +64% 区间，6 月 +34% 拉升的每个金叉都因 RSI6≈82~84 被否决，原策略 −2.45%）。**onset-only** 是关键：若改为「strongUp 期间每根阳线都入」会在震荡市被「入场→破位离场→又追进」千刀万剐（实测震荡段收益中位 0.00→−0.57），onset 后被洗出须待趋势重新走强才再入场，既保住震荡保护（中位回 0.00）又能在主升浪里再入场吃趋势
+- **离场（趋势持有，确认破位才卖，取先触发）**：①**连续 2 根 15min 收盘跌破 MA20**（过滤单根噪声，穿越趋势的小回调不离场）；②**趋势破位** `MA20 < MA60`（中期结构走坏）。`isStrongUp` 要求 `close>MA20`，故强趋势持有期不会触发跌破 MA20 离场。早期版本用「MACD 死叉 或 单根跌破 MA20」的对称信号离场，实测在 15min 上过于灵敏，故改为趋势持有式离场；买/卖互斥、不在同根触发
+- 参数集为 `pullback15.strategy.ts` 顶部常量 `MA60_SLOPE_LOOKBACK`/`RSI_OVERBOUGHT`（仅 2 个，**刻意不精调**；强趋势 onset 入场为纯结构判定、无新增拟合阈值）；不区分个股/ETF（忽略 `ctx.isEtf`）；`shouldHold`（中期上升趋势状态）/`cumulHold`/末根强制平仓口径与其他趋势策略一致；所有判定均为相对量（均线大小关系/斜率、MACD 穿越/方向、RSI、单日涨跌），无随股价高低失真的绝对阈值
+- **行为特征（15min 固定测试集 33 标的 × 3 区间）**：相比单模式旧版，总体收益中位 0.00→0.35、均值 1.00→2.52、空仓率 19%→2%；震荡段（W_chop）收益中位维持 0.00（下跌保护未退化），拉升段（W_rally）收益中位 0.00→1.09、夏普 0.00→1.00；代价是回撤中位 1.31→2.84。单只 600498 −2.45%→+42.4%
+- ⚠️ **数据窗口约束**：15min 分钟线上游最多 ~800 根 ≈ 最近 50 个交易日且不可回溯（见上文 `KlineService`），故本策略只能在该窗口内回测、**无法做日线那种多区间样本外验证**；参数少、不精调、入场判定纯结构即为压制此约束下的过拟合。专用测试集与对比工具见 `scripts/backtest15.mjs`（下文「常见任务指引」）
+
 **指标计算（接口层统一口径）**
 - MACD(12,26,9)（标准参数，全项目统一）、MA5/10/20/60、BOLL(20,2)、RSI 均在 `KlineService.calcMACD` 计算后随每条 K 线返回，回测层直接消费、不重算，故回测信号与 K 线图指标完全一致
 - BOLL(20,2) 以 `boll` 对象返回（`upper`/`mid`/`lower`，均 `number | null`）：中轨 = 20 周期 SMA（即 MA20），上/下轨 = 中轨 ± 2×总体标准差（除数为 N，通达信/同花顺口径），窗口不足 20 根时三轨为 null；目前仅 K 线图主图「BOLL」叠加使用
@@ -274,7 +285,9 @@ pnpm dev
 
 **切换数据库**：在 `backend/.env` 中同时填写 `MYSQL_HOST` / `MYSQL_USERNAME` / `MYSQL_PASSWORD` 三项即启用 MySQL；任一项缺失则自动使用本地 SQLite（`./stock-assistant.db`），无需改代码。
 
-**批量策略回测（多标的×多区间）**：`scripts/batch-backtest.mjs` 对「收藏夹有效标的 + 内置无偏抽样篮子（沪深300/中证500-1000/科创/宽基+行业ETF/港股，共 50 只）」跨 4 个时间区间调用 `/api/strategy/backtest`，汇总成**分布口径**（收益中位数、跑赢买入持有胜率、P25/P75 分位、回撤中位数、夏普中位数、空仓率），输出 `all_strategy_result_broad.md` 与明细 `batch_backtest_raw.csv`。需后端先在 3000 端口运行；标的篮子/区间在脚本顶部常量 `EXTRA`/`WINDOWS` 调整。`scripts/compare-strategies.mjs <id...> [--only=etf|stock]` 是配套的**快速 A/B 迭代工具**（复用同一篮子/区间，打印紧凑的按区间+总体分布对比，`--only=etf` 仅跑场内 ETF 子集），调策略参数时用它快速看多区间效果。
+**批量策略回测（多标的×多区间）**：`scripts/batch-backtest.mjs` 对「收藏夹有效标的 + 内置无偏抽样篮子（沪深300/中证500-1000/科创/宽基+行业ETF/港股，共 50 只）」跨 4 个时间区间调用 `/api/strategy/backtest`，汇总成**分布口径**（收益中位数、跑赢买入持有胜率、P25/P75 分位、回撤中位数、夏普中位数、空仓率），输出 `dist/all_strategy_result_broad.md` 与明细 `dist/batch_backtest_raw.csv`（所有分析结果统一写入 `dist/`）。需后端先在 3000 端口运行；标的篮子/区间在脚本顶部常量 `EXTRA`/`WINDOWS` 调整。`scripts/compare-strategies.mjs <id...> [--only=etf|stock]` 是配套的**快速 A/B 迭代工具**（复用同一篮子/区间，打印紧凑的按区间+总体分布对比，`--only=etf` 仅跑场内 ETF 子集），调策略参数时用它快速看多区间效果。
+
+**15min 策略专用测试集**：日线脚本（batch/compare）用日线、覆盖多年多 regime，不适用于 15min（分钟线仅 ~50 交易日且不可回溯）。15min 策略改用 `scripts/backtest15.mjs`——固定一篮子分层 A 股/ETF（`TEST_SET`，覆盖大盘/中盘/小盘科创/宽基与行业 ETF + 问题标的 600498）× 数据窗口内三区间（`W_full` 全段 / `W_chop` 震荡前半段 / `W_rally` 拉升后半段，检验下跌保护与趋势参与的平衡）。用法 `node scripts/backtest15.mjs pullback15 [trend5...] [--report]`，传 `--report` 写出 `dist/all_strategy_result_15min.md` 与 `dist/batch_backtest_15min_raw.csv`（与日线脚本统一输出到 `dist/`）。⚠️ 区间日期随「今天」滑动，隔较久重跑需把脚本顶部 `WINDOWS` 顺移到当前可用窗口内（取不到数据的标的×区间会跳过计入失败、不影响其余统计）。
 
 **调试基金数据**：基金净值从东方财富 `https://api.fund.eastmoney.com/f10/lsjz` 拉取，实时估值从 `https://fundgz.1234567.com.cn/js/{code}.js` 拉取；逻辑在 `backend/src/fund/fund.service.ts`。基金详情页路由为 `/fund/:code`，直接在浏览器地址栏访问即可。
 

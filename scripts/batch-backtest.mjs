@@ -12,7 +12,10 @@
  *   - batch_backtest_raw.csv         每行明细（区间×标的×策略）
  */
 
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
+
+// 所有分析结果（报告 md + 明细 csv）统一输出到 dist/
+const OUT_DIR = 'dist';
 
 const BASE = process.env.BASE_URL || 'http://localhost:3000';
 const PERIOD = 'daily';
@@ -264,6 +267,7 @@ function summaryTable(rows, strategies) {
 }
 
 function writeReports(rows, strategies) {
+  mkdirSync(OUT_DIR, { recursive: true });
   const okRows = rows.filter((x) => x.ok);
 
   // CSV 明细
@@ -273,7 +277,7 @@ function writeReports(rows, strategies) {
      fmt(r.priceChange), fmt(r.ret), fmt(r.mdd), fmt(r.sharpe), r.trades ?? '',
      r.ok, r.err ? `"${r.err.replace(/"/g, "'")}"` : ''].join(','),
   ).join('\n');
-  writeFileSync('batch_backtest_raw.csv', csvHead + '\n' + csvBody + '\n');
+  writeFileSync(`${OUT_DIR}/batch_backtest_raw.csv`, csvHead + '\n' + csvBody + '\n');
 
   // Markdown 报告
   const md = [];
@@ -323,8 +327,8 @@ function writeReports(rows, strategies) {
   md.push('明细见 `batch_backtest_raw.csv`（每行：区间×标的×策略）。');
   md.push('');
 
-  writeFileSync('all_strategy_result_broad.md', md.join('\n'));
-  console.log('\n✓ 已生成 all_strategy_result_broad.md 与 batch_backtest_raw.csv');
+  writeFileSync(`${OUT_DIR}/all_strategy_result_broad.md`, md.join('\n'));
+  console.log(`\n✓ 已生成 ${OUT_DIR}/all_strategy_result_broad.md 与 ${OUT_DIR}/batch_backtest_raw.csv`);
 }
 
 // 仅在直接执行时运行；被 import 时只复用导出的工具函数
