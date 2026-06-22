@@ -33,7 +33,10 @@ const TENCENT_MIN_MAP: Record<string, string> = {
   '60min': 'm60',
 };
 
-const TENCENT_LIMIT = 500;
+const TENCENT_LIMIT = 500; // 日/周线 fqkline 拉取根数（500 日线≈2 年，足够）
+// 分钟线 mkline 拉取根数：腾讯对该接口有 800 根硬上限，请求 >800 会静默回退到默认 320 根，
+// 故取满 800 以最大化日内历史（15min≈最近 50 个交易日，30min≈近半年，60min≈近 1 年）。
+const TENCENT_MIN_LIMIT = 800;
 
 // ── Yahoo Finance（港股分时/分钟线，不复权）──────────────────────────────────
 
@@ -244,7 +247,7 @@ export class KlineService {
   private async fetchTencentMin(code: string, period: string): Promise<RawBar[]> {
     const symbol = this.buildTencentSymbol('A', code);
     const mk = TENCENT_MIN_MAP[period] ?? 'm5';
-    const url = `${TENCENT_MKLINE_URL}?param=${symbol},${mk},,${TENCENT_LIMIT}`;
+    const url = `${TENCENT_MKLINE_URL}?param=${symbol},${mk},,${TENCENT_MIN_LIMIT}`;
     const resp = await this.get<TencentKlineResponse>(url, TENCENT_HEADERS);
     const rows = resp?.data?.[symbol]?.[mk] as unknown[] | undefined;
     return this.parseTencentRows(rows);
