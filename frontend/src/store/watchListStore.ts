@@ -51,27 +51,41 @@ function saveCurrentId(boardType: BoardType, id: number | null): void {
   }
 }
 
+// 同一 boardType 的进行中请求去重：多个组件（Sidebar / 详情页 / AddToListMenu）
+// 同一渲染周期内并发调用 fetchLists 时，复用同一个 promise，避免重复打接口
+const inflight: Partial<Record<BoardType, Promise<void>>> = {};
+
 export const useWatchListStore = create<WatchListStore>((set, get) => ({
   stockLists: [],
   fundLists: [],
   currentStockListId: null,
   currentFundListId: null,
 
-  fetchLists: async (boardType) => {
-    try {
-      const lists = await watchListsApi.list(boardType);
-      const current = (boardType === 'stock' ? get().currentStockListId : get().currentFundListId) ?? getSavedCurrentId(boardType);
-      const stillExists = current != null && lists.some((l) => l.id === current);
-      const nextId = stillExists ? current : pickDefaultId(lists);
-      if (boardType === 'stock') {
-        set({ stockLists: lists, currentStockListId: nextId });
-      } else {
-        set({ fundLists: lists, currentFundListId: nextId });
+  fetchLists: (boardType) => {
+    const existing = inflight[boardType];
+    if (existing) return existing;
+
+    const promise = (async () => {
+      try {
+        const lists = await watchListsApi.list(boardType);
+        const current = (boardType === 'stock' ? get().currentStockListId : get().currentFundListId) ?? getSavedCurrentId(boardType);
+        const stillExists = current != null && lists.some((l) => l.id === current);
+        const nextId = stillExists ? current : pickDefaultId(lists);
+        if (boardType === 'stock') {
+          set({ stockLists: lists, currentStockListId: nextId });
+        } else {
+          set({ fundLists: lists, currentFundListId: nextId });
+        }
+        saveCurrentId(boardType, nextId);
+      } catch (error) {
+        message.error(extractErrorMessage(error));
+      } finally {
+        delete inflight[boardType];
       }
-      saveCurrentId(boardType, nextId);
-    } catch (error) {
-      message.error(extractErrorMessage(error));
-    }
+    })();
+
+    inflight[boardType] = promise;
+    return promise;
   },
 
   createList: async (name, boardType) => {

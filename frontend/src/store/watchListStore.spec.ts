@@ -79,6 +79,20 @@ describe('watchListStore', () => {
 
       expect(useWatchListStore.getState().currentStockListId).toBe(1);
     });
+
+    it('dedupes concurrent calls for the same boardType into a single request', async () => {
+      const lists: WatchList[] = [{ id: 2, name: '收藏夹', boardType: 'stock', isDefault: true }];
+      vi.mocked(watchListsApi.list).mockResolvedValue(lists);
+
+      const fetchLists = useWatchListStore.getState().fetchLists;
+      await Promise.all([fetchLists('stock'), fetchLists('stock'), fetchLists('stock')]);
+
+      expect(watchListsApi.list).toHaveBeenCalledTimes(1);
+
+      // 上一批请求结束后再次调用应重新发请求
+      await fetchLists('stock');
+      expect(watchListsApi.list).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('createList', () => {
