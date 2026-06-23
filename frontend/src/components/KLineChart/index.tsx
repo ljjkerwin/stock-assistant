@@ -31,8 +31,14 @@ interface Props {
   initialData?: { data: KlineBar[]; period?: KlinePeriod; backtestStartTime?: string | null };
   zoomStorageKey?: string;
   showPeriodTabs?: boolean;
+  // 外部受控周期：无 initialData 的拉取模式下指定周期（配合 showPeriodTabs=false 使用，如回测页预览）
+  period?: KlinePeriod;
   showLjj?: boolean; // 显示 ljj 自定义副图（综合属性堆叠柱状图），仅策略回测页使用
   showRsi?: boolean; // 显示常规 RSI 副图（RSI6 曲线），仅策略回测页使用
+  // 回测预览：拉取模式下将默认视口对齐到回测时间区间 [viewStartDate, viewEndDate]（YYYY-MM-DD），
+  // 使点击「开始回测」后视口不跳变；仅在无 initialData 的拉取模式下生效
+  viewStartDate?: string;
+  viewEndDate?: string;
 }
 
 // ljj 副图属性颜色
@@ -42,6 +48,23 @@ const LJJ_MA_COLOR = '#52c41a'; // 属性 KMA，叠加在顶部
 
 // 常规 RSI 副图曲线颜色
 const RSI_LINE_COLOR = '#9C27B0';
+
+// 主图叠加内容：均线 或 BOLL 布林带
+type MainOverlay = 'ma' | 'boll';
+const OVERLAY_STORAGE_KEY = 'kline:overlay';
+
+// BOLL 三轨颜色
+const BOLL_UP_COLOR = '#FF6D00'; // 上轨
+const BOLL_MID_COLOR = '#1677FF'; // 中轨（MA20）
+const BOLL_LOW_COLOR = '#9C27B0'; // 下轨
+
+function loadOverlay(): MainOverlay {
+  try {
+    return localStorage.getItem(OVERLAY_STORAGE_KEY) === 'boll' ? 'boll' : 'ma';
+  } catch {
+    return 'ma';
+  }
+}
 
 const PERIODS = Object.keys(PERIOD_LABELS) as KlinePeriod[];
 
@@ -94,9 +117,10 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
   return (t >= 570 && t < 720) || (t >= 780 && t < 960);
 }
 
-export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false }: Props) {
-  const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? 'timeshare');
+export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
+  const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? controlledPeriod ?? 'timeshare');
   const [loading, setLoading] = useState(false);
+  const [overlay, setOverlay] = useState<MainOverlay>(loadOverlay);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
@@ -123,17 +147,23 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const ma10SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma60SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bollUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bollMidSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const bollLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const alignWidthRafRef = useRef<number | null>(null);
   const syncingRef = useRef(false);
   const zoomStorageKeyRef = useRef<string | undefined>(undefined);
   const zoomSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewStartDateRef = useRef<string | undefined>(undefined);
+  const viewEndDateRef = useRef<string | undefined>(undefined);
 
   // Data refs — used by legend updater to look up values by time
   const barsRef = useRef<KlineBar[]>([]);
   const chartTimesRef = useRef<(number | string)[]>([]);
   const periodRef = useRef<KlinePeriod>('timeshare');
+  const overlayRef = useRef<MainOverlay>(overlay);
 
   // Legend DOM refs
   const mainLegendRef = useRef<HTMLDivElement>(null);
@@ -160,21 +190,21 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     const mainChart = createChart(containerRef.current, { ...CHART_OPTIONS, height: 300 });
     mainChartRef.current = mainChart;
 
-    const volumeChart = createChart(volumeRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+    const volumeChart = createChart(volumeRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
     volumeChartRef.current = volumeChart;
 
-    const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+    const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
     macdChartRef.current = macdChart;
 
     let rsiChart: IChartApi | null = null;
     if (showRsi && rsiRef.current) {
-      rsiChart = createChart(rsiRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+      rsiChart = createChart(rsiRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
       rsiChartRef.current = rsiChart;
     }
 
     let ljjChart: IChartApi | null = null;
     if (showLjj && ljjRef.current) {
-      ljjChart = createChart(ljjRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 100 });
+      ljjChart = createChart(ljjRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
       ljjChartRef.current = ljjChart;
     }
 
@@ -203,13 +233,25 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         if (pd === 'timeshare') {
           mainLegendRef.current.textContent = `价格: ${bar.close.toFixed(3)}`;
         } else {
-          const m = bar.ma;
-          const maHtml = m
-            ? `&nbsp;&nbsp;<span style="color:#FFAB00">MA5:${m.ma5?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
-              `<span style="color:#E91E63">MA10:${m.ma10?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
-              `<span style="color:#1677FF">MA20:${m.ma20?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
-              `<span style="color:#9C27B0">MA60:${m.ma60?.toFixed(3) ?? '--'}</span>`
-            : '';
+          let maHtml = '';
+          if (overlayRef.current === 'boll') {
+            const b = bar.boll;
+            if (b) {
+              maHtml =
+                `&nbsp;&nbsp;<span style="color:${BOLL_UP_COLOR}">UP:${b.upper?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+                `<span style="color:${BOLL_MID_COLOR}">MB:${b.mid?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+                `<span style="color:${BOLL_LOW_COLOR}">DN:${b.lower?.toFixed(3) ?? '--'}</span>`;
+            }
+          } else {
+            const m = bar.ma;
+            if (m) {
+              maHtml =
+                `&nbsp;&nbsp;<span style="color:#FFAB00">MA5:${m.ma5?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+                `<span style="color:#E91E63">MA10:${m.ma10?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+                `<span style="color:#1677FF">MA20:${m.ma20?.toFixed(3) ?? '--'}</span>&nbsp;&nbsp;` +
+                `<span style="color:#9C27B0">MA60:${m.ma60?.toFixed(3) ?? '--'}</span>`;
+            }
+          }
           // 当日涨跌幅：优先用后端返回的 changePercent，缺失时回退按前一根收盘价计算，红涨绿跌
           let pct = bar.changePercent ?? null;
           if (pct == null && idx > 0) {
@@ -331,7 +373,15 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       mainChartRef.current.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
     }
-    [ma5SeriesRef, ma10SeriesRef, ma20SeriesRef, ma60SeriesRef].forEach((ref) => {
+    [
+      ma5SeriesRef,
+      ma10SeriesRef,
+      ma20SeriesRef,
+      ma60SeriesRef,
+      bollUpperSeriesRef,
+      bollMidSeriesRef,
+      bollLowerSeriesRef,
+    ].forEach((ref) => {
       if (ref.current) {
         mainChartRef.current!.removeSeries(ref.current);
         ref.current = null;
@@ -386,26 +436,49 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       );
       mainSeriesRef.current = candleSeries;
 
-      const maConfigs = [
-        { ref: ma5SeriesRef, key: 'ma5' as const, color: '#FFAB00' },
-        { ref: ma10SeriesRef, key: 'ma10' as const, color: '#E91E63' },
-        { ref: ma20SeriesRef, key: 'ma20' as const, color: '#1677FF' },
-        { ref: ma60SeriesRef, key: 'ma60' as const, color: '#9C27B0' },
-      ];
-      maConfigs.forEach(({ ref, key, color }) => {
-        const series = mainChartRef.current!.addSeries(LineSeries, {
-          color,
-          lineWidth: 1,
-          lastValueVisible: false,
-          priceLineVisible: false,
+      // 主图叠加：均线 或 BOLL 布林带（由 overlayRef 决定，可由顶部按钮切换并本地缓存）
+      if (overlayRef.current === 'boll') {
+        const bollConfigs = [
+          { ref: bollUpperSeriesRef, key: 'upper' as const, color: BOLL_UP_COLOR },
+          { ref: bollMidSeriesRef, key: 'mid' as const, color: BOLL_MID_COLOR },
+          { ref: bollLowerSeriesRef, key: 'lower' as const, color: BOLL_LOW_COLOR },
+        ];
+        bollConfigs.forEach(({ ref, key, color }) => {
+          const series = mainChartRef.current!.addSeries(LineSeries, {
+            color,
+            lineWidth: 1,
+            lastValueVisible: false,
+            priceLineVisible: false,
+          });
+          series.setData(
+            bars
+              .filter((b) => b.boll?.[key] != null)
+              .map((b) => ({ time: toChartTime(b.time), value: b.boll[key]! } as LineData)),
+          );
+          ref.current = series;
         });
-        series.setData(
-          bars
-            .filter((b) => b.ma[key] != null)
-            .map((b) => ({ time: toChartTime(b.time), value: b.ma[key]! } as LineData)),
-        );
-        ref.current = series;
-      });
+      } else {
+        const maConfigs = [
+          { ref: ma5SeriesRef, key: 'ma5' as const, color: '#FFAB00' },
+          { ref: ma10SeriesRef, key: 'ma10' as const, color: '#E91E63' },
+          { ref: ma20SeriesRef, key: 'ma20' as const, color: '#1677FF' },
+          { ref: ma60SeriesRef, key: 'ma60' as const, color: '#9C27B0' },
+        ];
+        maConfigs.forEach(({ ref, key, color }) => {
+          const series = mainChartRef.current!.addSeries(LineSeries, {
+            color,
+            lineWidth: 1,
+            lastValueVisible: false,
+            priceLineVisible: false,
+          });
+          series.setData(
+            bars
+              .filter((b) => b.ma[key] != null)
+              .map((b) => ({ time: toChartTime(b.time), value: b.ma[key]! } as LineData)),
+          );
+          ref.current = series;
+        });
+      }
     }
 
     // Buy/sell markers (only present when data comes from strategy backtest)
@@ -558,6 +631,24 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       setAllRange(savedRange);
     } else if (isTimeshare || bars.length === 0) {
       fitAll();
+    } else if (viewStartDateRef.current && !backtestStartTime) {
+      // 回测预览：默认视口对齐回测时间区间 [viewStartDate, viewEndDate]，
+      // 优先于持久化 zoom，使点击回测后视口不跳到别的时间
+      const startDay = viewStartDateRef.current;
+      const endDay = viewEndDateRef.current;
+      const startIdx = bars.findIndex((b) => b.time.slice(0, 10) >= startDay);
+      let endIdx = bars.length - 1;
+      if (endDay) {
+        for (let i = bars.length - 1; i >= 0; i--) {
+          if (bars[i].time.slice(0, 10) <= endDay) {
+            endIdx = i;
+            break;
+          }
+        }
+      }
+      // 与回测结果视图一致：起点前留 5 根历史上下文
+      const from = startIdx >= 0 ? Math.max(0, startIdx - 5) : 0;
+      setAllRange({ from: Math.min(from, endIdx), to: endIdx });
     } else {
       // Restore persisted zoom if available
       let restoredZoom: LogicalRange | null = null;
@@ -623,6 +714,40 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     zoomStorageKeyRef.current = zoomStorageKey;
   }, [zoomStorageKey]);
 
+  // 回测预览：时间区间变化时更新 ref，并在拉取模式下就地重新取景（不重新拉取数据）
+  useEffect(() => {
+    viewStartDateRef.current = viewStartDate;
+    viewEndDateRef.current = viewEndDate;
+    if (!initialData && barsRef.current.length > 0 && periodRef.current !== 'timeshare') {
+      applyData(barsRef.current, periodRef.current, false);
+    }
+  }, [viewStartDate, viewEndDate, initialData, applyData]);
+
+  // 受控周期变化时同步内部 period（仅拉取模式，由父组件如回测页驱动）
+  useEffect(() => {
+    if (controlledPeriod) setPeriod(controlledPeriod);
+  }, [controlledPeriod]);
+
+  // 切换主图叠加内容（均线/BOLL）时，用当前数据就地重绘（保持视口），无需重新拉取
+  useEffect(() => {
+    overlayRef.current = overlay;
+    if (barsRef.current.length > 0 && periodRef.current !== 'timeshare') {
+      applyData(barsRef.current, periodRef.current, true);
+    }
+  }, [overlay, applyData]);
+
+  const toggleOverlay = useCallback(() => {
+    setOverlay((prev) => {
+      const next: MainOverlay = prev === 'ma' ? 'boll' : 'ma';
+      try {
+        localStorage.setItem(OVERLAY_STORAGE_KEY, next);
+      } catch {
+        /* localStorage unavailable */
+      }
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     initCharts();
   }, [initCharts]);
@@ -680,6 +805,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       <Spin spinning={loading}>
         <div className={styles.subWrapper}>
           <div ref={mainLegendRef} className={styles.subLegend} />
+          {period !== 'timeshare' && (
+            <button type="button" className={styles.overlayToggle} onClick={toggleOverlay}>
+              {overlay === 'boll' ? 'BOLL' : '均线'}
+            </button>
+          )}
           <div ref={containerRef} className={styles.main} />
         </div>
         <div className={styles.subWrapper}>

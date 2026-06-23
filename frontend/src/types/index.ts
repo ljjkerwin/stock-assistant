@@ -37,6 +37,12 @@ export interface KlineBar {
     ma20: number | null;
     ma60: number | null;
   };
+  // BOLL(20,2) 布林带：中轨 = MA20，上/下轨 = 中轨 ± 2×标准差（后端计算）
+  boll: {
+    upper: number | null;
+    mid: number | null;
+    lower: number | null;
+  };
   rsi: {
     rsi6: number | null; // RSI6 指标（通达信口径）；其他周期暂不计算
   };
@@ -188,4 +194,13 @@ export interface MonitorMessage {
   klinePeriod: string | null;
   triggeredAt: number;
   read: boolean;
+}
+
+export type BoardType = 'stock' | 'fund';
+
+export interface WatchList {
+  id: number;
+  name: string;
+  boardType: BoardType;
+  isDefault: boolean;
 }

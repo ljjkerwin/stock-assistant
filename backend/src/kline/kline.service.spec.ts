@@ -71,6 +71,44 @@ describe('KlineService', () => {
     });
   });
 
+  describe('BOLL(20,2)', () => {
+    const makeBars = (closes: number[]) =>
+      closes.map((close, i) => ({
+        time: `2024-01-${String(i + 1).padStart(2, '0')}`,
+        open: close,
+        high: close,
+        low: close,
+        close,
+        volume: 1000,
+      }));
+
+    it('窗口不足 20 根时三轨均为 null', () => {
+      const result = service.calcMACD(makeBars(Array.from({ length: 19 }, () => 100)));
+      for (const bar of result) {
+        expect(bar.boll.upper).toBeNull();
+        expect(bar.boll.mid).toBeNull();
+        expect(bar.boll.lower).toBeNull();
+      }
+    });
+
+    it('恒定价格序列：中轨为该价格，上下轨与中轨重合（标准差为 0）', () => {
+      const result = service.calcMACD(makeBars(Array.from({ length: 20 }, () => 100)));
+      const last = result[result.length - 1].boll;
+      expect(last.mid).toBeCloseTo(100, 4);
+      expect(last.upper).toBeCloseTo(100, 4);
+      expect(last.lower).toBeCloseTo(100, 4);
+    });
+
+    it('中轨等于 MA20，上下轨对称分布在中轨两侧', () => {
+      const closes = Array.from({ length: 25 }, (_, i) => 100 + (i % 5));
+      const result = service.calcMACD(makeBars(closes));
+      const bar = result[result.length - 1];
+      expect(bar.boll.mid).toBeCloseTo(bar.ma.ma20!, 4);
+      expect(bar.boll.upper! - bar.boll.mid!).toBeCloseTo(bar.boll.mid! - bar.boll.lower!, 4);
+      expect(bar.boll.upper!).toBeGreaterThan(bar.boll.lower!);
+    });
+  });
+
   describe('RSI6', () => {
     const makeBars = (closes: number[]) =>
       closes.map((close, i) => ({
@@ -174,8 +212,14 @@ describe('KlineService', () => {
         const bar = { ...base, close: 100, ma: { ma5: 105, ma10: 100, ma20: null, ma60: null } };
         expect(computeKlineAttrs(bar, null).kma).toBe(false);
       });
-      it('不满足：ma5<=ma10', () => {
-        const bar = { ...base, close: 110, ma: { ma5: 100, ma10: 100, ma20: null, ma60: null } };
+      it('满足：ma5 略低于 ma10 但 ma5/ma10 > 0.995（容差内）', () => {
+        // ma5/ma10 = 99.6/100 = 0.996 > 0.995，仍视为满足
+        const bar = { ...base, close: 110, ma: { ma5: 99.6, ma10: 100, ma20: null, ma60: null } };
+        expect(computeKlineAttrs(bar, null).kma).toBe(true);
+      });
+      it('不满足：ma5/ma10 <= 0.995', () => {
+        // ma5/ma10 = 99/100 = 0.99 <= 0.995
+        const bar = { ...base, close: 110, ma: { ma5: 99, ma10: 100, ma20: null, ma60: null } };
         expect(computeKlineAttrs(bar, null).kma).toBe(false);
       });
       it('不满足：ma 为 null', () => {

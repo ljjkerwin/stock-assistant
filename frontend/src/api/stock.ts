@@ -11,17 +11,28 @@ import type {
   FundNavResponse,
   FundSearchResult,
   FundHoldingPeriod,
+  WatchList,
+  BoardType,
 } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
 
 export const favoritesApi = {
-  list: () => api.get<Stock[]>('/favorites').then((r) => r.data),
-  add: (stock: { code: string; market: 'A' | 'HK' | 'FUND'; name: string }) =>
+  list: (watchListId: number) =>
+    api.get<Stock[]>('/favorites', { params: { watchListId } }).then((r) => r.data),
+  add: (stock: { code: string; market: 'A' | 'HK' | 'FUND'; name: string; watchListId: number }) =>
     api.post<Stock>('/favorites', stock).then((r) => r.data),
   remove: (id: number) => api.delete(`/favorites/${id}`),
   update: (id: number, data: { sortOrder?: number; pinned?: boolean }) =>
     api.patch<Stock>(`/favorites/${id}`, data).then((r) => r.data),
+};
+
+export const watchListsApi = {
+  list: (boardType: BoardType): Promise<WatchList[]> =>
+    api.get<WatchList[]>('/watchlists', { params: { boardType } }).then((r) => r.data),
+  create: (name: string, boardType: BoardType): Promise<WatchList> =>
+    api.post<WatchList>('/watchlists', { name, boardType }).then((r) => r.data),
+  remove: (id: number): Promise<void> => api.delete(`/watchlists/${id}`).then(() => undefined),
 };
 
 export const stocksApi = {
@@ -104,13 +115,16 @@ interface BacktestResult {
 }
 
 export const strategyApi = {
+  // 策略清单：稳定 id + 展示名称。回测以 id 标识策略，name 仅用于展示。
+  list: (): Promise<{ id: string; name: string }[]> =>
+    api.get<{ id: string; name: string }[]>('/strategy/list').then((r) => r.data),
   backtest: (params: {
     market: 'A' | 'HK';
     code: string;
     startDate: string;
     endDate: string;
     period: KlinePeriod;
-    strategy: string;
+    strategy: string; // 策略 id
   }): Promise<BacktestResult> =>
     api
       .get<BacktestResult>('/strategy/backtest', { params })

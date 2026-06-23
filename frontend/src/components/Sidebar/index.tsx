@@ -1,17 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Button, Tooltip, Space, Typography, Select } from 'antd';
+import { Button, Tooltip, Space, Typography, Select, Modal, Input, Popconfirm } from 'antd';
 import {
   DeleteOutlined,
   PushpinOutlined,
   PushpinFilled,
   ArrowUpOutlined,
   ArrowDownOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import { useFavoritesStore } from '../../store/favoritesStore';
+import { useWatchListStore } from '../../store/watchListStore';
 import StockSearch from '../StockSearch';
 import FundSearch from '../FundSearch';
-import type { Stock } from '../../types';
+import type { Stock, BoardType } from '../../types';
 import styles from './Sidebar.module.css';
 
 const { Text } = Typography;
@@ -26,8 +28,19 @@ const SECTION_OPTIONS = [
 export default function Sidebar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { favorites, fetchFavorites, removeStock, pinStock, reorderStocks } =
-    useFavoritesStore();
+  const { itemsByList, fetchList, removeItem, pin, reorder } = useFavoritesStore();
+  const {
+    stockLists,
+    fundLists,
+    currentStockListId,
+    currentFundListId,
+    fetchLists,
+    createList,
+    deleteList,
+    setCurrentList,
+  } = useWatchListStore();
+  const [addListOpen, setAddListOpen] = useState(false);
+  const [newListName, setNewListName] = useState('');
 
   const section = pathname.startsWith('/strategy-backtest')
     ? 'backtest'
@@ -37,19 +50,27 @@ export default function Sidebar() {
         ? 'list'
         : 'stock';
 
-  useEffect(() => {
-    fetchFavorites();
-  }, [fetchFavorites]);
+  const boardType: BoardType | null = section === 'list' ? null : section === 'fund' ? 'fund' : 'stock';
+  const lists = boardType === 'fund' ? fundLists : stockLists;
+  const currentListId = boardType === 'fund' ? currentFundListId : currentStockListId;
+  const currentList = lists.find((l) => l.id === currentListId) ?? null;
+  const items = currentListId != null ? itemsByList[currentListId] ?? [] : [];
 
-  const stockFavorites = favorites.filter((f) => f.market !== 'FUND');
-  const fundFavorites = favorites.filter((f) => f.market === 'FUND');
+  useEffect(() => {
+    if (boardType) fetchLists(boardType);
+  }, [boardType, fetchLists]);
+
+  useEffect(() => {
+    if (currentListId != null) fetchList(currentListId);
+  }, [currentListId, fetchList]);
 
   const moveItem = (list: Stock[], index: number, direction: 'up' | 'down') => {
+    if (currentListId == null) return;
     const copy = [...list];
     const target = direction === 'up' ? index - 1 : index + 1;
     if (target < 0 || target >= copy.length) return;
     [copy[index], copy[target]] = [copy[target], copy[index]];
-    reorderStocks(copy.map((f) => f.id!));
+    reorder(currentListId, copy.map((f) => f.id!));
   };
 
   const handleSectionChange = (val: string) => {
@@ -62,6 +83,13 @@ export default function Sidebar() {
     } else {
       navigate('/stock-list-import');
     }
+  };
+
+  const handleCreateList = async () => {
+    if (!boardType || !newListName.trim()) return;
+    await createList(newListName.trim(), boardType);
+    setAddListOpen(false);
+    setNewListName('');
   };
 
   const renderItem = (stock: Stock, index: number, list: Stock[], urlFn: (s: Stock) => string) => (
@@ -87,7 +115,7 @@ export default function Sidebar() {
             type="text"
             size="small"
             icon={stock.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-            onClick={() => pinStock(stock.id!, !stock.pinned)}
+            onClick={() => currentListId != null && pin(stock.id!, currentListId, !stock.pinned)}
           />
         </Tooltip>
         <Tooltip title="上移">
@@ -114,7 +142,7 @@ export default function Sidebar() {
             size="small"
             danger
             icon={<DeleteOutlined />}
-            onClick={() => removeStock(stock.id!)}
+            onClick={() => currentListId != null && removeItem(stock.id!, currentListId)}
           />
         </Tooltip>
       </Space>
@@ -131,6 +159,42 @@ export default function Sidebar() {
           style={{ width: '100%' }}
         />
       </div>
+
+      {boardType && (
+        <div className={styles.listSwitcher}>
+          <Tooltip title="新建列表">
+            <Button
+              type="text"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => setAddListOpen(true)}
+            />
+          </Tooltip>
+          
+          <Select
+            value={currentListId ?? undefined}
+            options={lists.map((l) => ({ value: l.id, label: l.name }))}
+            onChange={(id) => setCurrentList(boardType, id)}
+            style={{ flex: 1 }}
+            size="small"
+          />
+
+          {currentList && !currentList.isDefault && (
+            <Popconfirm
+              title={`确定删除列表「${currentList.name}」？`}
+              description={`列表内的 ${items.length} 个标的也会被删除`}
+              onConfirm={() => deleteList(currentList.id, boardType)}
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+            >
+              <Tooltip title="删除列表">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          )}
+        </div>
+      )}
 
       {section !== 'list' && (
         <div className={styles.search}>
@@ -149,29 +213,47 @@ export default function Sidebar() {
         </div>
       )}
 
-      {section === 'stock' && (
-        <div>
-          {stockFavorites.map((stock, index) =>
-            renderItem(stock, index, stockFavorites, (s) => `/stock/${s.market}/${s.code}`),
-          )}
-        </div>
-      )}
-
-      {section === 'backtest' && (
-        <div>
-          {stockFavorites.map((stock, index) =>
-            renderItem(stock, index, stockFavorites, (s) => `/strategy-backtest/${s.code}`),
+      {(section === 'stock' || section === 'backtest') && (
+        <div className={styles.list}>
+          {items.map((stock, index) =>
+            renderItem(
+              stock,
+              index,
+              items,
+              section === 'backtest'
+                ? (s) => `/strategy-backtest/${s.code}`
+                : (s) => `/stock/${s.market}/${s.code}`,
+            ),
           )}
         </div>
       )}
 
       {section === 'fund' && (
-        <div>
-          {fundFavorites.map((stock, index) =>
-            renderItem(stock, index, fundFavorites, (s) => `/fund/${s.code}`),
-          )}
+        <div className={styles.list}>
+          {items.map((stock, index) => renderItem(stock, index, items, (s) => `/fund/${s.code}`))}
         </div>
       )}
+
+      <Modal
+        title="新建列表"
+        open={addListOpen}
+        onCancel={() => {
+          setAddListOpen(false);
+          setNewListName('');
+        }}
+        onOk={handleCreateList}
+        okButtonProps={{ disabled: !newListName.trim() }}
+        okText="创建"
+        cancelText="取消"
+      >
+        <Input
+          placeholder="请输入列表名称"
+          value={newListName}
+          onChange={(e) => setNewListName(e.target.value)}
+          onPressEnter={handleCreateList}
+          autoFocus
+        />
+      </Modal>
     </div>
   );
 }

@@ -205,7 +205,7 @@ interface KLineChartProps {
 
 **副图指标：**
 - 成交量：柱状图，涨红跌绿
-- MACD 参数：短期 4、长期 35、信号 4（即 MACD(4,35,4)，比标准参数更灵敏）
+- MACD 参数：短期 12、长期 26、信号 9（即 MACD(12,26,9)，标准参数，全项目统一）
 
 **十字线 legend：**
 - 主图、成交量副图、MACD 副图各有一个 legend 条，悬浮在图区左上角
@@ -234,7 +234,7 @@ export class KlineService {
     if (cached) return cached;
 
     const raw = await this.fetchBars(market, code, period);
-    const bars = this.calcMACD(raw)          // 统一在后端计算 MACD(4,35,4)
+    const bars = this.calcMACD(raw)          // 统一在后端计算 MACD(12,26,9)
     this.klineCache.set(key, bars, tradingTtl(t, o));
     return bars;
   }

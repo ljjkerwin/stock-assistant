@@ -5,7 +5,9 @@ import { StarOutlined, StarFilled, LineChartOutlined } from '@ant-design/icons';
 import { stocksApi } from '../../api/stock';
 import KLineChart from '../../components/KLineChart';
 import StockMonitorButton from '../../components/StockMonitorButton';
+import AddToListMenu from '../../components/AddToListMenu';
 import { useFavoritesStore } from '../../store/favoritesStore';
+import { useWatchListStore } from '../../store/watchListStore';
 import type { StockInfo } from '../../types';
 import styles from './StockDetail.module.css';
 
@@ -21,9 +23,22 @@ export default function StockDetail() {
   const navigate = useNavigate();
   const [info, setInfo] = useState<StockInfo | null>(null);
   const [loading, setLoading] = useState(false);
-  const { favorites, addStock, removeStock } = useFavoritesStore();
-  const favoriteEntry = favorites.find((f) => f.market === market && f.code === code);
+  const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
+  const { stockLists, fetchLists } = useWatchListStore();
+  const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
+  const favoriteEntry =
+    defaultListId != null
+      ? (itemsByList[defaultListId] ?? []).find((f) => f.market === market && f.code === code)
+      : undefined;
   const isFavorited = !!favoriteEntry;
+
+  useEffect(() => {
+    fetchLists('stock');
+  }, [fetchLists]);
+
+  useEffect(() => {
+    if (defaultListId != null) fetchList(defaultListId);
+  }, [defaultListId, fetchList]);
 
   useEffect(() => {
     if (!market || !code) return;
@@ -56,13 +71,19 @@ export default function StockDetail() {
               icon={isFavorited ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
               onClick={() => {
                 if (isFavorited) {
-                  removeStock(favoriteEntry!.id!);
-                } else {
-                  addStock({ code, market: market as 'A' | 'HK', name: info?.name ?? code });
+                  removeItem(favoriteEntry!.id!, defaultListId!);
+                } else if (defaultListId != null) {
+                  addToList(defaultListId, { code, market: market as 'A' | 'HK', name: info?.name ?? code });
                 }
               }}
             />
           </Tooltip>
+        )}
+        {market && code && (
+          <AddToListMenu
+            boardType="stock"
+            stock={{ code, market: market as 'A' | 'HK', name: info?.name ?? code }}
+          />
         )}
         {market && code && (
           <>

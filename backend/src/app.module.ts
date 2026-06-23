@@ -8,11 +8,12 @@ import { MonitorModule } from './monitor/monitor.module';
 import { FundModule } from './fund/fund.module';
 import { StrategyModule } from './strategy/strategy.module';
 import { Favorite } from './favorites/favorite.entity';
+import { WatchList } from './favorites/watch-list.entity';
 import { MonitorRule } from './monitor/monitor-rule.entity';
 import { MonitorMessage } from './monitor/monitor-message.entity';
 import { TestModule } from './test/test.module';
 
-const entities = [Favorite, MonitorRule, MonitorMessage];
+const entities = [Favorite, WatchList, MonitorRule, MonitorMessage];
 
 function buildDataSourceOptions(): DataSourceOptions {
   const { MYSQL_HOST, MYSQL_USERNAME, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;

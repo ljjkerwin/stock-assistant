@@ -33,7 +33,10 @@ const TENCENT_MIN_MAP: Record<string, string> = {
   '60min': 'm60',
 };
 
-const TENCENT_LIMIT = 500;
+const TENCENT_LIMIT = 500; // 日/周线 fqkline 拉取根数（500 日线≈2 年，足够）
+// 分钟线 mkline 拉取根数：腾讯对该接口有 800 根硬上限，请求 >800 会静默回退到默认 320 根，
+// 故取满 800 以最大化日内历史（15min≈最近 50 个交易日，30min≈近半年，60min≈近 1 年）。
+const TENCENT_MIN_LIMIT = 800;
 
 // ── Yahoo Finance（港股分时/分钟线，不复权）──────────────────────────────────
 
@@ -102,6 +105,12 @@ export interface KlineBar {
     ma20: number | null;
     ma60: number | null;
   };
+  // BOLL(20,2) 布林带：中轨 = MA20，上/下轨 = 中轨 ± 2×总体标准差（通达信口径）
+  boll: {
+    upper: number | null;
+    mid: number | null;
+    lower: number | null;
+  };
   rsi: {
     rsi6: number | null;
     // 其他周期（如 rsi12、rsi24）暂不计算，需要时再扩展
@@ -110,7 +119,7 @@ export interface KlineBar {
   attrs: {
     kmacd: boolean; // dif > 0 且 dif - dea > -0.1 且 DIF 较前值上升（dif - prevDif > -0.06，允许微跌）
     krsi: boolean; // rsi6 >= 50
-    kma: boolean; // 收盘价 > MA10 且 MA5 > MA10
+    kma: boolean; // 收盘价 > MA10 且 MA5 / MA10 > 0.995
   };
 }
 
@@ -128,7 +137,7 @@ export function computeKlineAttrs(
   return {
     kmacd: dif > 0 && dif - dea > -0.1 && prevDif != null && dif - prevDif > -0.06,
     krsi: (bar.rsi.rsi6 ?? 0) >= 50,
-    kma: ma10 != null && ma5 != null && bar.close > ma10 && ma5 > ma10,
+    kma: ma10 != null && ma5 != null && bar.close > ma10 && ma5 / ma10 > 0.995,
   };
 }
 
@@ -238,7 +247,7 @@ export class KlineService {
   private async fetchTencentMin(code: string, period: string): Promise<RawBar[]> {
     const symbol = this.buildTencentSymbol('A', code);
     const mk = TENCENT_MIN_MAP[period] ?? 'm5';
-    const url = `${TENCENT_MKLINE_URL}?param=${symbol},${mk},,${TENCENT_LIMIT}`;
+    const url = `${TENCENT_MKLINE_URL}?param=${symbol},${mk},,${TENCENT_MIN_LIMIT}`;
     const resp = await this.get<TencentKlineResponse>(url, TENCENT_HEADERS);
     const rows = resp?.data?.[symbol]?.[mk] as unknown[] | undefined;
     return this.parseTencentRows(rows);
@@ -342,19 +351,20 @@ export class KlineService {
     throw new Error('unreachable');
   }
 
-  // ── MACD(4,35,4) ──────────────────────────────────────────────────────────
+  // ── MACD(12,26,9) ─────────────────────────────────────────────────────────
 
   calcMACD(bars: RawBar[]): KlineBar[] {
     const closes = bars.map((b) => b.close);
-    const emaShort = this.calcEMA(closes, 4);
-    const emaLong = this.calcEMA(closes, 35);
+    const emaShort = this.calcEMA(closes, 12);
+    const emaLong = this.calcEMA(closes, 26);
     const dif = emaShort.map((v, i) => v - emaLong[i]);
-    const dea = this.calcEMA(dif, 4);
+    const dea = this.calcEMA(dif, 9);
     const macdBar = dif.map((v, i) => (v - dea[i]) * 2);
     const ma5 = this.calcSMA(closes, 5);
     const ma10 = this.calcSMA(closes, 10);
     const ma20 = this.calcSMA(closes, 20);
     const ma60 = this.calcSMA(closes, 60);
+    const boll = this.calcBOLL(closes, 20, 2);
     const rsi6 = this.calcRSI(closes, 6);
 
     const result: KlineBar[] = bars.map((bar, i) => ({
@@ -374,6 +384,7 @@ export class KlineService {
         ma20: ma20[i],
         ma60: ma60[i],
       },
+      boll: boll[i],
       rsi: {
         rsi6: rsi6[i],
       },
@@ -418,6 +429,25 @@ export class KlineService {
     }
 
     return result;
+  }
+
+  /**
+   * BOLL 布林带序列。中轨为 N 周期 SMA，上/下轨为中轨 ± mult × 总体标准差
+   * （除数为 N，通达信/同花顺口径）。窗口不足 period 根时三轨均为 null。
+   */
+  private calcBOLL(data: number[], period: number, mult: number): KlineBar['boll'][] {
+    return data.map((_, i) => {
+      if (i < period - 1) return { upper: null, mid: null, lower: null };
+      const window = data.slice(i - period + 1, i + 1);
+      const mid = window.reduce((a, b) => a + b, 0) / period;
+      const variance = window.reduce((a, b) => a + (b - mid) ** 2, 0) / period;
+      const std = Math.sqrt(variance);
+      return {
+        upper: parseFloat((mid + mult * std).toFixed(4)),
+        mid: parseFloat(mid.toFixed(4)),
+        lower: parseFloat((mid - mult * std).toFixed(4)),
+      };
+    });
   }
 
   private calcSMA(data: number[], period: number): (number | null)[] {

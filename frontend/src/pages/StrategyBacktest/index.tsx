@@ -7,7 +7,6 @@ import {
   Select,
   DatePicker,
   Button,
-  Statistic,
   Table,
   Typography,
   Tag,
@@ -17,8 +16,10 @@ import {
 import { StarOutlined, StarFilled } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import KLineChart from '../../components/KLineChart';
+import AddToListMenu from '../../components/AddToListMenu';
 import { strategyApi, stocksApi } from '../../api/stock';
 import { useFavoritesStore } from '../../store/favoritesStore';
+import { useWatchListStore } from '../../store/watchListStore';
 import type { KlinePeriod, KlineBar } from '../../types';
 import styles from './StrategyBacktest.module.css';
 
@@ -43,7 +44,7 @@ interface BacktestResult {
 
 interface CachedConfig {
   period: KlinePeriod;
-  strategy: string;
+  strategy: string; // 策略 id（稳定标识，展示名可变）
   startDate: string;
   endDate: string;
 }
@@ -51,7 +52,8 @@ interface CachedConfig {
 // ── localStorage helpers ───────────────────────────────────────────────────
 
 // v2: 盈亏字段语义从「绝对价差」改为「百分比」，bump key 使旧缓存失效
-const RESULT_KEY = 'backtest:result:v2';
+// v3: K 线新增 boll 字段，bump key 丢弃不含 boll 的旧缓存（否则主图 BOLL 叠加画不出线）
+const RESULT_KEY = 'backtest:result:v3';
 const PARAMS_KEY = 'backtest:params';
 
 function buildKey(
@@ -114,42 +116,66 @@ const PERIODS: { value: KlinePeriod; label: string }[] = [
   { value: '60min', label: '60分钟' },
 ];
 
-const STRATEGIES = ['趋势策略'];
-
-const STRATEGY_DETAILS: Record<string, string[]> = {
-  趋势策略: [
-    'shouldHold = KMACD & KRSI & KMA 三个属性同时满足',
-    '买入：回测起点 shouldHold 为 true 立即建仓；此后 shouldHold 由 false 转为 true 时买入',
-    '卖出：shouldHold 由 true 转为 false 时卖出',
-  ],
-};
-
 // ── component ─────────────────────────────────────────────────────────────
 
 export default function StrategyBacktest() {
   const { code } = useParams<{ code: string }>();
   const [market, setMarket] = useState<'A' | 'HK'>('A');
   const [period, setPeriod] = useState<KlinePeriod>('daily');
-  const [strategy, setStrategy] = useState('趋势策略');
+  // 策略以 id 标识（后端注册表键），name 仅用于展示，改名不影响识别
+  const [strategies, setStrategies] = useState<{ id: string; name: string }[]>([]);
+  const [strategy, setStrategy] = useState('');
   const [startDate, setStartDate] = useState(dayjs().subtract(6, 'months'));
   const [endDate, setEndDate] = useState(dayjs());
   const [result, setResult] = useState<BacktestResult | null>(null);
+  // 当前展示结果对应的运行参数（区别于可能已被改动的表单状态），用于结果区信息展示
+  const [resultMeta, setResultMeta] = useState<CachedConfig | null>(null);
   const [loading, setLoading] = useState(false);
   const [fromCache, setFromCache] = useState(false);
   const [stockName, setStockName] = useState<string | null>(null);
 
-  const { favorites, addStock, removeStock } = useFavoritesStore();
-  const favoriteEntry = favorites.find((f) => f.market === market && f.code === code);
+  const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
+  const { stockLists, fetchLists } = useWatchListStore();
+  const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
+  const favoriteEntry =
+    defaultListId != null
+      ? (itemsByList[defaultListId] ?? []).find((f) => f.market === market && f.code === code)
+      : undefined;
   const isFavorited = !!favoriteEntry;
 
+  useEffect(() => {
+    fetchLists('stock');
+  }, [fetchLists]);
+
+  useEffect(() => {
+    if (defaultListId != null) fetchList(defaultListId);
+  }, [defaultListId, fetchList]);
+
   const toggleFavorite = () => {
-    if (!code) return;
+    if (!code || defaultListId == null) return;
     if (isFavorited) {
-      void removeStock(favoriteEntry!.id!);
+      void removeItem(favoriteEntry!.id!, defaultListId);
     } else {
-      void addStock({ code, market, name: stockName ?? favoriteEntry?.name ?? code });
+      void addToList(defaultListId, { code, market, name: stockName ?? favoriteEntry?.name ?? code });
     }
   };
+
+  // Load the strategy list from the backend (single source of truth: id + name)
+  useEffect(() => {
+    strategyApi
+      .list()
+      .then(setStrategies)
+      .catch(() => setStrategies([]));
+  }, []);
+
+  // Ensure the selected strategy is a valid id; fall back to the first available.
+  // Handles legacy localStorage that stored a display name instead of an id.
+  useEffect(() => {
+    if (strategies.length === 0) return;
+    if (!strategies.some((s) => s.id === strategy)) {
+      setStrategy(strategies[0].id);
+    }
+  }, [strategies, strategy]);
 
   // Fetch stock name for the favorite label (falls back to code)
   useEffect(() => {
@@ -180,17 +206,19 @@ export default function StrategyBacktest() {
       const cached = getCachedResult(key);
       if (cached) {
         setResult(cached);
+        setResultMeta({ period: saved.period, strategy: saved.strategy, startDate: saved.startDate, endDate: saved.endDate });
         setFromCache(true);
         return;
       }
     }
 
     setResult(null);
+    setResultMeta(null);
     setFromCache(false);
   }, [code]);
 
   const handleBacktest = async () => {
-    if (!code) return;
+    if (!code || !strategy) return;
 
     const startStr = startDate.format('YYYY-MM-DD');
     const endStr = endDate.format('YYYY-MM-DD');
@@ -209,6 +237,7 @@ export default function StrategyBacktest() {
     try {
       const res = await strategyApi.backtest({ market, code, startDate: startStr, endDate: endStr, period, strategy });
       setResult(res);
+      setResultMeta({ period, strategy, startDate: startStr, endDate: endStr });
       setFromCache(false);
       setCachedResult(key, res);
       saveConfig({ period, strategy, startDate: startStr, endDate: endStr });
@@ -289,6 +318,7 @@ export default function StrategyBacktest() {
                 onClick={toggleFavorite}
               />
             </Tooltip>
+            {code && <AddToListMenu boardType="stock" stock={{ code, market, name: stockName ?? code }} />}
           </span>
         }
         className={styles.card}
@@ -310,15 +340,10 @@ export default function StrategyBacktest() {
                 <div className={styles.formGroup}>
                   <label>策略</label>
                   <Select
-                    value={strategy}
+                    value={strategy || undefined}
                     onChange={setStrategy}
-                    options={STRATEGIES.map((s) => ({ value: s, label: s }))}
+                    options={strategies.map((s) => ({ value: s.id, label: s.name }))}
                   />
-                  {STRATEGY_DETAILS[strategy]?.map((line, i) => (
-                    <Typography.Text key={i} type="secondary" style={{ display: 'block', fontSize: 11, marginTop: 4, lineHeight: '1.6' }}>
-                      {line}
-                    </Typography.Text>
-                  ))}
                 </div>
               </Col>
               <Col span={6}>
@@ -356,100 +381,94 @@ export default function StrategyBacktest() {
           </Col>
 
           {result && (
-            <>
-              <Col span={24}>
-                <Card
-                  type="inner"
-                  title={
-                    <span>
-                      回测结果{fromCache && <Tag color="default" style={{ marginLeft: 8, fontSize: 11 }}>已缓存</Tag>}
-                    </span>
-                  }
-                  size="small"
-                >
-                  <Row gutter={[32, 16]}>
-                    <Col span={4}>
-                      <Statistic
-                        title="区间涨跌"
-                        value={result.priceChangePercent}
-                        precision={2}
-                        suffix="%"
-                        styles={{
-                          content: {
-                            color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
-                          },
-                        }}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="回测收益"
-                        value={result.returnPercent}
-                        precision={2}
-                        suffix="%"
-                        styles={{
-                          content: {
-                            color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
-                          },
-                        }}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="最大回撤"
-                        value={result.maxDrawdown}
-                        precision={2}
-                        suffix="%"
-                        styles={{ content: { color: '#26a69a' } }}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="夏普比率"
-                        value={result.sharpeRatio}
-                        precision={2}
-                      />
-                    </Col>
-                    <Col span={4}>
-                      <Statistic
-                        title="交易次数"
-                        value={result.tradeCount}
-                      />
-                    </Col>
-                  </Row>
-                </Card>
-              </Col>
+            <Col span={24}>
+              <Card
+                type="inner"
+                title={
+                  <span>
+                    回测结果{fromCache && <Tag color="default" style={{ marginLeft: 8, fontSize: 11 }}>已缓存</Tag>}
+                  </span>
+                }
+                size="small"
+              >
+                {resultMeta && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, marginBottom: 16, color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+                    <span>标的：{stockName ? `${stockName} ` : ''}{code}（{market === 'A' ? 'A股' : '港股'}）</span>
+                    <span>K线周期：{PERIODS.find((p) => p.value === resultMeta.period)?.label ?? resultMeta.period}</span>
+                    <span>策略：{strategies.find((s) => s.id === resultMeta.strategy)?.name ?? resultMeta.strategy}</span>
+                    <span>回测时间区间：{resultMeta.startDate} ~ {resultMeta.endDate}</span>
+                  </div>
+                )}
+                <div className={styles.statRow}>
+                  <span>区间涨跌：<span style={{
+                    color: result.priceChangePercent > 0 ? '#ef5350' : '#26a69a',
+                  }}>{toPercent(result.priceChangePercent)}</span></span>
 
-              <Col span={24}>
-                <Card type="inner" title="K线图" size="small">
-                  <KLineChart
-                    market={market}
-                    code={code || ''}
-                    initialData={{ data: result.klines, period, backtestStartTime: result.backtestStartTime }}
-                    zoomStorageKey={code}
-                    showPeriodTabs={false}
-                    showRsi
-                    showLjj
-                  />
-                </Card>
-              </Col>
+                  <span>回测收益：<span style={{
+                    color: result.returnPercent > 0 ? '#ef5350' : '#26a69a',
+                  }}>{toPercent(result.returnPercent)}</span></span>
 
-              {result.trades.length > 0 && (
-                <Col span={24}>
-                  <Card type="inner" title="交易记录" size="small">
-                    <Table
-                      dataSource={result.trades.map((t, i) => ({ ...t, key: i }))}
-                      columns={tradeColumns}
-                      pagination={false}
-                      size="small"
-                    />
-                  </Card>
-                </Col>
+                  <span>最大回撤：<span style={{
+                    color: '#26a69a',
+                  }}>{toPercent(result.maxDrawdown)}</span></span>
+
+                  <span>夏普比率：<span>{result.sharpeRatio.toFixed(2)}</span></span>
+
+                  <span>交易次数：<span>{result.tradeCount}</span></span>
+                </div>
+              </Card>
+            </Col>
+          )}
+
+          {/* K线图：回测前即展示（拉取所选周期 K 线，仅不渲染买卖点）；回测后用结果数据并叠加买卖信号 */}
+          <Col span={24}>
+            <Card type="inner" title="K线图" size="small">
+              {result ? (
+                <KLineChart
+                  market={market}
+                  code={code || ''}
+                  initialData={{ data: result.klines, period, backtestStartTime: result.backtestStartTime }}
+                  zoomStorageKey={code}
+                  showPeriodTabs={false}
+                  showRsi
+                  showLjj
+                />
+              ) : (
+                <KLineChart
+                  market={market}
+                  code={code || ''}
+                  period={period}
+                  zoomStorageKey={code}
+                  showPeriodTabs={false}
+                  showRsi
+                  showLjj
+                  viewStartDate={startDate.format('YYYY-MM-DD')}
+                  viewEndDate={endDate.format('YYYY-MM-DD')}
+                />
               )}
-            </>
+            </Card>
+          </Col>
+
+          {result && result.trades.length > 0 && (
+            <Col span={24}>
+              <Card type="inner" title="交易记录" size="small">
+                <Table
+                  dataSource={result.trades.map((t, i) => ({ ...t, key: i }))}
+                  columns={tradeColumns}
+                  pagination={false}
+                  size="small"
+                />
+              </Card>
+            </Col>
           )}
         </Row>
       </Card>
     </div>
   );
+}
+
+
+// 转成百分比，并保留两位小数，不要四舍五入
+function toPercent(value: number): string {
+  return (Math.floor(value * 100) / 100).toFixed(2) + '%';
 }
