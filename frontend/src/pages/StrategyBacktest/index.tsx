@@ -20,7 +20,7 @@ import AddToListMenu from '../../components/AddToListMenu';
 import { strategyApi, stocksApi } from '../../api/stock';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import { useWatchListStore } from '../../store/watchListStore';
-import type { KlinePeriod, KlineBar } from '../../types';
+import type { KlinePeriod, KlineBar, Stock } from '../../types';
 import styles from './StrategyBacktest.module.css';
 
 interface TradeRecord {
@@ -137,7 +137,7 @@ export default function StrategyBacktest() {
   const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
   const { stockLists, fetchLists } = useWatchListStore();
   const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
-  const favoriteEntry =
+  const favoriteEntry: Stock | undefined =
     defaultListId != null
       ? (itemsByList[defaultListId] ?? []).find((f) => f.market === market && f.code === code)
       : undefined;
@@ -156,7 +156,7 @@ export default function StrategyBacktest() {
     if (isFavorited) {
       void removeItem(favoriteEntry!.id!, defaultListId);
     } else {
-      void addToList(defaultListId, { code, market, name: stockName ?? favoriteEntry?.name ?? code });
+      void addToList(defaultListId, { code, market, name: stockName ?? code });
     }
   };
 

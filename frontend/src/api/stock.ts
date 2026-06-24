@@ -98,20 +98,23 @@ export const monitorApi = {
     api.delete('/monitor/messages').then(() => undefined),
 };
 
+interface TradeRecord {
+  type: 'buy' | 'sell';
+  time: string;
+  price: number;
+  reason: string;
+  profit?: number;
+}
+
 interface BacktestResult {
   priceChangePercent: number;
   returnPercent: number;
   maxDrawdown: number;
   sharpeRatio: number;
   tradeCount: number;
-  trades: Array<{
-    buyTime: string;
-    buyPrice: number;
-    sellTime: string;
-    sellPrice: number;
-    profit: number;
-  }>;
+  trades: TradeRecord[];
   klines: KlineBar[];
+  backtestStartTime?: string | null;
 }
 
 export const strategyApi = {

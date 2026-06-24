@@ -17,7 +17,9 @@ import type {
   LineData,
   HistogramData,
   SeriesType,
+  SeriesMarker,
   Time,
+  Logical,
   LogicalRange,
 } from 'lightweight-charts';
 import { klineApi } from '../../api/stock';
@@ -482,7 +484,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     }
 
     // Buy/sell markers (only present when data comes from strategy backtest)
-    const markers: Parameters<typeof createSeriesMarkers>[1] = bars
+    const markers: SeriesMarker<Time>[] = bars
       .filter((b) => b.signal === 'buy' || b.signal === 'sell')
       .map((b) =>
         b.signal === 'buy'
@@ -648,7 +650,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       }
       // 与回测结果视图一致：起点前留 5 根历史上下文
       const from = startIdx >= 0 ? Math.max(0, startIdx - 5) : 0;
-      setAllRange({ from: Math.min(from, endIdx), to: endIdx });
+      setAllRange({ from: Math.min(from, endIdx) as Logical, to: endIdx as Logical });
     } else {
       // Restore persisted zoom if available
       let restoredZoom: LogicalRange | null = null;
@@ -665,11 +667,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         // 回测模式：以回测起始点为锚，前留少量历史上下文
         const startIdx = bars.findIndex((b) => b.time === backtestStartTime);
         const from = startIdx >= 0 ? Math.max(0, startIdx - 5) : 0;
-        setAllRange({ from, to: bars.length - 1 });
+        setAllRange({ from: from as Logical, to: (bars.length - 1) as Logical });
       } else {
         const defaultVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
         const from = Math.max(0, bars.length - defaultVisible);
-        setAllRange({ from, to: bars.length - 1 });
+        setAllRange({ from: from as Logical, to: (bars.length - 1) as Logical });
       }
     }
 
