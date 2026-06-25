@@ -204,3 +204,24 @@ export interface WatchList {
   boardType: BoardType;
   isDefault: boolean;
 }
+
+export interface DarkTradeData {
+  code: string;
+  name: string;
+  latestPrice: number | null;
+  changePct: number | null;
+  darkCapital: number | null;
+  lightCapital: number | null;
+  netInflow: number | null;
+  darkActivity: number | null;
+  sector: string;
+  concept: string;
+  date: string;
+}
+
+export interface DarkTradeSnapshot {
+  /** 日线粒度: "YYYY-MM-DD"；分钟粒度: "YYYY-MM-DD HH:MM" */
+  time: string;
+  darkCapital: number | null;
+  lightCapital: number | null;
+}

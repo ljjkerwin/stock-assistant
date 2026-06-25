@@ -21,6 +21,7 @@ const { Text } = Typography;
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
   { value: 'backtest', label: '策略回测' },
+  { value: 'klinegrid', label: 'K线总览' },
   { value: 'fund', label: '基金' },
   { value: 'list', label: '股票列表导入' },
 ];
@@ -48,7 +49,9 @@ export default function Sidebar() {
       ? 'fund'
       : pathname.startsWith('/stock-list-import')
         ? 'list'
-        : 'stock';
+        : pathname.startsWith('/stock-list-kline')
+          ? 'klinegrid'
+          : 'stock';
 
   const boardType: BoardType | null = section === 'list' ? null : section === 'fund' ? 'fund' : 'stock';
   const lists = boardType === 'fund' ? fundLists : stockLists;
@@ -80,6 +83,8 @@ export default function Sidebar() {
       navigate('/stock');
     } else if (val === 'fund') {
       navigate('/fund');
+    } else if (val === 'klinegrid') {
+      navigate('/stock-list-kline');
     } else {
       navigate('/stock-list-import');
     }
@@ -196,7 +201,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {section !== 'list' && (
+      {section !== 'list' && section !== 'klinegrid' && (
         <div className={styles.search}>
           {section === 'fund' ? (
             <FundSearch size="middle" />
@@ -213,7 +218,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {(section === 'stock' || section === 'backtest') && (
+      {(section === 'stock' || section === 'backtest' || section === 'klinegrid') && (
         <div className={styles.list}>
           {items.map((stock, index) =>
             renderItem(

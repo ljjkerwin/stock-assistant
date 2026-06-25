@@ -250,7 +250,15 @@ export class KlineService {
     const url = `${TENCENT_MKLINE_URL}?param=${symbol},${mk},,${TENCENT_MIN_LIMIT}`;
     const resp = await this.get<TencentKlineResponse>(url, TENCENT_HEADERS);
     const rows = resp?.data?.[symbol]?.[mk] as unknown[] | undefined;
-    return this.parseTencentRows(rows);
+    const bars = this.parseTencentRows(rows);
+
+    // 分时图只展示最近一个交易日的数据；其他分钟周期保留全部历史
+    if (period === 'timeshare' && bars.length > 0) {
+      const lastDate = bars[bars.length - 1].time.slice(0, 10);
+      return bars.filter((b) => b.time.startsWith(lastDate));
+    }
+
+    return bars;
   }
 
   /**

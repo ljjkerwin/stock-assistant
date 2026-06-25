@@ -34,7 +34,8 @@ stock-assistant/
 │   │   ├── StockDetail/    # 股票详情页
 │   │   ├── FundDetail/     # 基金详情页（路由 /fund/:code）
 │   │   ├── StrategyBacktest/     # 策略回测页（路由 /strategy-backtest/:code）
-│   │   └── StockListImport/      # 股票列表页（路由 /stock-list-import，导入文件查看，数据不入库）
+│   │   ├── StockListImport/      # 股票列表页（路由 /stock-list-import，导入文件查看，数据不入库）
+│   │   └── StockListKline/       # K线总览页（路由 /stock-list-kline，展示当前标的列表所有股票的 K 线图网格）
 │   ├── store/
 │   │   └── favoritesStore.ts  # Zustand 全局状态
 │   ├── api/
@@ -103,6 +104,10 @@ pnpm dev
 | GET | `/api/fund/:code/holdings` | 获取基金最近两期前10大持仓股（季报） |
 | GET | `/api/strategy/list` | 策略清单（返回 `{ id, name }[]`，`id` 为稳定标识、`name` 为可变展示名） |
 | GET | `/api/strategy/backtest?market=&code=&startDate=&endDate=&period=&strategy=` | 策略回测（返回回测结果、K线数据、交易信号） |
+| GET | `/api/darktrade/index-status` | 查询暗盘索引状态 `{ count, date, updatedAt }` |
+| POST | `/api/darktrade/refresh-index` | 抓取所有页暗盘数据并建立 code→(page,index) 映射（body 可选 `{ date?, sortFlag?, desc? }`，默认按暗盘资金降序 sortFlag=6） |
+| GET | `/api/darktrade/batch?codes=&date=` | 批量查询多只股票的暗盘资金数据，`codes` 为逗号分隔的代码列表，返回 `Record<code, DarkTradeData>`（不在索引中的代码静默忽略）；可选 `date=YYYYMMDD`，传入时若当前索引日期不匹配则**自动触发 refresh-index**（服务端并发锁，多请求只刷新一次），无需手动脚本 |
+| GET | `/api/darktrade/:code` | 通过映射查询指定股票的暗盘资金数据，返回 `DarkTradeData`（需先 refresh-index） |
 
 `market` 取值：`A`（A股 + 场内ETF）/ `HK`（港股）
 
@@ -164,6 +169,13 @@ pnpm dev
 - 数据仅展示，不写入数据库
 - 名称列 hover 时弹出近 6 个月日 K 线图，复用 `HoldingKlinePopup` 组件（已扩展可选 `market` 参数，默认 `'A'`）
 - 表格分页展示（默认每页 50 条），支持切换分页大小
+
+### K线总览页（`StockListKline` 页面）
+- 路由：`/stock-list-kline`，Sidebar Section Select 新增「K线总览」选项切换进入；进入后搜索框隐藏，列表切换器仍保留（用于切换当前标的列表）
+- 展示当前股票标的列表（`currentStockListId`）中所有非基金标的的 K 线图，以卡片网格方式排列
+- 顶部工具栏提供**全局周期切换器**（Radio.Group，可选周期：分时/5分/15分/30分/60分/日线/周线），切换后所有卡片同步更新；周期选择缓存于 localStorage（key `stockListKline:period`，刷新后保持）
+- 每个 `StockKlineCard` 卡片：最小宽度 400px，`flex: 1` 自适应铺满整行并换行；每张卡片独立请求 K 线数据，包含主图（蜡烛线 + MA5/MA20；分时为面积图）和量图（成交量柱状）；点击标的名称在当前页打开股票详情页
+- 标的列表项中 `market === 'FUND'` 的条目不渲染 K 线卡片（基金走净值图，不适合此页面）
 
 ### 基金模块（`FundModule`）
 - 路由：`/fund/:code`，`code` 为基金代码（如 `000001`），无 market 参数
@@ -288,6 +300,8 @@ pnpm dev
 **批量策略回测（多标的×多区间）**：`scripts/batch-backtest.mjs` 对「收藏夹有效标的 + 内置无偏抽样篮子（沪深300/中证500-1000/科创/宽基+行业ETF/港股，共 50 只）」跨 4 个时间区间调用 `/api/strategy/backtest`，汇总成**分布口径**（收益中位数、跑赢买入持有胜率、P25/P75 分位、回撤中位数、夏普中位数、空仓率），输出 `dist/all_strategy_result_broad.md` 与明细 `dist/batch_backtest_raw.csv`（所有分析结果统一写入 `dist/`）。需后端先在 3000 端口运行；标的篮子/区间在脚本顶部常量 `EXTRA`/`WINDOWS` 调整。`scripts/compare-strategies.mjs <id...> [--only=etf|stock]` 是配套的**快速 A/B 迭代工具**（复用同一篮子/区间，打印紧凑的按区间+总体分布对比，`--only=etf` 仅跑场内 ETF 子集），调策略参数时用它快速看多区间效果。
 
 **15min 策略专用测试集**：日线脚本（batch/compare）用日线、覆盖多年多 regime，不适用于 15min（分钟线仅 ~50 交易日且不可回溯）。15min 策略改用 `scripts/backtest15.mjs`——固定一篮子分层 A 股/ETF（`TEST_SET`，覆盖大盘/中盘/小盘科创/宽基与行业 ETF + 问题标的 600498）× 数据窗口内三区间（`W_full` 全段 / `W_chop` 震荡前半段 / `W_rally` 拉升后半段，检验下跌保护与趋势参与的平衡）。用法 `node scripts/backtest15.mjs pullback15 [trend5...] [--report]`，传 `--report` 写出 `dist/all_strategy_result_15min.md` 与 `dist/batch_backtest_15min_raw.csv`（与日线脚本统一输出到 `dist/`）。⚠️ 区间日期随「今天」滑动，隔较久重跑需把脚本顶部 `WINDOWS` 顺移到当前可用窗口内（取不到数据的标的×区间会跳过计入失败、不影响其余统计）。
+
+**使用暗盘资金功能**：K线总览页在加载时会自动携带客户端今日日期调用 `GET /api/darktrade/batch?codes=&date=YYYYMMDD`，后端检测到索引日期不匹配时自动触发全量刷新（爬取约 177 页 ~5300 只股票，约 5–10 秒），**无需手动运行脚本**。手动刷新仍可用 `node scripts/refresh-darktrade-index.mjs [YYYYMMDD]`（调用 `POST /api/darktrade/refresh-index`）。数据源：东方财富 `quotederivates.eastmoney.com/datacenter/darktrade`，支持 `date=YYYYMMDD` 参数，返回 GBK 编码，服务层用 `TextDecoder('gbk')` 解码，**无需额外安装 iconv-lite**。字段对应：`"6"`=暗盘资金(元)、`"7"`=明盘资金(元)、`"8"`=主力净流入含暗盘(元)、`"11"`=暗盘活跃度(小数)、`"13"`=最新价×1000、`"14"`=涨幅(小数)、`"16"`=名称、`"17"`=行业、`"18"`=概念。
 
 **调试基金数据**：基金净值从东方财富 `https://api.fund.eastmoney.com/f10/lsjz` 拉取，实时估值从 `https://fundgz.1234567.com.cn/js/{code}.js` 拉取；逻辑在 `backend/src/fund/fund.service.ts`。基金详情页路由为 `/fund/:code`，直接在浏览器地址栏访问即可。
 

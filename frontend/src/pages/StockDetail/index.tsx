@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Typography, Descriptions, Spin, Tag, Button, Tooltip } from 'antd';
 import { StarOutlined, StarFilled, LineChartOutlined } from '@ant-design/icons';
-import { stocksApi } from '../../api/stock';
+import { stocksApi, darktradeApi } from '../../api/stock';
 import KLineChart from '../../components/KLineChart';
 import StockMonitorButton from '../../components/StockMonitorButton';
 import AddToListMenu from '../../components/AddToListMenu';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import { useWatchListStore } from '../../store/watchListStore';
-import type { StockInfo } from '../../types';
+import type { StockInfo, DarkTradeSnapshot } from '../../types';
 import styles from './StockDetail.module.css';
 
 function formatNumber(n: number | null, digits = 2): string {
@@ -23,6 +23,7 @@ export default function StockDetail() {
   const navigate = useNavigate();
   const [info, setInfo] = useState<StockInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dtSnapshots, setDtSnapshots] = useState<DarkTradeSnapshot[]>([]);
   const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
   const { stockLists, fetchLists } = useWatchListStore();
   const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
@@ -49,6 +50,12 @@ export default function StockDetail() {
       .then(setInfo)
       .catch(() => setInfo(null))
       .finally(() => setLoading(false));
+  }, [market, code]);
+
+  useEffect(() => {
+    if (market !== 'A' || !code) return;
+    setDtSnapshots([]);
+    darktradeApi.getSnapshots(code).then(setDtSnapshots).catch(() => {});
   }, [market, code]);
 
   const isUp = info?.change_pct != null && info.change_pct > 0;
@@ -132,7 +139,14 @@ export default function StockDetail() {
       </Spin>
 
       <div className={styles.chart}>
-        {market && code && <KLineChart market={market as 'A' | 'HK'} code={code} />}
+        {market && code && (
+          <KLineChart
+            market={market as 'A' | 'HK'}
+            code={code}
+            showDarkTrade={market === 'A'}
+            darkTradeSnapshots={dtSnapshots}
+          />
+        )}
       </div>
     </div>
   );

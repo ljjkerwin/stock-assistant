@@ -13,6 +13,8 @@ import type {
   FundHoldingPeriod,
   WatchList,
   BoardType,
+  DarkTradeData,
+  DarkTradeSnapshot,
 } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
@@ -116,6 +118,40 @@ interface BacktestResult {
   klines: KlineBar[];
   backtestStartTime?: string | null;
 }
+
+export const darktradeApi = {
+  get: (code: string): Promise<DarkTradeData | null> =>
+    api
+      .get<DarkTradeData>(`/darktrade/${code}`)
+      .then((r) => r.data)
+      .catch(() => null),
+
+  getBatch: (codes: string[], date?: string): Promise<Record<string, DarkTradeData>> =>
+    codes.length === 0
+      ? Promise.resolve({})
+      : api
+          .get<Record<string, DarkTradeData>>('/darktrade/batch', {
+            params: { codes: codes.join(','), ...(date ? { date } : {}) },
+          })
+          .then((r) => r.data)
+          .catch(() => ({})),
+
+  getSnapshots: (code: string, days = 60): Promise<DarkTradeSnapshot[]> =>
+    api
+      .get<DarkTradeSnapshot[]>(`/darktrade/snapshots/${code}`, { params: { days } })
+      .then((r) => r.data)
+      .catch(() => []),
+
+  getSnapshotsBatch: (codes: string[], days = 30): Promise<Record<string, DarkTradeSnapshot[]>> =>
+    codes.length === 0
+      ? Promise.resolve({})
+      : api
+          .get<Record<string, DarkTradeSnapshot[]>>('/darktrade/snapshots-batch', {
+            params: { codes: codes.join(','), days },
+          })
+          .then((r) => r.data)
+          .catch(() => ({})),
+};
 
 export const strategyApi = {
   // 策略清单：稳定 id + 展示名称。回测以 id 标识策略，name 仅用于展示。

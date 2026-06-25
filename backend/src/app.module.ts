@@ -7,13 +7,23 @@ import { KlineModule } from './kline/kline.module';
 import { MonitorModule } from './monitor/monitor.module';
 import { FundModule } from './fund/fund.module';
 import { StrategyModule } from './strategy/strategy.module';
+import { DarkTradeModule } from './darktrade/darktrade.module';
 import { Favorite } from './favorites/favorite.entity';
 import { WatchList } from './favorites/watch-list.entity';
 import { MonitorRule } from './monitor/monitor-rule.entity';
 import { MonitorMessage } from './monitor/monitor-message.entity';
+import { DarkTradeIndex } from './darktrade/dark-trade-index.entity';
+import { DarkTradeSnapshot } from './darktrade/dark-trade-snapshot.entity';
 import { TestModule } from './test/test.module';
 
-const entities = [Favorite, WatchList, MonitorRule, MonitorMessage];
+const entities = [
+  Favorite,
+  WatchList,
+  MonitorRule,
+  MonitorMessage,
+  DarkTradeIndex,
+  DarkTradeSnapshot,
+];
 
 function buildDataSourceOptions(): DataSourceOptions {
   const { MYSQL_HOST, MYSQL_USERNAME, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;
@@ -47,6 +57,7 @@ function buildDataSourceOptions(): DataSourceOptions {
     MonitorModule,
     FundModule,
     StrategyModule,
+    DarkTradeModule,
     TestModule,
   ],
 })
