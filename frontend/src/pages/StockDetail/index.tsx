@@ -24,6 +24,7 @@ export default function StockDetail() {
   const [info, setInfo] = useState<StockInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [dtSnapshots, setDtSnapshots] = useState<DarkTradeSnapshot[]>([]);
+  const [klineDate, setKlineDate] = useState<string | null>(null);
   const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
   const { stockLists, fetchLists } = useWatchListStore();
   const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
@@ -52,11 +53,20 @@ export default function StockDetail() {
       .finally(() => setLoading(false));
   }, [market, code]);
 
+  // 切换股票时重置当日日期与快照，等待 K 线图上报实际交易日
   useEffect(() => {
-    if (market !== 'A' || !code) return;
+    setKlineDate(null);
     setDtSnapshots([]);
-    darktradeApi.getSnapshots(code).then(setDtSnapshots).catch(() => {});
   }, [market, code]);
+
+  // 按 K 线实际交易日拉取当日分钟粒度暗盘快照（与分时图同一交易日）
+  useEffect(() => {
+    if (market !== 'A' || !code || !klineDate) return;
+    darktradeApi
+      .getSnapshotsBatch([code], klineDate)
+      .then((map) => setDtSnapshots(map[code] ?? []))
+      .catch(() => {});
+  }, [market, code, klineDate]);
 
   const isUp = info?.change_pct != null && info.change_pct > 0;
   const isDown = info?.change_pct != null && info.change_pct < 0;
@@ -145,6 +155,7 @@ export default function StockDetail() {
             code={code}
             showDarkTrade={market === 'A'}
             darkTradeSnapshots={dtSnapshots}
+            onDateResolved={setKlineDate}
           />
         )}
       </div>
