@@ -49,6 +49,7 @@ stock-assistant/
 │   │   ├── MonitorCenter/       # 左下角消息通知中心弹窗
 │   │   └── StockMonitorButton/  # 个股监控规则按钮（嵌入详情页标题栏）
 │   ├── pages/
+│   │   ├── Login/          # 登录页（未登录时 App 全屏渲染此页作为入口）
 │   │   ├── Home/           # 首页（暂空）
 │   │   ├── StockDetail/    # 股票详情页
 │   │   ├── FundDetail/     # 基金详情页（路由 /fund/:code）
@@ -56,11 +57,14 @@ stock-assistant/
 │   │   ├── StockListImport/      # 股票列表页（路由 /stock-list-import，导入文件查看，数据不入库）
 │   │   └── StockListKline/       # K线总览页（路由 /stock-list-kline，展示当前标的列表所有股票的 K 线图网格）
 │   ├── store/
+│   │   ├── authStore.ts       # 登录态（令牌+当前用户），App gate 据此渲染登录页/主界面
 │   │   └── favoritesStore.ts  # Zustand 全局状态
 │   ├── api/
-│   │   └── stock.ts           # 所有后端 API 请求封装
+│   │   ├── token.ts           # 登录令牌的 localStorage 存取 + 401 事件常量
+│   │   └── stock.ts           # 所有后端 API 请求封装（axios 拦截器自动带令牌 / 401 退出）
 │   └── types/                 # TypeScript 类型定义
 ├── backend/src/
+│   ├── auth/                  # 用户登录：User 实体 + 令牌签发/校验 + 全局 AuthGuard（@Public/@CurrentUser）
 │   ├── stocks/                # 股票搜索 + 基本信息接口
 │   ├── kline/                 # K线数据接口（统一封装多市场数据源，含指标计算）
 │   ├── fund/                  # 基金净值接口（东方财富 lsjz + 实时估值）
@@ -98,6 +102,7 @@ pnpm dev
 
 各模块一句话定位，深度细节点对应卫星文档：
 
+- **用户登录**（[api.md 鉴权](docs/api.md#鉴权auth)）：内置账号密码登录，签发精简版 JWT（HMAC-SHA256，scrypt 存密码）；全局 `AuthGuard` 守卫除登录外的所有 `/api/*`，令牌走 Header 或 query（供 SSE）；标的列表/收藏按用户隔离（`watch_lists.user_id`）。首启种入内置账号 `ljj` 并把历史数据归到其名下
 - **K线数据**（[kline.md](docs/modules/kline.md)）：腾讯财经 ifzq 为主源（前复权、抓取宽松），港股分钟线走 Yahoo；`fetchBars` 按周期/市场路由。⚠️ 分钟线上游有 800 根硬上限（15min≈50 交易日且不可回溯），直接约束 15min 回测窗口
 - **指标计算**（[strategies.md](docs/strategies.md#指标计算接口层统一口径)）：MACD/MA/BOLL/RSI/`attrs`/`changePercent` 全部由接口层 `KlineService.calcMACD` 统一计算并随每根 K 线返回，前端与回测层只读消费、不重算
 - **策略回测**（[strategies.md](docs/strategies.md)）：通用 runner + 可扩展策略注册表；现有策略 `trend2`（日线双模式，有过拟合）/ `trend5`（日线经典趋势跟随，样本外最稳健，默认推荐）/ `trend8`（日线抛物线骑乘，贴顶离场）/ `pullback15`（15min 趋势自适应短波段）。新增策略只需实现接口并在 `index.ts` 注册
@@ -117,6 +122,8 @@ pnpm dev
 **新增一个回测策略**：按 [docs/strategies.md 新增策略模板](docs/strategies.md#新增策略文档模板) 实现接口、在 `index.ts` 注册，并在该文档追加一节。
 
 **修改收藏排序逻辑**：排序在 `GET /api/favorites` 中由数据库 ORDER BY 完成，修改 `favorites.service.ts` 中的查询条件即可。
+
+**用户登录 / 新增账号 / 调整鉴权**：登录逻辑集中在 `backend/src/auth/`（`AuthService` 管哈希/令牌/登录，`AuthGuard` 是全局守卫）。内置账号在 `AuthService.onModuleInit` 种入；令牌密钥用环境变量 `AUTH_SECRET`。某接口要免登录访问时给其加 `@Public()`；取当前用户用 `@CurrentUser()`。前端登录态见 `store/authStore.ts`，未登录由 `App.tsx` 渲染 `pages/Login`。详见 [docs/api.md 鉴权](docs/api.md#鉴权auth)。
 
 **调试外部 API**：数据源请求逻辑集中在 `KlineService`（腾讯前复权 K线/分钟 + Yahoo 港股分钟）和 `StocksService`（东方财富行情），在这两个 service 内打日志即可。K线上游失败时控制台打印 `[kline] upstream error ...`。
 

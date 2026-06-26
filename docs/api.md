@@ -9,9 +9,24 @@
 - `market`：`A`（A股 + 场内ETF）/ `HK`（港股）
 - `period`：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
 
+**鉴权**：除 `POST /api/auth/login` 外，**所有 `/api/*` 接口都需要登录令牌**。令牌通过请求头 `Authorization: Bearer <token>` 传递；SSE（`EventSource` 无法自定义请求头）改用 query 参数 `?token=<token>`。缺失/无效/过期令牌一律返回 `401`。前端 axios 拦截器自动附带令牌，收到 401 时清除本地令牌并退回登录页。
+
+---
+
+## 鉴权（auth）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/login` | 登录（**公开**），body `{ username, password }`，成功返回 `{ token, user: { id, username } }`；用户名或密码错误返回 401 |
+| GET | `/api/auth/me` | 返回当前登录用户 `{ id, username }`（凭令牌） |
+
+> 令牌为精简版 JWT（HMAC-SHA256 签名，含 `sub`/`username`/`exp`，默认 7 天有效），密钥取环境变量 `AUTH_SECRET`（缺省有开发兜底值）。密码用 scrypt 加盐哈希存储。首次启动自动种入内置账号 `ljj`，并把历史无归属的标的列表/收藏归到该账号下。
+
 ---
 
 ## 收藏夹 / 标的列表
+
+> 标的列表归属用户：`watch_lists` 增加 `user_id` 列，下列接口均**按当前登录用户隔离**，仅能读写自己名下的列表与收藏；访问他人列表/收藏返回 404。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|

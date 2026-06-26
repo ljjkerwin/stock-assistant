@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getToken, clearToken, AUTH_LOGOUT_EVENT } from './token';
 import type {
   Stock,
   StockInfo,
@@ -18,6 +19,40 @@ import type {
 } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
+
+// 每个请求带上登录令牌
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+// 令牌失效：清掉本地令牌并通知 authStore 回到登录态（登录接口本身除外）
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    const url: string = error?.config?.url ?? '';
+    if (status === 401 && !url.includes('/auth/login')) {
+      clearToken();
+      window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT));
+    }
+    return Promise.reject(error);
+  },
+);
+
+export interface AuthUser {
+  id: number;
+  username: string;
+}
+
+export const authApi = {
+  login: (username: string, password: string): Promise<{ token: string; user: AuthUser }> =>
+    api
+      .post<{ token: string; user: AuthUser }>('/auth/login', { username, password })
+      .then((r) => r.data),
+  me: (): Promise<AuthUser> => api.get<AuthUser>('/auth/me').then((r) => r.data),
+};
 
 export const favoritesApi = {
   list: (watchListId: number) =>

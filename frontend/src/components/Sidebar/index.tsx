@@ -8,9 +8,12 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   PlusOutlined,
+  LogoutOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import { useWatchListStore } from '../../store/watchListStore';
+import { useAuthStore } from '../../store/authStore';
 import StockSearch from '../StockSearch';
 import FundSearch from '../FundSearch';
 import type { Stock, BoardType } from '../../types';
@@ -40,6 +43,8 @@ export default function Sidebar() {
     deleteList,
     setCurrentList,
   } = useWatchListStore();
+  const username = useAuthStore((s) => s.user?.username);
+  const logout = useAuthStore((s) => s.logout);
   const [addListOpen, setAddListOpen] = useState(false);
   const [newListName, setNewListName] = useState('');
 
@@ -238,6 +243,15 @@ export default function Sidebar() {
           {items.map((stock, index) => renderItem(stock, index, items, (s) => `/fund/${s.code}`))}
         </div>
       )}
+
+      <div className={styles.userBar}>
+        <Text type="secondary" ellipsis>
+          <UserOutlined /> {username}
+        </Text>
+        <Tooltip title="退出登录">
+          <Button type="text" size="small" icon={<LogoutOutlined />} onClick={logout} />
+        </Tooltip>
+      </div>
 
       <Modal
         title="新建列表"
