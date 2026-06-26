@@ -38,12 +38,9 @@ export class DarkTradeController {
   }
 
   @Get('snapshots-batch')
-  getSnapshotsBatch(
-    @Query('codes') codes: string,
-    @Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number,
-  ) {
+  getSnapshotsBatch(@Query('codes') codes: string, @Query('date') date?: string) {
     const codeList = codes ? codes.split(',').filter(Boolean) : [];
-    return this.darkTradeService.getSnapshotsBatch(codeList, days);
+    return this.darkTradeService.getSnapshotsBatch(codeList, date);
   }
 
   @Get('snapshots/:code')

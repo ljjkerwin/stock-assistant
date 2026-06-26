@@ -354,21 +354,24 @@ export class DarkTradeService {
       }));
   }
 
-  /** 批量快照（StockListKline 用）：分钟粒度，返回 code→记录[] */
+  /** 批量快照（StockListKline 用）：分钟粒度，返回 code→记录[]；date=YYYYMMDD 时只取当天 */
   async getSnapshotsBatch(
     codes: string[],
-    days = 30,
+    date?: string,
   ): Promise<
     Record<string, { time: string; darkCapital: number | null; lightCapital: number | null }[]>
   > {
     if (codes.length === 0) return {};
-    const cutoff = cutoffDate(days);
-    const rows = await this.snapshotRepo
+    const qb = this.snapshotRepo
       .createQueryBuilder('s')
       .where('s.code IN (:...codes)', { codes })
-      .andWhere('s.trade_date >= :cutoff', { cutoff })
-      .orderBy('s.capture_minute', 'ASC')
-      .getMany();
+      .orderBy('s.capture_minute', 'ASC');
+    if (date) {
+      qb.andWhere('s.trade_date = :date', { date });
+    } else {
+      qb.andWhere('s.trade_date >= :cutoff', { cutoff: cutoffDate(30) });
+    }
+    const rows = await qb.getMany();
 
     const result: Record<
       string,

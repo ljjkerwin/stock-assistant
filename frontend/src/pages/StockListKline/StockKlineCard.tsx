@@ -35,6 +35,7 @@ interface Props {
   darkTradeData?: DarkTradeData | null;
   darkTradeSnapshots?: DarkTradeSnapshot[];
   onRangeChange?: (range: LogicalRange) => void;
+  onDateResolved?: (date: string) => void;
 }
 
 const MAIN_HEIGHT = 200;
@@ -81,6 +82,24 @@ function formatCapital(v: number): string {
   return v.toFixed(0);
 }
 
+// 生成 09:30–15:00 全天 242 槽位数据（WhitespaceData 占位），供暗盘副图横坐标对齐主图
+function buildTimeshare242(
+  dataMap: Map<string, number>,
+  date: string,
+): ({ time: Time; value: number } | { time: Time })[] {
+  const result: ({ time: Time; value: number } | { time: Time })[] = [];
+  const fill = (fromMin: number, toMin: number) => {
+    for (let m = fromMin; m <= toMin; m++) {
+      const t = `${date} ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      const v = dataMap.get(t);
+      result.push(v !== undefined ? { time: toChartTime(t), value: v } : { time: toChartTime(t) });
+    }
+  };
+  fill(9 * 60 + 30, 11 * 60 + 30);
+  fill(13 * 60, 15 * 60);
+  return result;
+}
+
 // 生成分时图全天数据：实际 bar 填收盘价，其余时间槽（含午休）填 WhitespaceData 占位
 // 这样 fitContent() 能自然铺满 09:30–15:00，午休也按比例留空
 function buildTimeshareData(
@@ -115,7 +134,7 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
 }
 
 const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
-  { code, market, name, period, overlay, showVolume, showMacd, showRsi, showDarkTrade, darkTradeData, darkTradeSnapshots, onRangeChange },
+  { code, market, name, period, overlay, showVolume, showMacd, showRsi, showDarkTrade, darkTradeData, darkTradeSnapshots, onRangeChange, onDateResolved },
   ref,
 ) {
   const [loading, setLoading] = useState(true);
@@ -149,6 +168,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   const darkTradeChartRef = useRef<IChartApi | null>(null);
   const dtSeriesRef = useRef<ISeriesApi<'Line'>[]>([]);
   const darkTradeSnapshotsRef = useRef<DarkTradeSnapshot[]>([]);
+  const lastDateRef = useRef<string>('');
   const syncingRef = useRef(false);
   const isLockedRef = useRef(false);
   const onRangeChangeRef = useRef(onRangeChange);
@@ -162,31 +182,56 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     if (!chart) return;
     dtSeriesRef.current.forEach((s) => chart.removeSeries(s));
     dtSeriesRef.current = [];
+
+    const date = lastDateRef.current;
     const seen = new Set<string>();
     const snaps = darkTradeSnapshotsRef.current.filter((s) => {
       if (seen.has(s.time)) return false;
       seen.add(s.time);
       return true;
     });
-    if (snaps.length === 0) return;
+    if (snaps.length === 0 || !date) {
+      chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
+      return;
+    }
 
-    const addLine = (color: string, data: { time: Time; value: number }[], withZeroLine = false) => {
-      if (data.length === 0) return;
+    // 按正负拆分，分别建 map，key 为 "YYYY-MM-DD HH:MM"
+    const lightPosMap = new Map<string, number>();
+    const lightNegMap = new Map<string, number>();
+    const darkPosMap = new Map<string, number>();
+    const darkNegMap = new Map<string, number>();
+    for (const s of snaps) {
+      if (s.lightCapital != null) {
+        (s.lightCapital >= 0 ? lightPosMap : lightNegMap).set(s.time, s.lightCapital);
+      }
+      if (s.darkCapital != null) {
+        (s.darkCapital >= 0 ? darkPosMap : darkNegMap).set(s.time, s.darkCapital);
+      }
+    }
+
+    let zeroLineAdded = false;
+    const addLine = (color: string, dataMap: Map<string, number>, needZeroLine = false) => {
+      if (dataMap.size === 0) return;
+      // 用 242 槽位骨架，横轴与分时主图一一对应
+      const data = buildTimeshare242(dataMap, date);
       const series = chart.addSeries(LineSeries, { color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
       series.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
       series.setData(data);
-      if (withZeroLine) series.createPriceLine({ price: 0, color: '#bbb', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+      if (needZeroLine && !zeroLineAdded) {
+        series.createPriceLine({ price: 0, color: '#bbb', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+        zeroLineAdded = true;
+      }
       dtSeriesRef.current.push(series);
     };
 
-    // 明盘：正值红色，负值绿色
-    addLine(LIGHT_POS_COLOR, snaps.filter((s) => (s.lightCapital ?? 0) >= 0).map((s) => ({ time: toChartTime(s.time), value: s.lightCapital ?? 0 })), true);
-    addLine(LIGHT_NEG_COLOR, snaps.filter((s) => (s.lightCapital ?? 0) < 0).map((s) => ({ time: toChartTime(s.time), value: s.lightCapital ?? 0 })));
-    // 暗盘：正值浅红，负值浅绿
-    addLine(DARK_POS_COLOR, snaps.filter((s) => (s.darkCapital ?? 0) >= 0).map((s) => ({ time: toChartTime(s.time), value: s.darkCapital ?? 0 })));
-    addLine(DARK_NEG_COLOR, snaps.filter((s) => (s.darkCapital ?? 0) < 0).map((s) => ({ time: toChartTime(s.time), value: s.darkCapital ?? 0 })));
+    // 明盘：正值红色，负值绿色；暗盘：正值浅红，负值浅绿
+    addLine(LIGHT_POS_COLOR, lightPosMap, true);
+    addLine(LIGHT_NEG_COLOR, lightNegMap, true);
+    addLine(DARK_POS_COLOR, darkPosMap);
+    addLine(DARK_NEG_COLOR, darkNegMap);
 
-    chart.timeScale().fitContent();
+    // 与主图同用 242 逻辑索引，不用 fitContent
+    chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -197,6 +242,9 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     },
   }));
 
+  const onDateResolvedRef = useRef(onDateResolved);
+  useEffect(() => { onDateResolvedRef.current = onDateResolved; });
+
   // Effect 1: 拉取 K 线数据（period/code/market 变化时重新拉取）
   useEffect(() => {
     let cancelled = false;
@@ -204,7 +252,15 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     setBars([]);
     klineApi
       .get(market, code, period)
-      .then((res) => { if (!cancelled) setBars(res.data); })
+      .then((res) => {
+        if (!cancelled) {
+          setBars(res.data);
+          if (res.data.length > 0) {
+            const date = res.data[res.data.length - 1].time.slice(0, 10).replace(/-/g, '');
+            onDateResolvedRef.current?.(date);
+          }
+        }
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -295,7 +351,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         height: DT_HEIGHT,
         handleScroll: false,
         handleScale: false,
-        timeScale: { ...CHART_BASE.timeScale, visible: false },
+        timeScale: { ...CHART_BASE.timeScale, visible: false, fixRightEdge: false },
         localization: {
           priceFormatter: (v: number) => {
             const abs = Math.abs(v);
@@ -307,6 +363,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       });
       darkTradeChartRef.current = darkTradeChart;
       dtSeriesRef.current = [];
+      lastDateRef.current = bars.length > 0 ? bars[bars.length - 1].time.slice(0, 10) : '';
       populateDarkTradeData();
     }
 
@@ -462,6 +519,10 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       const allCharts = [mainChart, ...subCharts, ...(darkTradeChart ? [darkTradeChart] : [])];
       const maxWidth = Math.max(...allCharts.map((c) => c.priceScale('right').width()));
       allCharts.forEach((c) => c.priceScale('right').applyOptions({ minimumWidth: maxWidth }));
+      // 价格轴宽度变化后重新锁定暗盘副图的逻辑范围，避免 applyOptions 触发重排后靠右贴边
+      if (darkTradeChart) {
+        darkTradeChart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
+      }
     });
 
     // 图表重建完成，允许跨卡片同步和 localStorage 保存
@@ -483,8 +544,9 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   // 快照数据更新时独立刷新暗盘副图，不触发主图重建
   useEffect(() => {
     darkTradeSnapshotsRef.current = darkTradeSnapshots ?? [];
+    if (bars.length > 0) lastDateRef.current = bars[bars.length - 1].time.slice(0, 10);
     populateDarkTradeData();
-  }, [darkTradeSnapshots, populateDarkTradeData]);
+  }, [darkTradeSnapshots, bars, populateDarkTradeData]);
 
   const minSpinHeight =
     MAIN_HEIGHT +

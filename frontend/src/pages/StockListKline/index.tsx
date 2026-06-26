@@ -19,14 +19,6 @@ const SUB_CHART_OPTIONS: { key: SubChart; label: string }[] = [
 
 const PERIOD_OPTIONS: KlinePeriod[] = ['timeshare', '5min', '15min', '30min', '60min', 'daily', 'weekly'];
 
-function todayDate(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}${m}${d}`;
-}
-
 function loadPeriod(): KlinePeriod {
   try {
     const v = localStorage.getItem('stockListKline:period');
@@ -67,6 +59,7 @@ export default function StockListKline() {
   const [showDarkTrade, setShowDarkTrade] = useState<boolean>(loadShowDarkTrade);
   const [darkTradeMap, setDarkTradeMap] = useState<Record<string, DarkTradeData>>({});
   const [darkSnapshotMap, setDarkSnapshotMap] = useState<Record<string, DarkTradeSnapshot[]>>({});
+  const [klineDate, setKlineDate] = useState<string | null>(null);
 
   const cardRefs = useRef<Map<number, CardHandle>>(new Map());
   const syncRafRef = useRef<number | null>(null);
@@ -118,27 +111,36 @@ export default function StockListKline() {
     if (currentStockListId != null) fetchList(currentStockListId);
   }, [currentStockListId, fetchList]);
 
+  // 列表切换时重置 klineDate，等待卡片重新上报
+  useEffect(() => {
+    setKlineDate(null);
+  }, [currentStockListId]);
+
+  const handleDateResolved = useCallback((date: string) => {
+    setKlineDate((prev) => prev ?? date);
+  }, []);
+
   const items = currentStockListId != null ? (itemsByList[currentStockListId] ?? []) : [];
   const listName = stockLists.find((l) => l.id === currentStockListId)?.name ?? '';
   const stockItems = items.filter((s) => s.market !== 'FUND');
 
   useEffect(() => {
-    if (stockItems.length === 0) return;
+    if (stockItems.length === 0 || !klineDate) return;
     const codes = stockItems.map((s) => s.code);
-    darktradeApi.getBatch(codes, todayDate()).then(setDarkTradeMap);
+    darktradeApi.getBatch(codes, klineDate).then(setDarkTradeMap);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStockListId, itemsByList]);
+  }, [currentStockListId, itemsByList, klineDate]);
 
   useEffect(() => {
-    if (!showDarkTrade || stockItems.length === 0) {
+    if (!showDarkTrade || stockItems.length === 0 || !klineDate) {
       setDarkSnapshotMap({});
       return;
     }
     const codes = stockItems.filter((s) => s.market === 'A').map((s) => s.code);
     if (codes.length === 0) return;
-    darktradeApi.getSnapshotsBatch(codes).then(setDarkSnapshotMap);
+    darktradeApi.getSnapshotsBatch(codes, klineDate).then(setDarkSnapshotMap);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showDarkTrade, currentStockListId, itemsByList]);
+  }, [showDarkTrade, currentStockListId, itemsByList, klineDate]);
 
   return (
     <div className={styles.page}>
@@ -224,6 +226,7 @@ export default function StockListKline() {
                 darkTradeData={darkTradeMap[stock.code]}
                 darkTradeSnapshots={darkSnapshotMap[stock.code]}
                 onRangeChange={(range) => handleRangeChange(stock.id!, range)}
+                onDateResolved={handleDateResolved}
               />
             </div>
           ))}

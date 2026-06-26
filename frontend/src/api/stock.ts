@@ -142,12 +142,12 @@ export const darktradeApi = {
       .then((r) => r.data)
       .catch(() => []),
 
-  getSnapshotsBatch: (codes: string[], days = 30): Promise<Record<string, DarkTradeSnapshot[]>> =>
+  getSnapshotsBatch: (codes: string[], date?: string): Promise<Record<string, DarkTradeSnapshot[]>> =>
     codes.length === 0
       ? Promise.resolve({})
       : api
           .get<Record<string, DarkTradeSnapshot[]>>('/darktrade/snapshots-batch', {
-            params: { codes: codes.join(','), days },
+            params: { codes: codes.join(','), date },
           })
           .then((r) => r.data)
           .catch(() => ({})),
