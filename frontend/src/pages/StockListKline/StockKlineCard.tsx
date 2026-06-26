@@ -355,7 +355,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         localization: {
           priceFormatter: (v: number) => {
             const abs = Math.abs(v);
-            if (abs >= 1e7) return (v / 1e8).toFixed(2) + '亿';
+            if (abs >= 1e7) return +(v / 1e8).toFixed(2) + '亿';
             if (abs >= 1e4) return (v / 1e4).toFixed(0) + '万';
             return v.toFixed(0);
           },

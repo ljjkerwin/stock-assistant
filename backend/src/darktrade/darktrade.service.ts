@@ -298,10 +298,13 @@ export class DarkTradeService {
 
     const result: Record<string, DarkTradeData> = Object.fromEntries(freshData);
 
-    // 仅在 A 股交易时段（09:30–15:00）写快照，开盘前与收盘后均跳过
+    // 交易时段（09:30–15:00）按当前分钟写快照；收盘后（≥15:00）源数据已为当日收盘终值，
+    // 补写为 15:00 收盘快照（242 槽位轴的最后一槽），开盘前（<09:30）跳过
     const minsNow = nowBeijingMinutes();
-    if (minsNow >= 9 * 60 + 30 && minsNow < 15 * 60) {
-      const minute = captureMinuteForSnapshot(targetDate);
+    const inTradingHours = minsNow >= 9 * 60 + 30 && minsNow < 15 * 60;
+    const afterClose = minsNow >= 15 * 60;
+    if (inTradingHours || afterClose) {
+      const minute = afterClose ? `${targetDate}1500` : captureMinuteForSnapshot(targetDate);
       const snapshotEntities = Object.values(result)
         .filter((d) => d.darkCapital != null || d.lightCapital != null)
         .map((d) => ({
