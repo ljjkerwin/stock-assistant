@@ -3,14 +3,17 @@
 // 用法: node scripts/refresh-darktrade-index.mjs [YYYYMMDD]
 // 不传日期则默认今日
 
+import { authHeaders } from './auth.mjs';
+
+const BASE = process.env.BASE_URL || 'http://localhost:3100';
 const date = process.argv[2] ?? undefined;
 const body = date ? { date } : {};
 
 console.log(`刷新暗盘索引${date ? `（${date}）` : '（今日）'}...`);
 
-const res = await fetch('http://localhost:3000/api/darktrade/refresh-index', {
+const res = await fetch(`${BASE}/api/darktrade/refresh-index`, {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: { 'Content-Type': 'application/json', ...(await authHeaders(BASE)) },
   body: JSON.stringify(body),
 });
 

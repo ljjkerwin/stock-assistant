@@ -5,7 +5,7 @@
  * 目的：用更大、更具代表性的样本，跨多个市场 regime 评估各策略稳健性，
  *       汇报「分布」（中位数 / 胜率 / 分位）而非被极值绑架的均值。
  *
- * 依赖：后端需在 http://localhost:3000 运行（pnpm start:dev）。
+ * 依赖：后端需在 http://localhost:3100 运行（pnpm start:dev）。
  * 用法：node scripts/batch-backtest.mjs
  * 产物：
  *   - all_strategy_result_broad.md   汇总报告（按区间 + 总体 + 分类）
@@ -13,11 +13,12 @@
  */
 
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { authHeaders } from './auth.mjs';
 
 // 所有分析结果（报告 md + 明细 csv）统一输出到 dist/
 const OUT_DIR = 'dist';
 
-const BASE = process.env.BASE_URL || 'http://localhost:3000';
+const BASE = process.env.BASE_URL || 'http://localhost:3100';
 const PERIOD = 'daily';
 const CONCURRENCY = 4;
 
@@ -110,25 +111,39 @@ const quantile = (arr, q) => {
 };
 
 export async function fetchStrategies() {
-  const r = await fetch(`${BASE}/api/strategy/list`);
+  const r = await fetch(`${BASE}/api/strategy/list`, { headers: await authHeaders(BASE) });
   if (!r.ok) throw new Error('无法获取策略列表，后端是否启动？');
   return r.json();
 }
 
 export async function fetchFavorites() {
-  const r = await fetch(`${BASE}/api/favorites`);
-  if (!r.ok) throw new Error('无法获取收藏夹');
-  const all = await r.json();
-  return all
-    .filter((x) => x.market !== 'FUND')
-    .map((x) => ({ market: x.market, code: x.code, name: x.name, cat: '收藏夹' }));
+  // 标的按用户隔离、收藏夹分多个标的列表（watch_lists），故先取该用户全部「股票类」列表，
+  // 再逐个拉收藏、按 market:code 去重合并（基金类列表忽略）。
+  const headers = await authHeaders(BASE);
+  const lr = await fetch(`${BASE}/api/watchlists?boardType=stock`, { headers });
+  if (!lr.ok) throw new Error('无法获取标的列表');
+  const lists = await lr.json();
+  const seen = new Set();
+  const out = [];
+  for (const list of lists) {
+    const r = await fetch(`${BASE}/api/favorites?watchListId=${list.id}`, { headers });
+    if (!r.ok) continue;
+    for (const x of await r.json()) {
+      if (x.market === 'FUND') continue;
+      const key = `${x.market}:${x.code}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ market: x.market, code: x.code, name: x.name, cat: '收藏夹' });
+    }
+  }
+  return out;
 }
 
 export async function runBacktest(inst, win, strategyId) {
   const url =
     `${BASE}/api/strategy/backtest?market=${inst.market}&code=${inst.code}` +
     `&startDate=${win.start}&endDate=${win.end}&period=${PERIOD}&strategy=${strategyId}`;
-  const r = await fetch(url);
+  const r = await fetch(url, { headers: await authHeaders(BASE) });
   if (!r.ok) {
     const body = await r.text().catch(() => '');
     throw new Error(`HTTP ${r.status} ${body.slice(0, 120)}`);
