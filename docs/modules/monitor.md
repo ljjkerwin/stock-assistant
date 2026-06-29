@@ -23,5 +23,5 @@
 
 ## 调试
 
-- 轮询日志通过 NestJS `Logger(MonitorService.name)` 输出，搜索 `[轮询]` 前缀。手动验证规则：`curl -X GET http://localhost:3000/api/monitor/rules`，重启服务后首次开盘轮询自动开始
+- 轮询日志通过 NestJS `Logger(MonitorService.name)` 输出，搜索 `[轮询]` 前缀。手动验证规则：`curl -X GET http://localhost:3100/api/monitor/rules`，重启服务后首次开盘轮询自动开始
 - 配置邮件：复制 `backend/.env.example` 为 `backend/.env`，填入 163 邮箱账号和 SMTP 授权码。邮件日志搜索 `[邮件]` 前缀；未配置时后端启动日志会打印 `EMAIL_USER 或 EMAIL_PASS 未配置，邮件通知已禁用`

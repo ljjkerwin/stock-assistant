@@ -308,12 +308,12 @@ interface FavoritesStore {
 # 后端
 cd backend
 pnpm install
-pnpm start:dev     # NestJS dev server，默认 3000 端口
+pnpm start:dev     # NestJS dev server，默认 3100 端口
 
 # 前端
 cd frontend
 pnpm install
-pnpm dev          # Vite dev server，默认 5173 端口，代理 /api 到 3000
+pnpm dev          # Vite dev server，默认 5173 端口，代理 /api 到 3100
 ```
 
 ---

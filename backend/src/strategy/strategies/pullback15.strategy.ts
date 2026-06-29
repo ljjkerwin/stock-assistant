@@ -22,10 +22,12 @@ import type { Strategy, StrategyContext, StrategyRunResult, Trade } from './stra
  *      的软离场视为趋势内噪声而**忽略**，仅保留 15min 结构破位（`MA20<MA60`）的硬离场——直接修复
  *      日线大单边上行里 15min 频繁进出磨损的标的（如中富电路日线 +111%、深天马 +25% 却被 15min
  *      churn 成负收益）。
+ *   3. **强趋势加速再入场（入场模式 3，见下）**：`dailyStrongUp` 时被硬离场踹下车后，放宽再入场
+ *      条件以更早接回主升浪（修复硬离场后再入场滞后、踏空 V 反转/主升浪的残余失血）。
  *   日内周期回测时由 service 附加；daily 周期或日线数据缺失时整列为 undefined，本策略自动回退为
  *   纯 15min 单周期行为（向后兼容，原有单测不受影响）。
  *
- * - **入场（两种模式，取先满足）**：
+ * - **入场（三种模式，取先满足）**：
  *   1. **回调金叉（普通上升趋势）**：regime 成立 + MACD 金叉（`dif` 上穿 `dea`）+ 当日阳线
  *      + RSI6 未超买（`< RSI_OVERBOUGHT`）。捕捉趋势内回调结束的买点；RSI 上限用于在**震荡/普通
  *      趋势**里避免追高接最后一棒。**不要求 `dif>0`**——regime 已保证方向，零轴下方的较深
@@ -42,6 +44,17 @@ import type { Strategy, StrategyContext, StrategyRunResult, Trade } from './stra
  *      千刀万剐（实测震荡段收益中位 0.00→−0.57）；改为 onset 后，被洗出需待趋势重新走强（strongUp
  *      重新由假转真）才再入场，既保住震荡段保护（中位回到 0.00）又能在主升浪里再入场吃趋势。
  *      该 onset 判定为**纯结构条件、无任何拟合阈值**，在 15min 仅 50 天数据窗口内更抗过拟合。
+ *   3. **强趋势加速再入场（仅 `dailyStrongUp`）**：日线强上行中被硬离场（`MA20<MA60`）踹下车后，
+ *      只要 15min 上升趋势 regime（{@link inUptrend}：`close>MA60 && MA20>MA60 && MA60 上行`）
+ *      重新成立 + **MACD 多头（`dif>dea`）** 即再入，**不必等更窄的 strongUp onset/新金叉/阳线**，
+ *      比模式 2 更早接回主升浪。修复点：日线全程 strongUp 的火箭票（如中富电路日线 +107%）被
+ *      硬离场踹出后再入场滞后、踏空主升浪（实测残余踏空中相当一部分是 V 反转后 regime 重建慢）。
+ *      与模式 2 不同**不要求 onset**：硬离场后 MA20 重上穿 MA60 那根 MACD 常还没转多头，苛求 onset
+ *      当根 `dif>dea` 会几乎全部错过（实测一笔都不增）；且本模式被 `dailyStrongUp` 闸住、真见顶时
+ *      `inUptrend` 持续假（MA20 持续 <MA60）自然保持空仓，故不引入 churn、不污染下跌保护。曾试过
+ *      更激进的「`dailyStrongUp` 时连硬离场也忽略、扛单不走」（pullback15b），单只火箭票漂亮但
+ *      篮子上把真见顶的赢家扛成输家（中微公司 +39%→−15.5%）净负，已弃用——故改为「照常硬离场
+ *      止损 + 加速再入场」，既保住真见顶保护又抓回噪声回踩后的续涨。
  *
  * - **离场（趋势持有，确认破位才卖，取先触发）**：①**连续 2 根 15min 收盘跌破 MA20**
  *   （过滤单根噪声，穿越趋势的小回调不离场）；②**趋势破位** `MA20 < MA60`（中期结构走坏）。
@@ -136,10 +149,24 @@ export class Pullback15Strategy implements Strategy {
       return dif > dea;
     };
 
+    // 入场模式 3：强趋势加速再入场（仅 dailyStrongUp 时）——日线强上行中，被 15min 硬离场
+    // （MA20<MA60）踹下车后，只要 15min 上升趋势 regime `inUptrend` 重新成立 + MACD 多头即可
+    // 再进，不必等更窄的 strongUp onset/新金叉/阳线，更早接回主升浪。不要求 onset：硬离场后
+    // MA20 重上穿 MA60 那一根 MACD 常还没转多头，苛求 onset 当根 dif>dea 会几乎全部错过（实测
+    // 中富电路一笔都不增）。真见顶时 MA20 会持续 <MA60（inUptrend 持续假），自然保持空仓受保护，
+    // 故不污染下跌保护；被 dailyStrongUp 闸住，震荡市（rarely strongUp）行为不变。
+    const isReentry = (i: number): boolean => {
+      if (!dailyStrongRide(i) || !inUptrend(i)) return false;
+      const { dif, dea } = bars[i].macd;
+      return dif > dea;
+    };
+
     const PULLBACK_REASON =
       '中期上升趋势中（close>MA60、MA20>MA60 且 MA60 上行）MACD 金叉 + 阳线，回调结束入场';
     const RIDE_REASON =
       '强趋势骑乘：多头排列充分铺开（MA5>MA10>MA20>MA60、MA60 上行）成立首根 + MACD 多头，入场吃趋势';
+    const REENTRY_REASON =
+      '强趋势加速再入场：日线强上行中 15min 上升趋势 regime 重新成立 + MACD 多头，接回主升浪';
 
     let position = false;
     let buyTime = '';
@@ -150,11 +177,12 @@ export class Pullback15Strategy implements Strategy {
       const bar = bars[i];
       if (!position) {
         const ride = isRideEntry(i);
-        if ((ride || isPullbackEntry(i)) && dailyGateOk(i)) {
+        const reentry = isReentry(i);
+        if ((ride || reentry || isPullbackEntry(i)) && dailyGateOk(i)) {
           position = true;
           buyTime = bar.time;
           buyPrice = bar.close;
-          buyReason = ride ? RIDE_REASON : PULLBACK_REASON;
+          buyReason = ride ? RIDE_REASON : reentry ? REENTRY_REASON : PULLBACK_REASON;
           signals[i] = 'buy';
         }
       } else {

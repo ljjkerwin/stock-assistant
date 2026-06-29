@@ -61,18 +61,18 @@ stock-assistant/
 ### Development
 
 ```bash
-# Backend (port 3000)
+# Backend (port 3100)
 cd backend
 pnpm install
 pnpm start:dev
 
-# Frontend (port 5173, /api proxied to 3000)
+# Frontend (port 5173, /api proxied to 3100)
 cd frontend
 pnpm install
 pnpm dev
 ```
 
-The frontend's `/api` requests are proxied to the backend on port 3000 by Vite's dev server.
+The frontend's `/api` requests are proxied to the backend on port 3100 by Vite's dev server.
 
 ---
 
