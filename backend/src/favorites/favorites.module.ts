@@ -11,5 +11,6 @@ import { WatchListsController } from './watch-lists.controller';
   imports: [TypeOrmModule.forFeature([Favorite, WatchList])],
   providers: [FavoritesService, WatchListsService],
   controllers: [FavoritesController, WatchListsController],
+  exports: [WatchListsService],
 })
 export class FavoritesModule {}

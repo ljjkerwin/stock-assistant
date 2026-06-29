@@ -5,7 +5,7 @@
  *
  * 用法：node scripts/compare-strategies.mjs trend3 trend5 trend6
  *       （不带参数则默认对比 trend5 trend6）
- * 依赖：后端需在 http://localhost:3000 运行。
+ * 依赖：后端需在 http://localhost:3100 运行。
  */
 import { WINDOWS, buildUniverse, runBacktest, mapPool } from './batch-backtest.mjs';
 

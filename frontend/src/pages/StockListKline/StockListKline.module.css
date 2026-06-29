@@ -1,0 +1,122 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #f5f5f5;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+}
+
+.listName {
+  font-size: 13px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.toolbarSep {
+  width: 1px;
+  height: 16px;
+  background: #e0e0e0;
+  flex-shrink: 0;
+}
+
+.subChartGroup {
+  display: flex;
+  gap: 4px;
+}
+
+.grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+  align-content: flex-start;
+  gap: 8px;
+}
+
+.cardWrapper {
+  min-width: 0;
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Card styles (used by StockKlineCard) */
+.card {
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.cardName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1677ff;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardName:hover {
+  text-decoration: underline;
+}
+
+.cardMeta {
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
+}
+
+.changeUp {
+  font-size: 12px;
+  color: #ef5350;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.changeDown {
+  font-size: 12px;
+  color: #26a69a;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.darkTradeGroup {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.darkTradeTag {
+  font-size: 11px !important;
+  line-height: 18px !important;
+  padding: 0 5px !important;
+  margin: 0 !important;
+  white-space: nowrap;
+}

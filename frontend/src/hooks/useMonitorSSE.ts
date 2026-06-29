@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useMonitorStore } from '../store/monitorStore';
+import { getToken } from '../api/token';
 import type { MonitorMessage } from '../types';
 
 /**
@@ -10,7 +11,9 @@ export function useMonitorSSE(): void {
   const pushMessage = useMonitorStore((s) => s.pushMessage);
 
   useEffect(() => {
-    const es = new EventSource('/api/monitor/events');
+    // EventSource 不能自定义请求头，令牌通过 query 传给后端 AuthGuard
+    const token = getToken();
+    const es = new EventSource(`/api/monitor/events${token ? `?token=${encodeURIComponent(token)}` : ''}`);
 
     es.onmessage = (event: MessageEvent<string>) => {
       try {

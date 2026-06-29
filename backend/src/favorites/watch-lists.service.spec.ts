@@ -33,34 +33,43 @@ describe('WatchListsService', () => {
     service = new WatchListsService(repo as any, favoriteRepo as any);
   });
 
-  describe('onModuleInit', () => {
-    it('creates default lists for stock and fund when none exist', async () => {
-      repo.findOne.mockResolvedValue(null);
+  describe('migrateLegacyData', () => {
+    it('assigns userId to orphan lists and ensures default lists per board', async () => {
+      repo.find.mockResolvedValueOnce([
+        { id: 3, userId: null, boardType: 'stock' },
+        { id: 4, userId: null, boardType: 'fund' },
+      ]);
+      repo.findOne.mockResolvedValue({ id: 9, isDefault: true });
 
-      await service.onModuleInit();
+      await service.migrateLegacyData(42);
 
-      expect(repo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ boardType: 'stock', isDefault: true, name: '收藏夹' }),
-      );
-      expect(repo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ boardType: 'fund', isDefault: true, name: '收藏夹' }),
-      );
+      expect(repo.save).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 3, userId: 42 }),
+        expect.objectContaining({ id: 4, userId: 42 }),
+      ]);
     });
 
-    it('does not create a default list when one already exists', async () => {
-      repo.findOne.mockResolvedValue({
-        id: 9,
-        boardType: 'stock',
-        isDefault: true,
-        name: '收藏夹',
-      });
+    it('creates default lists for stock and fund when none exist', async () => {
+      repo.find.mockResolvedValue([]);
+      repo.findOne.mockResolvedValue(null);
 
-      await service.onModuleInit();
+      await service.migrateLegacyData(42);
 
-      expect(repo.save).not.toHaveBeenCalledWith(expect.objectContaining({ isDefault: true }));
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 42,
+          boardType: 'stock',
+          isDefault: true,
+          name: '收藏夹',
+        }),
+      );
+      expect(repo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 42, boardType: 'fund', isDefault: true, name: '收藏夹' }),
+      );
     });
 
     it('backfills orphan favorites by market into the matching board default list', async () => {
+      repo.find.mockResolvedValue([]);
       repo.findOne
         .mockResolvedValueOnce({ id: 10, boardType: 'stock', isDefault: true })
         .mockResolvedValueOnce({ id: 20, boardType: 'fund', isDefault: true });
@@ -70,7 +79,7 @@ describe('WatchListsService', () => {
         { id: 3, market: 'HK', watchListId: null },
       ]);
 
-      await service.onModuleInit();
+      await service.migrateLegacyData(42);
 
       expect(favoriteRepo.save).toHaveBeenCalledWith([
         expect.objectContaining({ id: 1, watchListId: 10 }),
@@ -83,29 +92,31 @@ describe('WatchListsService', () => {
   });
 
   describe('findAll', () => {
-    it('queries by boardType ordered by isDefault desc then createdAt asc', async () => {
+    it('ensures a default list then queries by user and boardType', async () => {
+      repo.findOne.mockResolvedValue({ id: 9, isDefault: true });
       repo.find.mockResolvedValue([]);
 
-      await service.findAll('stock');
+      await service.findAll(42, 'stock');
 
       expect(repo.find).toHaveBeenCalledWith({
-        where: { boardType: 'stock' },
+        where: { userId: 42, boardType: 'stock' },
         order: { isDefault: 'DESC', createdAt: 'ASC' },
       });
     });
   });
 
   describe('create', () => {
-    it('creates a non-default list', async () => {
-      const result = await service.create({ name: '我的自选股', boardType: 'stock' });
+    it('creates a non-default list scoped to the user', async () => {
+      const result = await service.create({ userId: 42, name: '我的自选股', boardType: 'stock' });
 
       expect(repo.create).toHaveBeenCalledWith({
+        userId: 42,
         name: '我的自选股',
         boardType: 'stock',
         isDefault: false,
       });
       expect(result).toEqual(
-        expect.objectContaining({ name: '我的自选股', boardType: 'stock', isDefault: false }),
+        expect.objectContaining({ userId: 42, name: '我的自选股', boardType: 'stock' }),
       );
     });
   });
@@ -114,20 +125,27 @@ describe('WatchListsService', () => {
     it('throws NotFoundException when the list does not exist', async () => {
       repo.findOneBy.mockResolvedValue(null);
 
-      await expect(service.remove(99)).rejects.toThrow(NotFoundException);
+      await expect(service.remove(99, 42)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when the list belongs to another user', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 5, userId: 7, isDefault: false });
+
+      await expect(service.remove(5, 42)).rejects.toThrow(NotFoundException);
+      expect(repo.delete).not.toHaveBeenCalled();
     });
 
     it('throws BadRequestException when removing a default list', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 1, isDefault: true });
+      repo.findOneBy.mockResolvedValue({ id: 1, userId: 42, isDefault: true });
 
-      await expect(service.remove(1)).rejects.toThrow(BadRequestException);
+      await expect(service.remove(1, 42)).rejects.toThrow(BadRequestException);
       expect(repo.delete).not.toHaveBeenCalled();
     });
 
     it('cascades: deletes favorites in the list then deletes the list', async () => {
-      repo.findOneBy.mockResolvedValue({ id: 5, isDefault: false });
+      repo.findOneBy.mockResolvedValue({ id: 5, userId: 42, isDefault: false });
 
-      await service.remove(5);
+      await service.remove(5, 42);
 
       expect(favoriteRepo.delete).toHaveBeenCalledWith({ watchListId: 5 });
       expect(repo.delete).toHaveBeenCalledWith(5);

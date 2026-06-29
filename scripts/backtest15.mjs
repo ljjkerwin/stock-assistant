@@ -12,7 +12,7 @@
  *    若隔较长时间重跑，需把 WINDOWS 的日期顺移到当前可用窗口内（脚本对取不到数据的
  *    标的×区间会跳过并计入失败，不影响其余统计）。
  *
- * 依赖：后端需在 http://localhost:3000 运行（pnpm start:dev）。
+ * 依赖：后端需在 http://localhost:3100 运行（pnpm start:dev）。
  * 用法：
  *   node scripts/backtest15.mjs                  # 默认对比当前已注册的全部策略中的 15min 候选
  *   node scripts/backtest15.mjs pullback15        # 只跑某几个策略 id
@@ -24,11 +24,12 @@
  */
 
 import { writeFileSync, mkdirSync } from 'node:fs';
+import { authHeaders } from './auth.mjs';
 
 // 所有分析结果（报告 md + 明细 csv）统一输出到 dist/
 const OUT_DIR = 'dist';
 
-const BASE = process.env.BASE_URL || 'http://localhost:3000';
+const BASE = process.env.BASE_URL || 'http://localhost:3100';
 const PERIOD = '15min';
 const CONCURRENCY = 4;
 
@@ -105,7 +106,7 @@ const quantile = (arr, q) => {
 };
 
 async function fetchStrategies() {
-  const r = await fetch(`${BASE}/api/strategy/list`);
+  const r = await fetch(`${BASE}/api/strategy/list`, { headers: await authHeaders(BASE) });
   if (!r.ok) throw new Error('无法获取策略列表，后端是否启动？');
   return r.json();
 }
@@ -114,7 +115,7 @@ async function runBacktest(inst, win, strategyId) {
   const url =
     `${BASE}/api/strategy/backtest?market=${inst.market}&code=${inst.code}` +
     `&startDate=${win.start}&endDate=${win.end}&period=${PERIOD}&strategy=${strategyId}`;
-  const r = await fetch(url);
+  const r = await fetch(url, { headers: await authHeaders(BASE) });
   if (!r.ok) {
     const body = await r.text().catch(() => '');
     throw new Error(`HTTP ${r.status} ${body.slice(0, 120)}`);

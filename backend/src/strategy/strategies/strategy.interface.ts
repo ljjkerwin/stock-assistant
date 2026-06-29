@@ -27,6 +27,11 @@ export interface StrategyBar extends KlineBar {
   signal?: 'buy' | 'sell' | null;
   shouldHold?: boolean; // 当前 K 线是否处于值得持仓的状态（由策略判定）
   cumulHold?: number; // 当前 K 线之前连续 shouldHold 的根数（不含自身，遇 false 归零）
+  // ── 多周期趋势闸（仅日内周期回测时由 service 层附加，daily 周期/缺失时为 undefined）──
+  // 取值为「该 K 线所属交易日的【上一交易日】收盘」的日线趋势状态，避免用当日未收盘的日线产生未来函数。
+  dailyUp?: boolean; // 日线中期上行 regime：close>MA60 && MA20>MA60 && MA60 上行
+  dailyStrongUp?: boolean; // 日线强趋势：多头排列充分（MA5>MA10>MA20>MA60 + MA60 上行 + close>MA20）
+  dailyDown?: boolean; // 日线明确下行：MA20<MA60（中期结构走坏）；走平 regime 既非 up 也非 down
 }
 
 /** 策略运行上下文。 */

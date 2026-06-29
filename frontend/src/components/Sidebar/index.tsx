@@ -8,9 +8,12 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   PlusOutlined,
+  LogoutOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import { useWatchListStore } from '../../store/watchListStore';
+import { useAuthStore } from '../../store/authStore';
 import StockSearch from '../StockSearch';
 import FundSearch from '../FundSearch';
 import type { Stock, BoardType } from '../../types';
@@ -21,6 +24,7 @@ const { Text } = Typography;
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
   { value: 'backtest', label: '策略回测' },
+  { value: 'klinegrid', label: 'K线总览' },
   { value: 'fund', label: '基金' },
   { value: 'list', label: '股票列表导入' },
 ];
@@ -39,6 +43,8 @@ export default function Sidebar() {
     deleteList,
     setCurrentList,
   } = useWatchListStore();
+  const username = useAuthStore((s) => s.user?.username);
+  const logout = useAuthStore((s) => s.logout);
   const [addListOpen, setAddListOpen] = useState(false);
   const [newListName, setNewListName] = useState('');
 
@@ -48,7 +54,9 @@ export default function Sidebar() {
       ? 'fund'
       : pathname.startsWith('/stock-list-import')
         ? 'list'
-        : 'stock';
+        : pathname.startsWith('/stock-list-kline')
+          ? 'klinegrid'
+          : 'stock';
 
   const boardType: BoardType | null = section === 'list' ? null : section === 'fund' ? 'fund' : 'stock';
   const lists = boardType === 'fund' ? fundLists : stockLists;
@@ -80,6 +88,8 @@ export default function Sidebar() {
       navigate('/stock');
     } else if (val === 'fund') {
       navigate('/fund');
+    } else if (val === 'klinegrid') {
+      navigate('/stock-list-kline');
     } else {
       navigate('/stock-list-import');
     }
@@ -196,7 +206,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {section !== 'list' && (
+      {section !== 'list' && section !== 'klinegrid' && (
         <div className={styles.search}>
           {section === 'fund' ? (
             <FundSearch size="middle" />
@@ -213,7 +223,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {(section === 'stock' || section === 'backtest') && (
+      {(section === 'stock' || section === 'backtest' || section === 'klinegrid') && (
         <div className={styles.list}>
           {items.map((stock, index) =>
             renderItem(
@@ -233,6 +243,15 @@ export default function Sidebar() {
           {items.map((stock, index) => renderItem(stock, index, items, (s) => `/fund/${s.code}`))}
         </div>
       )}
+
+      <div className={styles.userBar}>
+        <Text type="secondary" ellipsis>
+          <UserOutlined /> {username}
+        </Text>
+        <Tooltip title="退出登录">
+          <Button type="text" size="small" icon={<LogoutOutlined />} onClick={logout} />
+        </Tooltip>
+      </div>
 
       <Modal
         title="新建列表"

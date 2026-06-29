@@ -11,6 +11,20 @@ import type { Strategy, StrategyContext, StrategyRunResult, Trade } from './stra
  * - **趋势过滤（regime，复用 trend5 口径）**：`close>MA60 && MA20>MA60 && MA60 上行`
  *   （`ma60[i] > ma60[i − MA60_SLOPE_LOOKBACK]`），下跌/走平市整段空仓。
  *
+ * - **多周期日线趋势闸（MTF，service 层附加 `dailyUp`/`dailyStrongUp`）**：在 15min 自身 regime
+ *   之上再叠一层「日线定方向」——「日线定方向、日内定点位」。两项均用**上一交易日收盘**的日线
+ *   状态（防未来函数，对齐逻辑见 {@link ../strategy.service.ts}）：
+ *   1. **趋势闸（宽松口径）**：只在日线**明确下行**（`dailyDown`，即日线 `MA20<MA60`）时一律不发
+ *      买点，**放行走平/上行 regime**——既挡住日线阴跌中的 15min 反复抄底挨打（那批阴跌 ETF 的主要
+ *      失血来源），又保留震荡/筑底（走平）段的反弹机会。（更严的「必须 `dailyUp` 才放行」口径会把
+ *      走平段一并空仓，实测在偏熊窗口更稳但牺牲机会，故采用宽松口径作默认。）
+ *   2. **强上行骑乘保护**：日线处于强趋势（`dailyStrongUp`）时，把 15min「连续 2 根收盘跌破 MA20」
+ *      的软离场视为趋势内噪声而**忽略**，仅保留 15min 结构破位（`MA20<MA60`）的硬离场——直接修复
+ *      日线大单边上行里 15min 频繁进出磨损的标的（如中富电路日线 +111%、深天马 +25% 却被 15min
+ *      churn 成负收益）。
+ *   日内周期回测时由 service 附加；daily 周期或日线数据缺失时整列为 undefined，本策略自动回退为
+ *   纯 15min 单周期行为（向后兼容，原有单测不受影响）。
+ *
  * - **入场（两种模式，取先满足）**：
  *   1. **回调金叉（普通上升趋势）**：regime 成立 + MACD 金叉（`dif` 上穿 `dea`）+ 当日阳线
  *      + RSI6 未超买（`< RSI_OVERBOUGHT`）。捕捉趋势内回调结束的买点；RSI 上限用于在**震荡/普通
@@ -95,6 +109,15 @@ export class Pullback15Strategy implements Strategy {
 
     const isUp = (i: number): boolean => bars[i].changePercent != null && bars[i].changePercent > 0;
 
+    // ── 多周期日线趋势闸（service 层附加，daily 周期/缺失时整列为 undefined → 自动回退单周期行为）──
+    // dailyUp/dailyStrongUp/dailyDown 用「上一交易日收盘」的日线状态（防未来函数，见 strategy.service.ts）。
+    const dailyAttached = bars.some((b) => b.dailyDown !== undefined);
+    // 趋势闸（宽松口径）：只在日线**明确下行**（MA20<MA60）时不发买点，**放行走平/上行 regime**——
+    // 既挡住日线阴跌中的 15min 抄底，又保留震荡/筑底（走平）段的机会；未附加日线时不设闸。
+    const dailyGateOk = (i: number): boolean => !dailyAttached || bars[i].dailyDown !== true;
+    // 骑乘保护：日线处于强趋势时，把 15min 单纯跌破 MA20 的软离场视为趋势内噪声而忽略。
+    const dailyStrongRide = (i: number): boolean => dailyAttached && bars[i].dailyStrongUp === true;
+
     // 入场模式 1：回调金叉（普通趋势，带 RSI 上限）
     const isPullbackEntry = (i: number): boolean => {
       if (!inUptrend(i)) return false;
@@ -127,7 +150,7 @@ export class Pullback15Strategy implements Strategy {
       const bar = bars[i];
       if (!position) {
         const ride = isRideEntry(i);
-        if (ride || isPullbackEntry(i)) {
+        if ((ride || isPullbackEntry(i)) && dailyGateOk(i)) {
           position = true;
           buyTime = bar.time;
           buyPrice = bar.close;
@@ -142,7 +165,10 @@ export class Pullback15Strategy implements Strategy {
           ma20 != null && bar.close < ma20 && prevMa20 != null && bars[i - 1].close < prevMa20;
         // 趋势破位：中期结构走坏（MA20 跌回 MA60 下方）
         const regimeBreak = ma20 != null && ma60 != null && ma20 < ma60;
-        if (belowMa20Confirmed || regimeBreak) {
+        // 日线强上行骑乘保护：日线强趋势时忽略软离场（15min 跌破 MA20 视为趋势内噪声），
+        // 仅保留 15min 结构破位（MA20<MA60）这一硬离场，避免主升浪里被日内回踩反复洗下车。
+        const softExit = belowMa20Confirmed && !dailyStrongRide(i);
+        if (softExit || regimeBreak) {
           position = false;
           trades.push({
             buyTime,

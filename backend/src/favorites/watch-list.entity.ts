@@ -5,6 +5,9 @@ export class WatchList {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Column({ name: 'user_id', type: 'int', nullable: true })
+  userId: number | null;
+
   @Column()
   name: string;
 

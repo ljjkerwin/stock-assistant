@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Typography, Descriptions, Spin, Tag, Button, Tooltip } from 'antd';
 import { StarOutlined, StarFilled, LineChartOutlined } from '@ant-design/icons';
-import { stocksApi } from '../../api/stock';
+import { stocksApi, darktradeApi } from '../../api/stock';
 import KLineChart from '../../components/KLineChart';
 import StockMonitorButton from '../../components/StockMonitorButton';
 import AddToListMenu from '../../components/AddToListMenu';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import { useWatchListStore } from '../../store/watchListStore';
-import type { StockInfo } from '../../types';
+import type { StockInfo, DarkTradeSnapshot } from '../../types';
 import styles from './StockDetail.module.css';
 
 function formatNumber(n: number | null, digits = 2): string {
@@ -23,6 +23,8 @@ export default function StockDetail() {
   const navigate = useNavigate();
   const [info, setInfo] = useState<StockInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dtSnapshots, setDtSnapshots] = useState<DarkTradeSnapshot[]>([]);
+  const [klineDate, setKlineDate] = useState<string | null>(null);
   const { itemsByList, fetchList, addToList, removeItem } = useFavoritesStore();
   const { stockLists, fetchLists } = useWatchListStore();
   const defaultListId = stockLists.find((l) => l.isDefault)?.id ?? null;
@@ -50,6 +52,21 @@ export default function StockDetail() {
       .catch(() => setInfo(null))
       .finally(() => setLoading(false));
   }, [market, code]);
+
+  // 切换股票时重置当日日期与快照，等待 K 线图上报实际交易日
+  useEffect(() => {
+    setKlineDate(null);
+    setDtSnapshots([]);
+  }, [market, code]);
+
+  // 按 K 线实际交易日拉取当日分钟粒度暗盘快照（与分时图同一交易日）
+  useEffect(() => {
+    if (market !== 'A' || !code || !klineDate) return;
+    darktradeApi
+      .getSnapshotsBatch([code], klineDate)
+      .then((map) => setDtSnapshots(map[code] ?? []))
+      .catch(() => {});
+  }, [market, code, klineDate]);
 
   const isUp = info?.change_pct != null && info.change_pct > 0;
   const isDown = info?.change_pct != null && info.change_pct < 0;
@@ -132,7 +149,15 @@ export default function StockDetail() {
       </Spin>
 
       <div className={styles.chart}>
-        {market && code && <KLineChart market={market as 'A' | 'HK'} code={code} />}
+        {market && code && (
+          <KLineChart
+            market={market as 'A' | 'HK'}
+            code={code}
+            showDarkTrade={market === 'A'}
+            darkTradeSnapshots={dtSnapshots}
+            onDateResolved={setKlineDate}
+          />
+        )}
       </div>
     </div>
   );
