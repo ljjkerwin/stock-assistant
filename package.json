@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "husky": "^9.0.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3"]
   }
 }
