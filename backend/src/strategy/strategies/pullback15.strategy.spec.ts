@@ -260,4 +260,25 @@ describe('Pullback15Strategy · 多周期日线趋势闸（宽松口径：只挡
     expect(signals[TEST_START + 1]).toBe('sell');
     expect(trades[0].sellReason).toContain('破位');
   });
+
+  it('模式③加速再入场：日线强上行 + 15min 上升趋势 + MACD 多头，即使无金叉/阳线也入场；非强上行则不入', () => {
+    // 该根 inUptrend 成立、dif>dea，但当根非阳线（chg=0）→ 模式①失败；非 strongUp → 模式②失败。
+    const make = (): StrategyBar[] => [
+      ...baseRising(),
+      bar('2026-01-06 09:30', 100, { chg: 0, ma20: 99, ma60: 97.7, dif: 1, dea: 0, rsi6: 60 }),
+    ];
+    // 闸放行但日线非强上行（仅 up）：三模式都不满足 → 不入场
+    const flat = strategy.run({
+      bars: withDaily(make(), { up: true }),
+      testStartIndex: TEST_START,
+    });
+    expect(flat.signals[TEST_START]).toBeNull();
+    // 日线强上行：模式③触发买入
+    const strong = strategy.run({
+      bars: withDaily(make(), { strongUp: true, up: true }),
+      testStartIndex: TEST_START,
+    });
+    expect(strong.signals[TEST_START]).toBe('buy');
+    expect(strong.trades[0].buyReason).toContain('加速再入场');
+  });
 });

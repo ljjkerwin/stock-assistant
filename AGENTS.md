@@ -87,11 +87,11 @@ stock-assistant/
 # 1. 在项目根目录下执行一键安装（自动关联并安装前端、后端及 Husky 依赖）
 pnpm install
 
-# 2. 启动后端开发服务（端口 3000）
+# 2. 启动后端开发服务（端口 3100）
 cd backend
 pnpm start:dev
 
-# 3. 启动前端开发服务（端口 5173，/api 代理到 3000）
+# 3. 启动前端开发服务（端口 5173，/api 代理到 3100）
 cd frontend
 pnpm dev
 ```
@@ -131,7 +131,7 @@ pnpm dev
 
 **切换数据库**：在 `backend/.env` 中同时填写 `MYSQL_HOST` / `MYSQL_USERNAME` / `MYSQL_PASSWORD` 三项即启用 MySQL；任一项缺失则自动使用本地 SQLite（`./stock-assistant.db`），无需改代码。
 
-**批量策略回测（多标的×多区间）**：`scripts/batch-backtest.mjs` 对「收藏夹有效标的 + 内置无偏抽样篮子（沪深300/中证500-1000/科创/宽基+行业ETF/港股，共 50 只）」跨 4 个时间区间调用 `/api/strategy/backtest`，汇总成**分布口径**（收益中位数、跑赢买入持有胜率、P25/P75 分位、回撤中位数、夏普中位数、空仓率），输出 `dist/all_strategy_result_broad.md` 与明细 `dist/batch_backtest_raw.csv`。需后端先在 3000 端口运行；标的篮子/区间在脚本顶部常量 `EXTRA`/`WINDOWS` 调整。`scripts/compare-strategies.mjs <id...> [--only=etf|stock]` 是配套的**快速 A/B 迭代工具**（复用同一篮子/区间，打印紧凑的按区间+总体分布对比，`--only=etf` 仅跑场内 ETF 子集）。
+**批量策略回测（多标的×多区间）**：`scripts/batch-backtest.mjs` 对「收藏夹有效标的 + 内置无偏抽样篮子（沪深300/中证500-1000/科创/宽基+行业ETF/港股，共 50 只）」跨 4 个时间区间调用 `/api/strategy/backtest`，汇总成**分布口径**（收益中位数、跑赢买入持有胜率、P25/P75 分位、回撤中位数、夏普中位数、空仓率），输出 `dist/all_strategy_result_broad.md` 与明细 `dist/batch_backtest_raw.csv`。需后端先在 3100 端口运行；标的篮子/区间在脚本顶部常量 `EXTRA`/`WINDOWS` 调整。`scripts/compare-strategies.mjs <id...> [--only=etf|stock]` 是配套的**快速 A/B 迭代工具**（复用同一篮子/区间，打印紧凑的按区间+总体分布对比，`--only=etf` 仅跑场内 ETF 子集）。
 
 **15min 策略专用测试集**：日线脚本（batch/compare）用日线、覆盖多年多 regime，不适用于 15min（分钟线仅 ~50 交易日且不可回溯）。15min 策略改用 `scripts/backtest15.mjs`——固定一篮子分层 A 股/ETF（`TEST_SET`）× 数据窗口内三区间（`W_full` 全段 / `W_chop` 震荡前半段 / `W_rally` 拉升后半段）。用法 `node scripts/backtest15.mjs pullback15 [trend5...] [--report]`，传 `--report` 写出 `dist/all_strategy_result_15min.md` 与 `dist/batch_backtest_15min_raw.csv`。⚠️ 区间日期随「今天」滑动，隔较久重跑需把脚本顶部 `WINDOWS` 顺移到当前可用窗口内（取不到数据的标的×区间会跳过计入失败、不影响其余统计）。
 

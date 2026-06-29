@@ -61,12 +61,12 @@ stock-assistant/
 ### 开发环境
 
 ```bash
-# 后端（端口 3000）
+# 后端（端口 3100）
 cd backend
 pnpm install
 pnpm start:dev
 
-# 前端（端口 5173，/api 代理到 3000）
+# 前端（端口 5173，/api 代理到 3100）
 cd frontend
 pnpm install
 pnpm dev
