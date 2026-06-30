@@ -57,7 +57,7 @@ const RSI_LINE_COLOR = '#9C27B0';
 // 暗盘/明盘/总资金副图颜色
 const DT_LIGHT_COLOR = '#1677ff';  // 明盘：蓝色
 const DT_DARK_COLOR = '#fadb14';   // 暗盘：黄色
-const DT_TOTAL_COLOR = '#8c8c8c';  // 总：灰色
+const DT_TOTAL_COLOR = '#888';     // 总：中灰
 const DT_ZERO_COLOR = '#d0d0d0';   // 零轴：浅灰色
 
 // 分时图全天时间槽数（09:30–11:30 + 13:01–15:00，午休不画）
@@ -110,7 +110,7 @@ const CHART_OPTIONS = {
     horzLines: { color: '#f0f0f0' },
   },
   crosshair: { mode: CrosshairMode.Normal },
-  rightPriceScale: { borderColor: '#e0e0e0', minimumWidth: 80 },
+  rightPriceScale: { borderColor: '#e0e0e0', minimumWidth: 60 },
   timeScale: { borderColor: '#e0e0e0', timeVisible: true, fixRightEdge: true },
 };
 
@@ -212,7 +212,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const ljjTotalSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const ljjMidSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const ljjBottomSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const dtSeriesRef = useRef<ISeriesApi<'Line'>[]>([]); // 暗盘副图分时折线（明盘/暗盘 × 正/负）
+  const dtSeriesRef = useRef<ISeriesApi<SeriesType>[]>([]); // 暗盘副图分时折线（明盘/暗盘 × 正/负）
   const ma5SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma10SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -262,8 +262,8 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         .filter((c): c is IChartApi => c != null);
       if (liveCharts.length === 0) return;
       let maxWidth = Math.max(...liveCharts.map((c) => c.priceScale('right').width()));
-      if (maxWidth === 0) {
-        maxWidth = 80;
+      if (maxWidth < 60) {
+        maxWidth = 60;
       }
       liveCharts.forEach((c) => c.applyOptions({ rightPriceScale: { minimumWidth: maxWidth } }));
       // 价格轴变宽后重排会使暗盘副图靠右贴边，重新锁定其 242 逻辑范围
@@ -462,10 +462,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
           const light = snap.lightCapital != null ? fmtCap(snap.lightCapital) : '--';
           const totalVal = (snap.darkCapital ?? 0) + (snap.lightCapital ?? 0);
           const total = snap.darkCapital != null || snap.lightCapital != null ? fmtCap(totalVal) : '--';
+          const totalColor = totalVal > 0 ? '#ef5350' : totalVal < 0 ? '#26a69a' : DT_TOTAL_COLOR;
           darkTradeLegendRef.current.innerHTML =
             `明盘&nbsp;<span style="color:${DT_LIGHT_COLOR}">${light}</span>` +
             `&nbsp;&nbsp;暗盘&nbsp;<span style="color:${DT_DARK_COLOR}">${dark}</span>` +
-            `&nbsp;&nbsp;总&nbsp;<span style="color:${DT_TOTAL_COLOR}">${total}</span>`;
+            `&nbsp;&nbsp;总&nbsp;<span style="color:${totalColor}">${total}</span>`;
         }
       }
     }
@@ -601,7 +602,8 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         lineWidth: 1,
         lastValueVisible: false,
         priceLineVisible: false,
-        autoscaleInfoProvider: (original) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        autoscaleInfoProvider: (original: any) => {
           const res = original();
           if (res !== null && zeroPrice > 0) {
             const delta = Math.max(
@@ -742,11 +744,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       volSeries.setData(
         bars.map(
           (b, i) =>
-            ({
-              time: toChartTime(b.time),
-              value: b.volume,
-              color: i > 0 ? (b.close >= bars[i - 1].close ? '#ef5350' : '#26a69a') : '#ef5350',
-            } as HistogramData),
+          ({
+            time: toChartTime(b.time),
+            value: b.volume,
+            color: i > 0 ? (b.close >= bars[i - 1].close ? '#ef5350' : '#26a69a') : '#ef5350',
+          } as HistogramData),
         ),
       );
     }
@@ -798,11 +800,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       macdBarSeries.setData(
         bars.map(
           (b) =>
-            ({
-              time: toChartTime(b.time),
-              value: b.macd.bar,
-              color: b.macd.bar >= 0 ? '#ef5350' : '#26a69a',
-            } as HistogramData),
+          ({
+            time: toChartTime(b.time),
+            value: b.macd.bar,
+            color: b.macd.bar >= 0 ? '#ef5350' : '#26a69a',
+          } as HistogramData),
         ),
       );
     }
@@ -962,10 +964,20 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     }
 
     let zeroLineAdded = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const symmetricAutoscale = (original: any) => {
+      const res = original();
+      if (res === null) return res;
+      const maxAbs = Math.max(Math.abs(res.priceRange.maxValue), Math.abs(res.priceRange.minValue), 1);
+      return { priceRange: { minValue: -maxAbs, maxValue: maxAbs } };
+    };
     const addLine = (color: string, dataMap: Map<string, number>, needZeroLine = false) => {
       if (dataMap.size === 0 && snaps.length > 0) return;
-      const series = chart.addSeries(LineSeries, { color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
-      series.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+      const series = chart.addSeries(LineSeries, {
+        color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+        autoscaleInfoProvider: symmetricAutoscale,
+      });
+      series.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 } });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       series.setData(buildTimeshare241(dataMap, date) as any);
       if (needZeroLine && !zeroLineAdded) {
