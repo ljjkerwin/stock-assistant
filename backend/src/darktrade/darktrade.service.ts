@@ -11,6 +11,8 @@ import axios from 'axios';
 import { DarkTradeIndex } from './dark-trade-index.entity';
 import { DarkTradeSnapshot } from './dark-trade-snapshot.entity';
 import { Favorite } from '../favorites/favorite.entity';
+import { Subscription } from 'rxjs';
+import { SchedulerService } from '../scheduler/scheduler.service';
 import { isTradingMarket } from '../cache';
 
 const NUM_PER_PAGE = 30;
@@ -104,7 +106,7 @@ function minuteToDisplayTime(cm: string): string {
 @Injectable()
 export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DarkTradeService.name);
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private schedulerSubscription: Subscription | null = null;
   private isPolling = false;
 
   constructor(
@@ -114,18 +116,23 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
     private readonly snapshotRepo: Repository<DarkTradeSnapshot>,
     @InjectRepository(Favorite)
     private readonly favoriteRepo: Repository<Favorite>,
+    private readonly schedulerService: SchedulerService,
   ) {}
 
   onModuleInit() {
-    this.pollTimer = setInterval(() => void this.pollFavorites(), 2 * 60 * 1000);
-    this.logger.log('已启动收藏夹暗盘数据 2 分钟轮询服务');
-    // 延迟 10 秒后首次执行，方便测试与及时初始化
-    setTimeout(() => void this.pollFavorites(), 10000);
+    this.logger.log('已启动收藏夹暗盘数据轮询订阅（基于中央心跳，2分钟/次）');
+    this.schedulerSubscription = this.schedulerService.tick$.subscribe((tick) => {
+      // tick 从 1 开始，tick 1 (10s后) 触发，之后每 2 个 tick (120s后) 触发一次
+      if ((tick - 1) % 2 === 0) {
+        void this.pollFavorites();
+      }
+    });
   }
 
   onModuleDestroy() {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+    if (this.schedulerSubscription) {
+      this.schedulerSubscription.unsubscribe();
+      this.schedulerSubscription = null;
     }
   }
 

@@ -17,6 +17,7 @@ import { MonitorMessage } from './monitor/monitor-message.entity';
 import { DarkTradeIndex } from './darktrade/dark-trade-index.entity';
 import { DarkTradeSnapshot } from './darktrade/dark-trade-snapshot.entity';
 import { TestModule } from './test/test.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
 
 const entities = [
   User,
@@ -54,6 +55,7 @@ function buildDataSourceOptions(): DataSourceOptions {
 @Module({
   imports: [
     TypeOrmModule.forRoot(buildDataSourceOptions()),
+    SchedulerModule,
     AuthModule,
     FavoritesModule,
     StocksModule,

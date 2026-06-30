@@ -1,7 +1,7 @@
 import { Injectable, Logger, MessageEvent, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs';
 import { MonitorRule } from './monitor-rule.entity';
 import { MonitorMessage } from './monitor-message.entity';
 import { StocksService } from '../stocks/stocks.service';
@@ -10,14 +10,13 @@ import { EmailService } from './email.service';
 import { isTrading, isTradingMarket } from '../cache';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { evaluateRule, MaValues } from './rule-evaluator';
-
-const POLL_INTERVAL_MS = 30_000;
+import { SchedulerService } from '../scheduler/scheduler.service';
 
 @Injectable()
 export class MonitorService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MonitorService.name);
   private readonly events$ = new Subject<MessageEvent>();
-  private pollTimer: ReturnType<typeof setInterval>;
+  private schedulerSubscription: Subscription | null = null;
   private isPolling = false;
 
   constructor(
@@ -28,15 +27,21 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     private readonly stocksService: StocksService,
     private readonly klineService: KlineService,
     private readonly emailService: EmailService,
+    private readonly schedulerService: SchedulerService,
   ) {}
 
   onModuleInit() {
-    this.pollTimer = setInterval(() => void this.pollRules(), POLL_INTERVAL_MS);
-    this.logger.log('监控轮询服务已启动（间隔 30s）');
+    this.logger.log('已启动监控轮询订阅（基于中央心跳，1分钟/次）');
+    this.schedulerSubscription = this.schedulerService.tick$.subscribe(() => {
+      void this.pollRules();
+    });
   }
 
   onModuleDestroy() {
-    clearInterval(this.pollTimer);
+    if (this.schedulerSubscription) {
+      this.schedulerSubscription.unsubscribe();
+      this.schedulerSubscription = null;
+    }
   }
 
   getEventsStream(): Observable<MessageEvent> {

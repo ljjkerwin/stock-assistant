@@ -7,7 +7,7 @@
 - 规则触发时，除写入消息表并推送 SSE 外，还通过 `EmailService` 向配置的收件人发送邮件通知；发送为异步 fire-and-forget，失败时只记录日志，不影响主流程
 - 邮件通过 163 SMTP（smtp.163.com:465）发送，凭证通过环境变量配置：`EMAIL_USER`（发件人）、`EMAIL_PASS`（163 SMTP 授权码）、`EMAIL_TO`（收件人，默认 ljjnotice@163.com）；未配置时邮件功能自动禁用
 - 参考 `backend/.env.example` 创建 `backend/.env` 文件填写凭证
-- 后端 `MonitorService` 在 `OnModuleInit` 启动 30s 定时轮询；外层守卫用 `isTrading()`（任意市场开盘即进入），内层按股票市场调用 `isTradingMarket(market)` 过滤，非交易时段的规则静默跳过（无任何日志）
+- 后端 `MonitorService` 在 `OnModuleInit` 启动 60s 定时轮询；外层守卫用 `isTrading()`（任意市场开盘即进入），内层按股票市场调用 `isTradingMarket(market)` 过滤，非交易时段的规则静默跳过（无任何日志）
 - 规则检查：价格规则直接对比当前价；MA 均线穿越规则使用**边沿触发**（`prevAboveMA` 字段记录上次方向），避免持续满足时重复触发
 - MA 均线穿越规则支持日线（`klinePeriod=null`）、15min（`klinePeriod='15min'`）、5min（`klinePeriod='5min'`）、30min（`klinePeriod='30min'`）和 60min（`klinePeriod='60min'`）等 K 线周期；`maPeriod` 支持 `ma5 | ma10 | ma20 | ma60`；轮询时按 `klinePeriod` 分组拉取 K 线，同一股票的不同周期规则各自复用对应缓存
 - 每条规则每 30 分钟最多触发一次（`lastTriggeredAt` + `COOLDOWN_MS = 30 * 60_000`）
