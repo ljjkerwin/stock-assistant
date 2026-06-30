@@ -39,8 +39,8 @@ interface Props {
 }
 
 const MAIN_HEIGHT = 200;
-// 分时图全天时间槽总数：上午 121(09:30–11:30) + 下午 121(13:00–15:00)，午休不画
-const TIMESHARE_SLOTS = 242;
+// 分时图全天时间槽总数：上午 121(09:30–11:30) + 下午 120(13:01–15:00)，午休不画
+const TIMESHARE_SLOTS = 241;
 const VOLUME_HEIGHT = 50;
 const MACD_HEIGHT = 70;
 const RSI_HEIGHT = 50;
@@ -82,8 +82,8 @@ function formatCapital(v: number): string {
   return v.toFixed(0);
 }
 
-// 生成 09:30–15:00 全天 242 槽位数据（WhitespaceData 占位），供暗盘副图横坐标对齐主图
-function buildTimeshare242(
+// 生成 09:30–15:00 全天 241 槽位数据（WhitespaceData 占位），供暗盘副图横坐标对齐主图
+function buildTimeshare241(
   dataMap: Map<string, number>,
   date: string,
 ): ({ time: Time; value: number } | { time: Time })[] {
@@ -96,28 +96,34 @@ function buildTimeshare242(
     }
   };
   fill(9 * 60 + 30, 11 * 60 + 30);
-  fill(13 * 60, 15 * 60);
+  fill(13 * 60 + 1, 15 * 60);
   return result;
 }
 
-// 生成分时图全天数据：实际 bar 填收盘价，其余时间槽（含午休）填 WhitespaceData 占位
-// 这样 fitContent() 能自然铺满 09:30–15:00，午休也按比例留空
-function buildTimeshareData(
-  bars: KlineBar[],
+// 通用的分时 241 槽位数据生成器，使所有副图（MACD、成交量等）能与主图完美时间对齐
+function buildTimeshareSeriesData<T extends { time: string }, R>(
+  bars: T[],
   lastDate: string,
-): ({ time: Time; value: number } | { time: Time })[] {
-  const barMap = new Map<string, number>();
-  bars.forEach((b) => barMap.set(b.time, b.close));
-  const result: ({ time: Time; value: number } | { time: Time })[] = [];
+  mapFn: (bar: T, index: number) => R,
+): (({ time: Time } & R) | { time: Time })[] {
+  const barMap = new Map<string, { bar: T; idx: number }>();
+  bars.forEach((b, i) => {
+    barMap.set(b.time, { bar: b, idx: i });
+  });
+  const result: (({ time: Time } & R) | { time: Time })[] = [];
   const addRange = (fromMin: number, toMin: number) => {
     for (let m = fromMin; m <= toMin; m++) {
       const t = `${lastDate} ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-      const v = barMap.get(t);
-      result.push(v !== undefined ? { time: toChartTime(t), value: v } : { time: toChartTime(t) });
+      const entry = barMap.get(t);
+      if (entry !== undefined) {
+        result.push({ time: toChartTime(t), ...mapFn(entry.bar, entry.idx) });
+      } else {
+        result.push({ time: toChartTime(t) });
+      }
     }
   };
-  addRange(9 * 60 + 30, 11 * 60 + 30); // 09:30–11:30 上午
-  addRange(13 * 60, 15 * 60);          // 13:00–15:00 下午
+  addRange(9 * 60 + 30, 11 * 60 + 30);
+  addRange(13 * 60 + 1, 15 * 60);
   return result;
 }
 
@@ -212,8 +218,8 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     let zeroLineAdded = false;
     const addLine = (color: string, dataMap: Map<string, number>, needZeroLine = false) => {
       if (dataMap.size === 0) return;
-      // 用 242 槽位骨架，横轴与分时主图一一对应
-      const data = buildTimeshare242(dataMap, date);
+      // 用 241 槽位骨架，横轴与分时主图一一对应
+      const data = buildTimeshare241(dataMap, date);
       const series = chart.addSeries(LineSeries, { color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
       series.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
       series.setData(data);
@@ -299,6 +305,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     isRebuildingRef.current = true;
     const currentPeriod = periodRef.current;
     const isTimeshare = currentPeriod === 'timeshare';
+    const latestDate = isTimeshare && bars.length > 0 ? bars[bars.length - 1].time.slice(0, 10) : '';
     const timeVisible = currentPeriod !== 'daily' && currentPeriod !== 'weekly';
     const interactionOpts = isTimeshare ? { handleScroll: false, handleScale: false } : {};
 
@@ -401,6 +408,10 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
 
     // ── 主图系列 ──────────────────────────────────────────────────
     if (currentPeriod === 'timeshare') {
+      let zeroPrice = dedupedBars[0].open;
+      if (dedupedBars[0].changePercent != null) {
+        zeroPrice = dedupedBars[0].close / (1 + dedupedBars[0].changePercent / 100);
+      }
       const areaSeries = mainChart.addSeries(AreaSeries, {
         topColor: 'rgba(22, 119, 255, 0.28)',
         bottomColor: 'rgba(22, 119, 255, 0)',
@@ -408,10 +419,33 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         lineWidth: 1,
         lastValueVisible: false,
         priceLineVisible: false,
+        autoscaleInfoProvider: (original) => {
+          const res = original();
+          if (res !== null && zeroPrice > 0) {
+            const delta = Math.max(
+              Math.abs(res.priceRange.maxValue - zeroPrice),
+              Math.abs(res.priceRange.minValue - zeroPrice)
+            );
+            return {
+              priceRange: {
+                minValue: zeroPrice - delta,
+                maxValue: zeroPrice + delta,
+              },
+            };
+          }
+          return res;
+        },
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      areaSeries.setData(buildTimeshareData(dedupedBars, dedupedBars[dedupedBars.length - 1].time.slice(0, 10)) as any);
-      areaSeries.createPriceLine({ price: dedupedBars[0].open, color: 'rgba(150,150,150,0.45)', lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false });
+      areaSeries.setData(latestDate ? (buildTimeshareSeriesData(dedupedBars, latestDate, (b) => ({ value: b.close })) as unknown as LineData[]) : []);
+      if (zeroPrice > 0) {
+        areaSeries.createPriceLine({
+          price: zeroPrice,
+          color: 'rgba(150, 150, 150, 0.45)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: false,
+        });
+      }
     } else {
       const candleSeries = mainChart.addSeries(CandlestickSeries, {
         upColor: '#ef5350',
@@ -456,9 +490,18 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         priceLineVisible: false,
       });
       volSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0 } });
-      volSeries.setData(
-        dedupedBars.map((b, i) => ({ time: times[i], value: b.volume, color: b.close >= b.open ? '#ef5350' : '#26a69a' })),
-      );
+      if (isTimeshare && latestDate) {
+        volSeries.setData(
+          buildTimeshareSeriesData(dedupedBars, latestDate, (b, i) => ({
+            value: b.volume,
+            color: i > 0 ? (b.close >= dedupedBars[i - 1].close ? '#ef5350' : '#26a69a') : '#ef5350',
+          })) as unknown as HistogramData[]
+        );
+      } else {
+        volSeries.setData(
+          dedupedBars.map((b, i) => ({ time: times[i], value: b.volume, color: b.close >= b.open ? '#ef5350' : '#26a69a' })),
+        );
+      }
     }
 
     // ── MACD 副图 ─────────────────────────────────────────────────
@@ -468,24 +511,51 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         priceLineVisible: false,
       });
       macdHist.priceScale().applyOptions({ scaleMargins: { top: 0.2, bottom: 0.2 } });
-      macdHist.setData(
-        dedupedBars.map((b, i) => ({ time: times[i], value: b.macd.bar, color: b.macd.bar >= 0 ? '#ef5350' : '#26a69a' })),
-      );
+      if (isTimeshare && latestDate) {
+        macdHist.setData(
+          buildTimeshareSeriesData(dedupedBars, latestDate, (b) => ({
+            value: b.macd.bar,
+            color: b.macd.bar >= 0 ? '#ef5350' : '#26a69a',
+          })) as unknown as HistogramData[]
+        );
+      } else {
+        macdHist.setData(
+          dedupedBars.map((b) => ({ time: toChartTime(b.time), value: b.macd.bar, color: b.macd.bar >= 0 ? '#ef5350' : '#26a69a' })),
+        );
+      }
 
       const difSeries = macdChart.addSeries(LineSeries, { color: '#1677ff', lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
-      difSeries.setData(dedupedBars.map((b, i) => ({ time: times[i], value: b.macd.dif })));
+      if (isTimeshare && latestDate) {
+        difSeries.setData(
+          buildTimeshareSeriesData(dedupedBars, latestDate, (b) => ({ value: b.macd.dif })) as unknown as LineData[]
+        );
+      } else {
+        difSeries.setData(dedupedBars.map((b, i) => ({ time: times[i], value: b.macd.dif })));
+      }
 
       const deaSeries = macdChart.addSeries(LineSeries, { color: '#FF9800', lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
-      deaSeries.setData(dedupedBars.map((b, i) => ({ time: times[i], value: b.macd.dea })));
+      if (isTimeshare && latestDate) {
+        deaSeries.setData(
+          buildTimeshareSeriesData(dedupedBars, latestDate, (b) => ({ value: b.macd.dea })) as unknown as LineData[]
+        );
+      } else {
+        deaSeries.setData(dedupedBars.map((b, i) => ({ time: times[i], value: b.macd.dea })));
+      }
     }
 
     // ── RSI 副图 ──────────────────────────────────────────────────
     if (rsiChart) {
       const rsiSeries = rsiChart.addSeries(LineSeries, { color: '#9c27b0', lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
       rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
-      rsiSeries.setData(
-        dedupedBars.filter((b) => b.rsi.rsi6 != null).map((b) => ({ time: toChartTime(b.time), value: b.rsi.rsi6! })),
-      );
+      if (isTimeshare && latestDate) {
+        rsiSeries.setData(
+          buildTimeshareSeriesData(dedupedBars, latestDate, (b) => ({ value: b.rsi.rsi6 })) as unknown as LineData[]
+        );
+      } else {
+        rsiSeries.setData(
+          dedupedBars.filter((b) => b.rsi.rsi6 != null).map((b) => ({ time: toChartTime(b.time), value: b.rsi.rsi6! })),
+        );
+      }
     }
 
     if (isTimeshare) {

@@ -17,7 +17,7 @@ export class DarkTradeIndex {
   @Column({ name: 'refresh_date' })
   refreshDate: string;
 
-  @Column({ name: 'sort_flag', default: 6 })
+  @Column({ name: 'sort_flag', default: 4 })
   sortFlag: number;
 
   @Column({ name: 'sort_desc', type: 'int', default: 1 })

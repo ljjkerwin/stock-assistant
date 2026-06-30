@@ -1,9 +1,17 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import axios from 'axios';
 import { DarkTradeIndex } from './dark-trade-index.entity';
 import { DarkTradeSnapshot } from './dark-trade-snapshot.entity';
+import { Favorite } from '../favorites/favorite.entity';
+import { isTradingMarket } from '../cache';
 
 const NUM_PER_PAGE = 30;
 const CONCURRENCY = 5;
@@ -94,15 +102,66 @@ function minuteToDisplayTime(cm: string): string {
 }
 
 @Injectable()
-export class DarkTradeService {
+export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DarkTradeService.name);
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private isPolling = false;
 
   constructor(
     @InjectRepository(DarkTradeIndex)
     private readonly indexRepo: Repository<DarkTradeIndex>,
     @InjectRepository(DarkTradeSnapshot)
     private readonly snapshotRepo: Repository<DarkTradeSnapshot>,
+    @InjectRepository(Favorite)
+    private readonly favoriteRepo: Repository<Favorite>,
   ) {}
+
+  onModuleInit() {
+    this.pollTimer = setInterval(() => void this.pollFavorites(), 2 * 60 * 1000);
+    this.logger.log('已启动收藏夹暗盘数据 2 分钟轮询服务');
+    // 延迟 10 秒后首次执行，方便测试与及时初始化
+    setTimeout(() => void this.pollFavorites(), 10000);
+  }
+
+  onModuleDestroy() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+    }
+  }
+
+  async pollFavorites() {
+    if (this.isPolling) {
+      this.logger.debug('[收藏夹轮询] 上次轮询未完成，跳过');
+      return;
+    }
+    if (!isTradingMarket('A')) {
+      this.logger.debug('[收藏夹轮询] 当前非 A 股开盘时间，跳过');
+      return;
+    }
+
+    this.isPolling = true;
+    try {
+      this.logger.log('[收藏夹轮询] 开始获取收藏夹标的暗盘数据...');
+      const favorites = await this.favoriteRepo.find({
+        where: { market: 'A' },
+        select: ['code'],
+      });
+      const codes = [...new Set(favorites.map((f) => f.code))];
+      if (codes.length === 0) {
+        this.logger.log('[收藏夹轮询] 没有 A 股收藏标的，跳过');
+        return;
+      }
+      this.logger.log(
+        `[收藏夹轮询] 共找到 ${codes.length} 个去重 A 股收藏标的: ${codes.join(', ')}`,
+      );
+      await this.getBatchDarkTrade(codes);
+      this.logger.log('[收藏夹轮询] 成功更新收藏夹标的暗盘数据及快照');
+    } catch (err) {
+      this.logger.error('[收藏夹轮询] 获取暗盘数据失败', err);
+    } finally {
+      this.isPolling = false;
+    }
+  }
 
   private async fetchPage(
     page: number,
@@ -120,7 +179,7 @@ export class DarkTradeService {
     return JSON.parse(text) as RawResponse;
   }
 
-  async refreshIndex(date?: string, sortFlag = 6, desc = 1): Promise<RefreshResult> {
+  async refreshIndex(date?: string, sortFlag = 4, desc = 1): Promise<RefreshResult> {
     const targetDate = date ?? todayDate();
 
     const firstPage = await this.fetchPage(1, targetDate, sortFlag, desc);

@@ -9,6 +9,7 @@
 - K线总览页在加载时会自动携带客户端今日日期调用 `GET /api/darktrade/batch?codes=&date=YYYYMMDD`，后端检测到索引日期不匹配时自动触发全量刷新（爬取约 177 页 ~5300 只股票，约 5–10 秒），**无需手动运行脚本**
 - 手动刷新仍可用 `node scripts/refresh-darktrade-index.mjs [YYYYMMDD]`（调用 `POST /api/darktrade/refresh-index`）
 - `refresh-index` 建立 `code → (page, index)` 映射；`batch` / `:code` 通过该映射定位再取数；`date` 不匹配时 batch 端会在服务端用并发锁触发一次刷新（多请求只刷新一次）
+- **静态排序防飘移**：建立索引和抓数时统一默认采用静态的股票名称排序（`sortFlag=4`）。因为股票名称的 Unicode 顺序是绝对静态不变的，这规避了按暗盘资金等动态指标排序（`sortFlag=6`）时，因股票排名盘中剧烈变化而导致其漂移到其他页面，进而导致接口请求错失并回退至静态旧数据（使明暗盘数据看似卡死、不更新）的 Bug。
 
 ## 暗盘快照（分时副图）
 
