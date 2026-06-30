@@ -195,11 +195,16 @@ export class KlineService {
       );
     }
     const bars = this.calcMACD(raw);
-    if (bars.length > 0) {
-      const tradingMs = KLINE_TRADING_TTL[period] ?? 300_000;
-      this.klineCache.set(key, bars, tradingTtl(tradingMs, OFF_HOURS_TTL));
+    let filteredBars = bars;
+    if (period === 'timeshare' && bars.length > 0) {
+      const lastDate = bars[bars.length - 1].time.slice(0, 10);
+      filteredBars = bars.filter((b) => b.time.startsWith(lastDate));
     }
-    return { code, market, period, data: bars };
+    if (filteredBars.length > 0) {
+      const tradingMs = KLINE_TRADING_TTL[period] ?? 300_000;
+      this.klineCache.set(key, filteredBars, tradingTtl(tradingMs, OFF_HOURS_TTL));
+    }
+    return { code, market, period, data: filteredBars };
   }
 
   /**
@@ -250,15 +255,7 @@ export class KlineService {
     const url = `${TENCENT_MKLINE_URL}?param=${symbol},${mk},,${TENCENT_MIN_LIMIT}`;
     const resp = await this.get<TencentKlineResponse>(url, TENCENT_HEADERS);
     const rows = resp?.data?.[symbol]?.[mk] as unknown[] | undefined;
-    const bars = this.parseTencentRows(rows);
-
-    // 分时图只展示最近一个交易日的数据；其他分钟周期保留全部历史
-    if (period === 'timeshare' && bars.length > 0) {
-      const lastDate = bars[bars.length - 1].time.slice(0, 10);
-      return bars.filter((b) => b.time.startsWith(lastDate));
-    }
-
-    return bars;
+    return this.parseTencentRows(rows);
   }
 
   /**

@@ -63,9 +63,10 @@ export default function StockDetail() {
   useEffect(() => {
     if (market !== 'A' || !code || !klineDate) return;
     darktradeApi
-      .getSnapshotsBatch([code], klineDate)
+      .getBatch([code], klineDate)
+      .then(() => darktradeApi.getSnapshotsBatch([code], klineDate))
       .then((map) => setDtSnapshots(map[code] ?? []))
-      .catch(() => {});
+      .catch(() => { });
   }, [market, code, klineDate]);
 
   const isUp = info?.change_pct != null && info.change_pct > 0;

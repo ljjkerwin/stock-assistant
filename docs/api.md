@@ -83,7 +83,7 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/darktrade/index-status` | 查询暗盘索引状态 `{ count, date, updatedAt }` |
-| POST | `/api/darktrade/refresh-index` | 抓取所有页暗盘数据并建立 code→(page,index) 映射（body 可选 `{ date?, sortFlag?, desc? }`，默认按暗盘资金降序 sortFlag=6） |
+| POST | `/api/darktrade/refresh-index` | 抓取所有页暗盘数据并建立 code→(page,index) 映射（body 可选 `{ date?, sortFlag?, desc? }`，默认按股票名称 Unicode 降序 sortFlag=4） |
 | GET | `/api/darktrade/batch?codes=&date=` | 批量查询多只股票的暗盘资金数据，`codes` 为逗号分隔的代码列表，返回 `Record<code, DarkTradeData>`（不在索引中的代码静默忽略）；可选 `date=YYYYMMDD`，传入时若当前索引日期不匹配则**自动触发 refresh-index**（服务端并发锁，多请求只刷新一次），无需手动脚本 |
 | GET | `/api/darktrade/:code` | 通过映射查询指定股票的暗盘资金数据，返回 `DarkTradeData`（需先 refresh-index） |
 | GET | `/api/darktrade/snapshots/:code?days=` | 单只股票的历史暗盘快照（**日粒度**：每个交易日取当日最后一条，默认 60 天），返回 `DarkTradeSnapshot[]`，`time` 为 `YYYY-MM-DD` |

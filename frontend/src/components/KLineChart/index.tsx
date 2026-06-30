@@ -54,18 +54,14 @@ const LJJ_MA_COLOR = '#52c41a'; // 属性 KMA，叠加在顶部
 // 常规 RSI 副图曲线颜色
 const RSI_LINE_COLOR = '#9C27B0';
 
-// 暗盘/明盘副图颜色（legend 标签用）
-const DT_DARK_COLOR = '#1677ff'; // 暗盘
-const DT_LIGHT_COLOR = '#52c41a'; // 明盘
+// 暗盘/明盘/总资金副图颜色
+const DT_LIGHT_COLOR = '#1677ff';  // 明盘：蓝色
+const DT_DARK_COLOR = '#fadb14';   // 暗盘：黄色
+const DT_TOTAL_COLOR = '#888';     // 总：中灰
+const DT_ZERO_COLOR = '#d0d0d0';   // 零轴：浅灰色
 
-// 暗盘副图分时折线颜色：明盘正红/负绿，暗盘正浅红/负浅绿
-const LIGHT_POS_COLOR = '#ef5350';
-const LIGHT_NEG_COLOR = '#26a69a';
-const DARK_POS_COLOR = '#ffa39e';
-const DARK_NEG_COLOR = '#87e8de';
-
-// 分时图全天时间槽数（09:30–11:30 + 13:00–15:00，午休不画）
-const TIMESHARE_SLOTS = 242;
+// 分时图全天时间槽数（09:30–11:30 + 13:01–15:00，午休不画）
+const TIMESHARE_SLOTS = 241;
 
 // 主图叠加内容：均线 或 BOLL 布林带
 type MainOverlay = 'ma' | 'boll';
@@ -114,34 +110,41 @@ const CHART_OPTIONS = {
     horzLines: { color: '#f0f0f0' },
   },
   crosshair: { mode: CrosshairMode.Normal },
-  rightPriceScale: { borderColor: '#e0e0e0' },
+  rightPriceScale: { borderColor: '#e0e0e0', minimumWidth: 60 },
   timeScale: { borderColor: '#e0e0e0', timeVisible: true, fixRightEdge: true },
 };
 
-// 生成分时图全天数据（午休不画，09:30–11:30 与 13:00–15:00 两段在横轴上直接相接）
-function buildTimeshareData(
-  bars: { time: string; close: number }[],
+// 通用的分时 241 槽位数据生成器，使所有副图（MACD、成交量等）能与主图完美时间对齐
+function buildTimeshareSeriesData<T extends { time: string }, R>(
+  bars: T[],
   lastDate: string,
-): ({ time: number | string; value: number } | { time: number | string })[] {
-  const barMap = new Map<string, number>();
-  bars.forEach((b) => barMap.set(b.time, b.close));
-  const result: ({ time: number | string; value: number } | { time: number | string })[] = [];
+  mapFn: (bar: T, index: number) => R,
+): (({ time: number | string } & R) | { time: number | string })[] {
+  const barMap = new Map<string, { bar: T; idx: number }>();
+  bars.forEach((b, i) => {
+    barMap.set(b.time, { bar: b, idx: i });
+  });
+  const result: (({ time: number | string } & R) | { time: number | string })[] = [];
   const addRange = (fromMin: number, toMin: number) => {
     for (let m = fromMin; m <= toMin; m++) {
       const t = `${lastDate} ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
       const ts = toChartTime(t);
-      const v = barMap.get(t);
-      result.push(v !== undefined ? { time: ts, value: v } : { time: ts });
+      const entry = barMap.get(t);
+      if (entry !== undefined) {
+        result.push({ time: ts, ...mapFn(entry.bar, entry.idx) });
+      } else {
+        result.push({ time: ts });
+      }
     }
   };
   addRange(9 * 60 + 30, 11 * 60 + 30);
-  addRange(13 * 60, 15 * 60);
+  addRange(13 * 60 + 1, 15 * 60);
   return result;
 }
 
-// 暗盘副图：按当日分钟快照生成 242 槽位数据（含 WhitespaceData 占位），
+// 暗盘副图：按当日分钟快照生成 241 槽位数据（含 WhitespaceData 占位），
 // 横轴逻辑索引与分时主图一一对应，无快照的分钟留空。dataMap key 为 "YYYY-MM-DD HH:MM"
-function buildTimeshare242(
+function buildTimeshare241(
   dataMap: Map<string, number>,
   date: string,
 ): ({ time: number | string; value: number } | { time: number | string })[] {
@@ -154,7 +157,7 @@ function buildTimeshare242(
     }
   };
   fill(9 * 60 + 30, 11 * 60 + 30);
-  fill(13 * 60, 15 * 60);
+  fill(13 * 60 + 1, 15 * 60);
   return result;
 }
 
@@ -209,7 +212,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const ljjTotalSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const ljjMidSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const ljjBottomSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const dtSeriesRef = useRef<ISeriesApi<'Line'>[]>([]); // 暗盘副图分时折线（明盘/暗盘 × 正/负）
+  const dtSeriesRef = useRef<ISeriesApi<SeriesType>[]>([]); // 暗盘副图分时折线（明盘/暗盘 × 正/负）
   const ma5SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma10SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const ma20SeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
@@ -248,6 +251,27 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   useEffect(() => {
     onDateResolvedRef.current = onDateResolved;
   });
+
+  // 统一各图右侧价格轴宽度（取最大），使所有副图横向对齐；下一帧读取实际宽度后应用
+  const alignPriceAxisWidth = useCallback(() => {
+    if (alignWidthRafRef.current !== null) cancelAnimationFrame(alignWidthRafRef.current);
+    alignWidthRafRef.current = requestAnimationFrame(() => {
+      alignWidthRafRef.current = null;
+      const liveCharts: IChartApi[] = [mainChartRef.current, volumeChartRef.current, macdChartRef.current]
+        .concat(rsiChartRef.current ?? [], ljjChartRef.current ?? [], darkTradeChartRef.current ?? [])
+        .filter((c): c is IChartApi => c != null);
+      if (liveCharts.length === 0) return;
+      let maxWidth = Math.max(...liveCharts.map((c) => c.priceScale('right').width()));
+      if (maxWidth < 60) {
+        maxWidth = 60;
+      }
+      liveCharts.forEach((c) => c.applyOptions({ rightPriceScale: { minimumWidth: maxWidth } }));
+      // 价格轴变宽后重排会使暗盘副图靠右贴边，重新锁定其 242 逻辑范围
+      if (darkTradeChartRef.current) {
+        darkTradeChartRef.current.timeScale().setVisibleLogicalRange({ from: 0 as Logical, to: (TIMESHARE_SLOTS - 1) as Logical });
+      }
+    });
+  }, []);
 
   const initCharts = useCallback(() => {
     if (!containerRef.current || !volumeRef.current || !macdRef.current) return;
@@ -310,9 +334,10 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       ljjChartRef.current = ljjChart;
     }
 
-    // 暗盘副图：独立时间轴（每日快照，不与分钟线联动），仅用于按日期更新 legend
+    // 暗盘副图：用当日分钟快照绘制分时折线（明盘/暗盘 × 正/负），横轴 242 槽位对齐分时主图
+    let darkTradeChart: IChartApi | null = null;
     if (showDT && darkTradeRef.current) {
-      const darkTradeChart = createChart(darkTradeRef.current, {
+      darkTradeChart = createChart(darkTradeRef.current, {
         ...CHART_OPTIONS,
         ...noTimeScale,
         height: 80,
@@ -328,10 +353,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       darkTradeChartRef.current = darkTradeChart;
     }
 
-    // 参与时间轴 / 十字光标联动的全部图表（暗盘副图不参与，因时间粒度不同）
+    // 参与时间轴 / 十字光标联动的全部图表
     const charts: IChartApi[] = [mainChart, volumeChart, macdChart];
     if (rsiChart) charts.push(rsiChart);
     if (ljjChart) charts.push(ljjChart);
+    if (darkTradeChart) charts.push(darkTradeChart);
 
     // 各图主 series 引用（用于十字光标定位），在 applyData 后填充
     const primarySeriesRefs = new Map<IChartApi, () => ISeriesApi<SeriesType> | null>([
@@ -341,6 +367,9 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     ]);
     if (rsiChart) primarySeriesRefs.set(rsiChart, () => rsiSeriesRef.current);
     if (ljjChart) primarySeriesRefs.set(ljjChart, () => ljjTotalSeriesRef.current);
+    if (darkTradeChart) {
+      primarySeriesRefs.set(darkTradeChart, () => dtSeriesRef.current[0] || null);
+    }
 
     // Unified legend updater — looks up bar by chart time and refreshes all three legends
     function updateAllLegends(time: Time) {
@@ -431,9 +460,13 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         if (snap) {
           const dark = snap.darkCapital != null ? fmtCap(snap.darkCapital) : '--';
           const light = snap.lightCapital != null ? fmtCap(snap.lightCapital) : '--';
+          const totalVal = (snap.darkCapital ?? 0) + (snap.lightCapital ?? 0);
+          const total = snap.darkCapital != null || snap.lightCapital != null ? fmtCap(totalVal) : '--';
+          const totalColor = totalVal > 0 ? '#ef5350' : totalVal < 0 ? '#26a69a' : DT_TOTAL_COLOR;
           darkTradeLegendRef.current.innerHTML =
-            `暗盘&nbsp;<span style="color:${DT_DARK_COLOR}">${dark}</span>` +
-            `&nbsp;&nbsp;明盘&nbsp;<span style="color:${DT_LIGHT_COLOR}">${light}</span>`;
+            `明盘&nbsp;<span style="color:${DT_LIGHT_COLOR}">${light}</span>` +
+            `&nbsp;&nbsp;暗盘&nbsp;<span style="color:${DT_DARK_COLOR}">${dark}</span>` +
+            `&nbsp;&nbsp;总&nbsp;<span style="color:${totalColor}">${total}</span>`;
         }
       }
     }
@@ -445,6 +478,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         charts.forEach((other) => {
           if (other !== chart) other.timeScale().setVisibleLogicalRange(range);
         });
+        alignPriceAxisWidth();
         if (chart === mainChart && zoomStorageKeyRef.current) {
           if (zoomSaveTimerRef.current) clearTimeout(zoomSaveTimerRef.current);
           zoomSaveTimerRef.current = setTimeout(() => {
@@ -466,7 +500,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
           if (other === chart) return;
           const series = primarySeriesRefs.get(other)?.();
           if (param.time && series) {
-            other.setCrosshairPosition(0, param.time, series);
+            try {
+              other.setCrosshairPosition(0, param.time, series);
+            } catch {
+              // Ignore lightweight-charts errors if the series has whitespace or is empty at this point
+            }
           } else if (!param.time) {
             other.clearCrosshairPosition();
           }
@@ -474,35 +512,18 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         syncingRef.current = false;
       });
     });
-  }, [showLjj, showRsi, showDarkTrade, period]);
+  }, [showLjj, showRsi, showDarkTrade, period, alignPriceAxisWidth]);
 
-  // 统一各图右侧价格轴宽度（取最大），使所有副图横向对齐；下一帧读取实际宽度后应用
-  const alignPriceAxisWidth = useCallback(() => {
-    if (alignWidthRafRef.current !== null) cancelAnimationFrame(alignWidthRafRef.current);
-    alignWidthRafRef.current = requestAnimationFrame(() => {
-      alignWidthRafRef.current = null;
-      const liveCharts: IChartApi[] = [mainChartRef.current, volumeChartRef.current, macdChartRef.current]
-        .concat(rsiChartRef.current ?? [], ljjChartRef.current ?? [], darkTradeChartRef.current ?? [])
-        .filter((c): c is IChartApi => c != null);
-      if (liveCharts.length === 0) return;
-      const maxWidth = Math.max(...liveCharts.map((c) => c.priceScale('right').width()));
-      if (maxWidth > 0) {
-        liveCharts.forEach((c) => c.applyOptions({ rightPriceScale: { minimumWidth: maxWidth } }));
-      }
-      // 价格轴变宽后重排会使暗盘副图靠右贴边，重新锁定其 242 逻辑范围
-      if (darkTradeChartRef.current) {
-        darkTradeChartRef.current.timeScale().setVisibleLogicalRange({ from: 0 as Logical, to: (TIMESHARE_SLOTS - 1) as Logical });
-      }
-    });
-  }, []);
+
 
   const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod, preserveViewport = false, backtestStartTime?: string | null) => {
     if (!mainChartRef.current || !volumeChartRef.current || !macdChartRef.current) return;
 
-    // 所有已激活的图表（RSI、ljj 为可选副图）
+    // 所有已激活的图表（RSI、ljj、darkTrade 为可选副图）
     const activeCharts: IChartApi[] = [mainChartRef.current, volumeChartRef.current, macdChartRef.current];
     if (rsiChartRef.current) activeCharts.push(rsiChartRef.current);
     if (ljjChartRef.current) activeCharts.push(ljjChartRef.current);
+    if (darkTradeChartRef.current) activeCharts.push(darkTradeChartRef.current);
     const setAllRange = (range: LogicalRange) => activeCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(range));
     const fitAll = () => activeCharts.forEach((c) => c.timeScale().fitContent());
 
@@ -520,8 +541,9 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       c.timeScale().applyOptions({ fixRightEdge: !isTimeshare });
     });
 
+    let latestDate = '';
     if (isTimeshare && bars.length > 0) {
-      const latestDate = bars[bars.length - 1].time.split(' ')[0];
+      latestDate = bars[bars.length - 1].time.split(' ')[0];
       bars = bars.filter((b) => b.time.startsWith(latestDate));
     }
 
@@ -570,16 +592,47 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     });
 
     if (pd === 'timeshare') {
+      let zeroPrice = bars.length > 0 ? bars[0].open : 0;
+      if (bars.length > 0 && bars[0].changePercent != null) {
+        zeroPrice = bars[0].close / (1 + bars[0].changePercent / 100);
+      }
+
       const lineSeries = mainChartRef.current.addSeries(LineSeries, {
         color: '#1677ff',
         lineWidth: 1,
         lastValueVisible: false,
         priceLineVisible: false,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        autoscaleInfoProvider: (original: any) => {
+          const res = original();
+          if (res !== null && zeroPrice > 0) {
+            const delta = Math.max(
+              Math.abs(res.priceRange.maxValue - zeroPrice),
+              Math.abs(res.priceRange.minValue - zeroPrice)
+            );
+            return {
+              priceRange: {
+                minValue: zeroPrice - delta,
+                maxValue: zeroPrice + delta,
+              },
+            };
+          }
+          return res;
+        },
       });
-      const latestDate = bars.length > 0 ? bars[bars.length - 1].time.slice(0, 10) : '';
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      lineSeries.setData(latestDate ? (buildTimeshareData(bars, latestDate) as any) : []);
+      lineSeries.setData(latestDate ? (buildTimeshareSeriesData(bars, latestDate, (b) => ({ value: b.close })) as unknown as LineData[]) : []);
       mainSeriesRef.current = lineSeries;
+
+      if (zeroPrice > 0) {
+        lineSeries.createPriceLine({
+          price: zeroPrice,
+          color: 'rgba(150, 150, 150, 0.45)',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: '昨收',
+        });
+      }
     } else {
       const candleSeries = mainChartRef.current.addSeries(CandlestickSeries, {
         upColor: '#ef5350',
@@ -676,20 +729,29 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
 
     const volSeries = volumeChartRef.current.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
-      priceScaleId: '',
+      priceScaleId: 'right',
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    volSeries.setData(
-      bars.map(
-        (b, i) =>
+    if (isTimeshare && latestDate) {
+      volSeries.setData(
+        buildTimeshareSeriesData(bars, latestDate, (b, i) => ({
+          value: b.volume,
+          color: i > 0 ? (b.close >= bars[i - 1].close ? '#ef5350' : '#26a69a') : '#ef5350',
+        })) as unknown as HistogramData[]
+      );
+    } else {
+      volSeries.setData(
+        bars.map(
+          (b, i) =>
           ({
             time: toChartTime(b.time),
             value: b.volume,
             color: i > 0 ? (b.close >= bars[i - 1].close ? '#ef5350' : '#26a69a') : '#ef5350',
           } as HistogramData),
-      ),
-    );
+        ),
+      );
+    }
     volumeSeriesRef.current = volSeries;
 
     const difSeries = macdChartRef.current.addSeries(LineSeries, {
@@ -698,7 +760,13 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    difSeries.setData(bars.map((b) => ({ time: toChartTime(b.time), value: b.macd.dif } as LineData)));
+    if (isTimeshare && latestDate) {
+      difSeries.setData(
+        buildTimeshareSeriesData(bars, latestDate, (b) => ({ value: b.macd.dif })) as unknown as LineData[]
+      );
+    } else {
+      difSeries.setData(bars.map((b) => ({ time: toChartTime(b.time), value: b.macd.dif } as LineData)));
+    }
     difSeriesRef.current = difSeries;
 
     const deaSeries = macdChartRef.current.addSeries(LineSeries, {
@@ -707,7 +775,13 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    deaSeries.setData(bars.map((b) => ({ time: toChartTime(b.time), value: b.macd.dea } as LineData)));
+    if (isTimeshare && latestDate) {
+      deaSeries.setData(
+        buildTimeshareSeriesData(bars, latestDate, (b) => ({ value: b.macd.dea })) as unknown as LineData[]
+      );
+    } else {
+      deaSeries.setData(bars.map((b) => ({ time: toChartTime(b.time), value: b.macd.dea } as LineData)));
+    }
     deaSeriesRef.current = deaSeries;
 
     const macdBarSeries = macdChartRef.current.addSeries(HistogramSeries, {
@@ -715,16 +789,25 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    macdBarSeries.setData(
-      bars.map(
-        (b) =>
+    if (isTimeshare && latestDate) {
+      macdBarSeries.setData(
+        buildTimeshareSeriesData(bars, latestDate, (b) => ({
+          value: b.macd.bar,
+          color: b.macd.bar >= 0 ? '#ef5350' : '#26a69a',
+        })) as unknown as HistogramData[]
+      );
+    } else {
+      macdBarSeries.setData(
+        bars.map(
+          (b) =>
           ({
             time: toChartTime(b.time),
             value: b.macd.bar,
             color: b.macd.bar >= 0 ? '#ef5350' : '#26a69a',
           } as HistogramData),
-      ),
-    );
+        ),
+      );
+    }
     macdBarSeriesRef.current = macdBarSeries;
 
     // 常规 RSI 副图：仅 RSI6 曲线
@@ -735,11 +818,17 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         lastValueVisible: false,
         priceLineVisible: false,
       });
-      rsiSeries.setData(
-        bars
-          .filter((b) => b.rsi?.rsi6 != null)
-          .map((b) => ({ time: toChartTime(b.time), value: b.rsi!.rsi6! } as LineData)),
-      );
+      if (isTimeshare && latestDate) {
+        rsiSeries.setData(
+          buildTimeshareSeriesData(bars, latestDate, (b) => ({ value: b.rsi?.rsi6 })) as unknown as LineData[]
+        );
+      } else {
+        rsiSeries.setData(
+          bars
+            .filter((b) => b.rsi?.rsi6 != null)
+            .map((b) => ({ time: toChartTime(b.time), value: b.rsi!.rsi6! } as LineData)),
+        );
+      }
       // 50 中轴虚线
       rsiSeries.createPriceLine({
         price: 50,
@@ -857,39 +946,55 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       seen.add(s.time);
       return true;
     });
-    if (snaps.length === 0) {
-      chart.timeScale().setVisibleLogicalRange({ from: 0 as Logical, to: (TIMESHARE_SLOTS - 1) as Logical });
-      return;
-    }
-    const date = snaps[0].time.slice(0, 10); // 当日，与分时主图同一交易日
 
-    // 明盘/暗盘按正负拆分，分别建 map（key 为 "YYYY-MM-DD HH:MM"），各画一条折线
-    const lightPosMap = new Map<string, number>();
-    const lightNegMap = new Map<string, number>();
-    const darkPosMap = new Map<string, number>();
-    const darkNegMap = new Map<string, number>();
+    const date = snaps.length > 0
+      ? snaps[0].time.slice(0, 10)
+      : (barsRef.current.length > 0 ? barsRef.current[barsRef.current.length - 1].time.slice(0, 10) : new Date().toISOString().slice(0, 10));
+
+    // 明盘/暗盘/总资金不按正负拆分，各画一条完整的折线
+    const lightMap = new Map<string, number>();
+    const darkMap = new Map<string, number>();
+    const totalMap = new Map<string, number>();
     for (const s of snaps) {
-      if (s.lightCapital != null) (s.lightCapital >= 0 ? lightPosMap : lightNegMap).set(s.time, s.lightCapital);
-      if (s.darkCapital != null) (s.darkCapital >= 0 ? darkPosMap : darkNegMap).set(s.time, s.darkCapital);
+      if (s.lightCapital != null) lightMap.set(s.time, s.lightCapital);
+      if (s.darkCapital != null) darkMap.set(s.time, s.darkCapital);
+      if (s.lightCapital != null || s.darkCapital != null) {
+        totalMap.set(s.time, (s.lightCapital ?? 0) + (s.darkCapital ?? 0));
+      }
     }
 
     let zeroLineAdded = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const symmetricAutoscale = (original: any) => {
+      const res = original();
+      if (res === null) return res;
+      const maxAbs = Math.max(Math.abs(res.priceRange.maxValue), Math.abs(res.priceRange.minValue), 1);
+      return { priceRange: { minValue: -maxAbs, maxValue: maxAbs } };
+    };
     const addLine = (color: string, dataMap: Map<string, number>, needZeroLine = false) => {
-      if (dataMap.size === 0) return;
-      const series = chart.addSeries(LineSeries, { color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false });
-      series.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
+      if (dataMap.size === 0 && snaps.length > 0) return;
+      const series = chart.addSeries(LineSeries, {
+        color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+        autoscaleInfoProvider: symmetricAutoscale,
+      });
+      series.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 } });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      series.setData(buildTimeshare242(dataMap, date) as any);
+      series.setData(buildTimeshare241(dataMap, date) as any);
       if (needZeroLine && !zeroLineAdded) {
-        series.createPriceLine({ price: 0, color: '#bbb', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+        series.createPriceLine({ price: 0, color: DT_ZERO_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         zeroLineAdded = true;
       }
       dtSeriesRef.current.push(series);
     };
-    addLine(LIGHT_POS_COLOR, lightPosMap, true);
-    addLine(LIGHT_NEG_COLOR, lightNegMap, true);
-    addLine(DARK_POS_COLOR, darkPosMap);
-    addLine(DARK_NEG_COLOR, darkNegMap);
+
+    if (snaps.length === 0) {
+      // 撑起 timeScale，保证空数据时也能和主图一一对齐
+      addLine(DT_LIGHT_COLOR, lightMap, true);
+    } else {
+      addLine(DT_LIGHT_COLOR, lightMap, true);
+      addLine(DT_DARK_COLOR, darkMap);
+      addLine(DT_TOTAL_COLOR, totalMap);
+    }
 
     // 与分时主图同用 242 逻辑索引，不用 fitContent
     chart.timeScale().setVisibleLogicalRange({ from: 0 as Logical, to: (TIMESHARE_SLOTS - 1) as Logical });
@@ -1053,8 +1158,9 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         {showDarkTrade && period === 'timeshare' && (
           <div className={styles.subWrapper}>
             <div ref={darkTradeLegendRef} className={styles.subLegend}>
-              暗盘&nbsp;<span style={{ color: DT_DARK_COLOR }}>--</span>
-              &nbsp;&nbsp;明盘&nbsp;<span style={{ color: DT_LIGHT_COLOR }}>--</span>
+              明盘&nbsp;<span style={{ color: DT_LIGHT_COLOR }}>--</span>
+              &nbsp;&nbsp;暗盘&nbsp;<span style={{ color: DT_DARK_COLOR }}>--</span>
+              &nbsp;&nbsp;总&nbsp;<span style={{ color: DT_TOTAL_COLOR }}>--</span>
             </div>
             <div ref={darkTradeRef} className={styles.sub} />
           </div>

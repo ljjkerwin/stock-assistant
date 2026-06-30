@@ -206,7 +206,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {section !== 'list' && section !== 'klinegrid' && (
+      {section !== 'list' && (
         <div className={styles.search}>
           {section === 'fund' ? (
             <FundSearch size="middle" />
