@@ -24,10 +24,10 @@ const { Text } = Typography;
 
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
-  { value: 'backtest', label: '策略回测' },
   { value: 'klinegrid', label: 'K线总览' },
   { value: 'fund', label: '基金' },
   { value: 'list', label: '股票列表导入' },
+  { value: 'backtest', label: '策略回测' },
 ];
 
 export default function Sidebar() {
@@ -106,9 +106,8 @@ export default function Sidebar() {
   const renderItem = (stock: Stock, index: number, list: Stock[], urlFn: (s: Stock) => string) => (
     <div
       key={stock.id}
-      className={`${styles.item} ${stock.pinned ? styles.pinnedItem : ''} ${
-        pathname === urlFn(stock) ? styles.selected : ''
-      }`}
+      className={`${styles.item} ${stock.pinned ? styles.pinnedItem : ''} ${pathname === urlFn(stock) ? styles.selected : ''
+        }`}
       onClick={() => navigate(urlFn(stock))}
     >
       <div className={styles.stockInfo}>
@@ -181,7 +180,7 @@ export default function Sidebar() {
               onClick={() => setAddListOpen(true)}
             />
           </Tooltip>
-          
+
           <Select
             value={currentListId ?? undefined}
             options={lists.map((l) => ({ value: l.id, label: l.name }))}

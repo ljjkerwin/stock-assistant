@@ -33,6 +33,15 @@
   opacity: 0.55;
 }
 
+.ruleItem {
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ruleItem:last-child {
+  border-bottom: none;
+}
+
 .itemRow {
   display: flex;
   align-items: center;
