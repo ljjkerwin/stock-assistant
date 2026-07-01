@@ -1,13 +1,6 @@
 .trigger {
-  position: fixed;
-  bottom: 20px;
-  /* 居中于 200px 宽的 sidebar */
-  left: 0;
-  width: 200px;
-  display: flex;
-  justify-content: center;
-  z-index: 1000;
-  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .trigger > * {
@@ -38,6 +31,15 @@
 
 .listItem.read {
   opacity: 0.55;
+}
+
+.ruleItem {
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ruleItem:last-child {
+  border-bottom: none;
 }
 
 .itemRow {

@@ -9,6 +9,7 @@ describe('FavoritesService', () => {
     count: jest.Mock;
     delete: jest.Mock;
     findOneBy: jest.Mock;
+    findOne: jest.Mock;
   };
   let watchListRepo: { findOneBy: jest.Mock };
 
@@ -24,6 +25,7 @@ describe('FavoritesService', () => {
       count: jest.fn().mockResolvedValue(0),
       delete: jest.fn(),
       findOneBy: jest.fn(),
+      findOne: jest.fn(),
     };
     watchListRepo = { findOneBy: jest.fn() };
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -79,14 +81,17 @@ describe('FavoritesService', () => {
     it('adds a stock item to a stock-board list with sortOrder scoped to that list', async () => {
       watchListRepo.findOneBy.mockResolvedValue({ id: 1, userId: 42, boardType: 'stock' });
       repo.findOneBy.mockResolvedValue(null);
-      repo.count.mockResolvedValue(3);
+      repo.findOne.mockResolvedValue({ sortOrder: 2 });
 
       const result = await service.add(
         { code: '600000', market: 'A', name: '浦发银行', watchListId: 1 },
         42,
       );
 
-      expect(repo.count).toHaveBeenCalledWith({ where: { watchListId: 1 } });
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { watchListId: 1 },
+        order: { sortOrder: 'DESC' },
+      });
       expect(result).toEqual(
         expect.objectContaining({ code: '600000', watchListId: 1, sortOrder: 3 }),
       );

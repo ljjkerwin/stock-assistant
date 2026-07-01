@@ -8,6 +8,18 @@
   display: flex;
   align-items: center;
   margin-bottom: 12px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none; /* Hide scrollbar for Firefox */
+}
+
+.header::-webkit-scrollbar {
+  display: none; /* Hide scrollbar for Chrome/Safari */
+}
+
+.header > * {
+  flex-shrink: 0;
 }
 
 .info {
@@ -15,6 +27,29 @@
   background: #fafafa;
   padding: 8px 12px;
   border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  overflow-x: auto;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+  scrollbar-width: none; /* Hide scrollbar for Firefox */
+}
+
+.info::-webkit-scrollbar {
+  display: none; /* Hide scrollbar for Chrome/Safari */
+}
+
+.infoItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.infoLabel {
+  color: #8c8c8c;
 }
 
 .chart {

@@ -38,7 +38,7 @@
 - 路由：`/stock-list-kline`，Sidebar Section Select 新增「K线总览」选项切换进入；进入后搜索框隐藏，列表切换器仍保留（用于切换当前标的列表）
 - 展示当前股票标的列表（`currentStockListId`）中所有非基金标的的 K 线图，以卡片网格方式排列
 - 顶部工具栏提供**全局周期切换器**（Radio.Group，可选周期：分时/5分/15分/30分/60分/日线/周线），切换后所有卡片同步更新；周期选择缓存于 localStorage（key `stockListKline:period`，刷新后保持）
-- 每个 `StockKlineCard` 卡片：最小宽度 400px，`flex: 1` 自适应铺满整行并换行；每张卡片独立请求 K 线数据，包含主图（蜡烛线 + MA5/MA20；分时为面积图，且主图 Y 轴同样相对于昨日收盘价/零轴上下对称展示）和量图（成交量柱状）；点击标的名称在当前页打开股票详情页；当鼠标指针 hover 在卡片中的任意图表（主图或任意副图）时，该卡片内所有图表的十字虚线会同步定位并显示在相同的时间坐标上
+- 每个 `StockKlineCard` 卡片：最小宽度 400px，`flex: 1` 自适应铺满整行并换行；每张卡片独立请求 K 线数据，包含主图（蜡烛线 + MA5/MA20；分时为面积图，且主图 Y 轴同样相对于昨日收盘价/零轴上下对称展示）和量图（成交量柱状，注意：分时周期 K 线数据已取消交易时段内的 30 秒轮询自动刷新）；点击标的名称在当前页打开股票详情页；当鼠标指针 hover 在卡片中的任意图表（主图或任意副图）时，该卡片内所有图表的十字虚线会同步定位并显示在相同的时间坐标上
 - 标的列表项中 `market === 'FUND'` 的条目不渲染 K 线卡片（基金走净值图，不适合此页面）
 - 该页加载时自动拉取暗盘资金（见 [darktrade.md](./darktrade.md)）
 
@@ -50,3 +50,13 @@
 - 标的列表（`stockLists`/`fundLists`）及当前选中列表 id（`currentStockListId`/`currentFundListId`）通过 `watchListStore` 管理；当前选中列表 id 按 boardType 分别缓存于 localStorage（key `watchList:current:stock` / `watchList:current:fund`），`fetchLists` 拉取列表后优先沿用已选 id，其次回退到 localStorage 中保存的 id（若仍存在于新列表中），都不满足则回退到 `isDefault` 列表或第一个列表；`setCurrentList`/`createList`/`deleteList` 变更选中列表时同步写入 localStorage，刷新页面后默认展示上次选中的列表
 - 监控规则和消息通过 `monitorStore` 管理，规则数据从后端 API 获取（不用 localStorage）
 - 组件不直接调用 API，通过 store action 触发请求
+
+---
+
+## 移动端响应式布局
+
+- **菜单折叠机制**：移动端视口（屏幕宽度 ≤ 768px）下，左侧侧边栏（Sidebar）默认收起，并通过 `fixed` 浮动遮罩形式在屏幕左侧隐藏。
+- **左栏入口**：移除了顶部固定的标题栏以增加页面可视面积。改在左下角提供一个圆形的菜单展开悬浮按钮（`menuToggle`），支持沿 Y 轴拖拽位置以防遮挡图表元素，最高可拖动到屏幕高度的一半。
+- **侧滑与折叠**：点击菜单展开按钮后，侧边栏以侧滑动画形式展出，并展示背景半透明遮罩（`overlay`）。
+- **自动收起**：用户点击遮罩区域，或在侧边栏中点击任意导航项（或个股）进行路由切换时，侧边栏会自动折叠收起。
+

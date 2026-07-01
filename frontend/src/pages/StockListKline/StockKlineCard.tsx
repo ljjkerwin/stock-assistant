@@ -38,7 +38,7 @@ interface Props {
   onDateResolved?: (date: string) => void;
 }
 
-const MAIN_HEIGHT = 200;
+const MAIN_HEIGHT = 150;
 // 分时图全天时间槽总数：上午 121(09:30–11:30) + 下午 120(13:01–15:00)，午休不画
 const TIMESHARE_SLOTS = 241;
 const VOLUME_HEIGHT = 50;
@@ -308,6 +308,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
 
   // Effect 3: 交易时段内 30 秒轮询刷新（只在数据实际变化时触发重绘）
   useEffect(() => {
+    if (period === 'timeshare') return;
     const timer = setInterval(() => {
       if (!isInTradingHours(market)) return;
       klineApi

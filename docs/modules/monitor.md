@@ -18,7 +18,7 @@
 ## 前端
 
 - 前端 `useMonitorSSE` hook 通过 `EventSource(/api/monitor/events)` 接收推送，写入 `monitorStore`
-- `MonitorCenter` 组件固定在页面左下角（sidebar 宽度范围内居中），弹窗仅展示「消息通知」列表，不再包含监控规则管理；消息分页加载（每页 20 条，已读/未读均可翻页），`getMessages` 不标记已读；每次加载完一页后，store 内自动提取本页未读 ID 调用 `PATCH /api/monitor/messages` 批量标记已读并刷新未读角标；未读角标通过独立接口 `getUnreadCount` 维护，SSE 推送到达时立即 +1
+- `MonitorCenter` 组件固定在页面左下角（sidebar 宽度范围内居中），弹窗采用 Tabs 结构，包含「消息通知」与「监控规则」两个标签页。「消息通知」展示触发的历史消息，支持点击股票名跳转，消息分页加载（每页 20 条，已读/未读均可翻页），`getMessages` 不标记已读；每次加载完一页后，store 内自动提取本页未读 ID 调用 `PATCH /api/monitor/messages` 批量标记已读并刷新未读角标；未读角标通过独立接口 `getUnreadCount` 维护，SSE 推送到达时立即 +1。 「监控规则」展示全局所有活跃/暂停的监控规则，支持快捷切换启用状态、删除规则以及点击股票名跳转。
 - `StockMonitorButton` 组件嵌入各股票详情页标题栏右侧，Badge 显示该股票活跃规则数；弹窗展示并管理该股票的监控规则（增删、激活/暂停），添加规则无需选择股票（已由页面上下文确定）
 
 ## 调试

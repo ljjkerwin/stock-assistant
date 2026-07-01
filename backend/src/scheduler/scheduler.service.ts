@@ -7,6 +7,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SchedulerService.name);
   private timer: ReturnType<typeof setTimeout> | null = null;
   readonly tick$ = new Subject<number>();
+  readonly minute$ = new Subject<Date>();
   private tickCount = 0;
 
   onModuleInit() {
@@ -21,10 +22,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       this.timer = null;
     }
     this.tick$.complete();
+    this.minute$.complete();
   }
 
   private loop() {
-    if (isTrading()) {
+    const now = new Date();
+    this.minute$.next(now);
+
+    if (isTrading(now.getTime())) {
       this.tickCount++;
       this.logger.debug(`[心跳] 第 ${this.tickCount} 次 Tick 开始`);
       this.tick$.next(this.tickCount);

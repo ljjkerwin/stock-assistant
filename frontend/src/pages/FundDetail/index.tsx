@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Typography, Descriptions, Spin, Tag, Button, Tooltip } from 'antd';
+import { Typography, Spin, Tag, Button, Tooltip } from 'antd';
 import { StarOutlined, StarFilled } from '@ant-design/icons';
 import { fundApi } from '../../api/stock';
 import NavChart from '../../components/NavChart';
@@ -125,36 +125,42 @@ export default function FundDetail() {
 
       <Spin spinning={loading}>
         {info && (
-          <Descriptions size="small" column={4} className={styles.info}>
-            <Descriptions.Item label="单位净值">
+          <div className={styles.info}>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>单位净值</span>
               <span style={{ fontWeight: 600 }}>
                 {info.nav != null ? info.nav.toFixed(4) : '-'}
               </span>
-            </Descriptions.Item>
-            <Descriptions.Item label="累计净值">
-              {info.accNav != null ? info.accNav.toFixed(4) : '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="日涨跌幅">
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>累计净值</span>
+              <span>{info.accNav != null ? info.accNav.toFixed(4) : '-'}</span>
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>日涨跌幅</span>
               <span style={{ color: dailyColor }}>
                 {info.dailyChangePct != null
                   ? `${dailyUp ? '+' : ''}${info.dailyChangePct.toFixed(2)}%`
                   : '-'}
               </span>
-            </Descriptions.Item>
-            <Descriptions.Item label="净值日期">
-              {info.navDate ?? '-'}
-            </Descriptions.Item>
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>净值日期</span>
+              <span>{info.navDate ?? '-'}</span>
+            </div>
             {info.establishDate != null && (
-              <Descriptions.Item label="成立日期">
-                {info.establishDate}
-              </Descriptions.Item>
+              <div className={styles.infoItem}>
+                <span className={styles.infoLabel}>成立日期</span>
+                <span>{info.establishDate}</span>
+              </div>
             )}
             {info.fundSize != null && (
-              <Descriptions.Item label="基金规模">
-                {info.fundSize}
-              </Descriptions.Item>
+              <div className={styles.infoItem}>
+                <span className={styles.infoLabel}>基金规模</span>
+                <span>{info.fundSize}</span>
+              </div>
             )}
-          </Descriptions>
+          </div>
         )}
       </Spin>
 

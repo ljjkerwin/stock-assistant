@@ -107,7 +107,9 @@ function minuteToDisplayTime(cm: string): string {
 export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DarkTradeService.name);
   private schedulerSubscription: Subscription | null = null;
+  private cronSubscription: Subscription | null = null;
   private isPolling = false;
+  private lastRefreshTime = 0;
 
   constructor(
     @InjectRepository(DarkTradeIndex)
@@ -127,12 +129,34 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
         void this.pollFavorites();
       }
     });
+
+    this.logger.log('已启动北京时间 09:28 定时重建暗盘数据索引订阅（仅限开盘日）');
+    this.cronSubscription = this.schedulerService.minute$.subscribe((now) => {
+      const hkt = new Date(now.getTime() + 8 * 3600 * 1000);
+      const day = hkt.getUTCDay();
+      const hour = hkt.getUTCHours();
+      const minute = hkt.getUTCMinutes();
+
+      // 仅限开盘日（工作日：周一至周五，day 1-5）
+      if (day >= 1 && day <= 5) {
+        if (hour === 9 && minute === 28) {
+          this.logger.log('已到达北京时间 09:28（开盘日），开始定时重建暗盘数据索引...');
+          void this.refreshIndex().catch((err) => {
+            this.logger.error('定时重建暗盘数据索引失败', err);
+          });
+        }
+      }
+    });
   }
 
   onModuleDestroy() {
     if (this.schedulerSubscription) {
       this.schedulerSubscription.unsubscribe();
       this.schedulerSubscription = null;
+    }
+    if (this.cronSubscription) {
+      this.cronSubscription.unsubscribe();
+      this.cronSubscription = null;
     }
   }
 
@@ -250,6 +274,7 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.logger.log(`暗盘索引建立完成: ${mapping.size} 只股票`);
+    this.lastRefreshTime = Date.now();
     return { indexed: mapping.size, date: targetDate, pages: totalPages };
   }
 
@@ -355,8 +380,35 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
     const missing = codes.filter((c) => !freshData.has(c));
     if (missing.length > 0) {
       const fallback = await this.indexRepo.find({ where: { code: In(missing) } });
-      for (const idx of fallback) {
-        freshData.set(idx.code, this.entityToData(idx));
+
+      const now = Date.now();
+      if (fallback.length > 0 && now - this.lastRefreshTime > 5 * 60 * 1000) {
+        this.logger.log(
+          `检测到 ${fallback.length} 只股票已从索引页面飘移（如 ${fallback.map((f) => f.code).join(', ')}），触发索引重建...`,
+        );
+        try {
+          await this.refreshIndex(targetDate);
+          const refetchedData = await this.fetchFreshForCodes(codes, targetDate);
+          for (const [c, d] of refetchedData.entries()) {
+            freshData.set(c, d);
+          }
+          const newMissing = codes.filter((c) => !freshData.has(c));
+          if (newMissing.length > 0) {
+            const newFallback = await this.indexRepo.find({ where: { code: In(newMissing) } });
+            for (const idx of newFallback) {
+              freshData.set(idx.code, this.entityToData(idx));
+            }
+          }
+        } catch (err) {
+          this.logger.warn('飘移后重建索引或二次拉取失败', err);
+          for (const idx of fallback) {
+            freshData.set(idx.code, this.entityToData(idx));
+          }
+        }
+      } else {
+        for (const idx of fallback) {
+          freshData.set(idx.code, this.entityToData(idx));
+        }
       }
     }
 

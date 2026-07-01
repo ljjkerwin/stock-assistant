@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, Empty, Modal, Typography } from 'antd';
-import { BellOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import { Badge, Button, Empty, Modal, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { BellOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useMonitorStore } from '../../store/monitorStore';
 import { useMonitorSSE } from '../../hooks/useMonitorSSE';
-import type { MaPeriod, MonitorMessage, MonitorType } from '../../types';
+import type { MaPeriod, MonitorMessage, MonitorRule, MonitorType } from '../../types';
 import styles from './MonitorCenter.module.css';
 
 function conditionText(
@@ -42,14 +43,14 @@ function fmtTime(ts: number): string {
   return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function MessageItem({ msg }: { msg: MonitorMessage }) {
+function MessageItem({ msg, onClickStock }: { msg: MonitorMessage; onClickStock: () => void }) {
   const isMA = msg.type === 'ma_cross_above' || msg.type === 'ma_cross_below';
   return (
     <div className={`${styles.listItem} ${msg.read ? styles.read : ''}`}>
       <div className={styles.itemRow}>
-        <Typography.Text strong style={{ fontSize: 13 }}>
+        <Typography.Link strong style={{ fontSize: 13 }} onClick={onClickStock}>
           {msg.stockName}
-        </Typography.Text>
+        </Typography.Link>
         <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1, marginLeft: 4 }}>
           {msg.stockCode} · {msg.stockMarket === 'HK' ? '港股' : 'A股'}
         </Typography.Text>
@@ -66,14 +67,70 @@ function MessageItem({ msg }: { msg: MonitorMessage }) {
   );
 }
 
+function RuleItem({
+  rule,
+  onToggle,
+  onDelete,
+  onClickStock,
+}: {
+  rule: MonitorRule;
+  onToggle: () => void;
+  onDelete: () => void;
+  onClickStock: () => void;
+}) {
+  return (
+    <div className={styles.ruleItem}>
+      <div className={styles.itemRow}>
+        <Typography.Link strong style={{ fontSize: 13 }} onClick={onClickStock}>
+          {rule.stockName}
+        </Typography.Link>
+        <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1, marginLeft: 4 }}>
+          {rule.stockCode} · {rule.stockMarket === 'HK' ? '港股' : 'A股'}
+        </Typography.Text>
+        <Tooltip title={rule.active ? '暂停监控' : '重新激活'}>
+          <Tag
+            color={rule.active ? 'success' : 'default'}
+            style={{ cursor: 'pointer', marginRight: 4 }}
+            onClick={onToggle}
+          >
+            {rule.active ? '监控中' : '已暂停'}
+          </Tag>
+        </Tooltip>
+        <Tooltip title="删除规则">
+          <Button
+            type="text"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={onDelete}
+          />
+        </Tooltip>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+        <Typography.Text style={{ fontSize: 12 }} type="secondary">
+          {conditionText(rule.type, rule.targetPrice, rule.maPeriod, rule.klinePeriod)}
+        </Typography.Text>
+        {rule.lastTriggeredAt && (
+          <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            上次触发 {fmtTime(rule.lastTriggeredAt)}
+          </Typography.Text>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function MonitorCenter() {
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('messages');
   const [loadingMore, setLoadingMore] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useMonitorSSE();
 
   const {
+    rules,
     messages,
     messagesTotal,
     messagesPage,
@@ -81,6 +138,8 @@ export default function MonitorCenter() {
     fetchRules,
     fetchMessages,
     fetchUnreadCount,
+    deleteRule,
+    toggleRule,
   } = useMonitorStore();
 
   useEffect(() => {
@@ -90,6 +149,7 @@ export default function MonitorCenter() {
 
   const handleOpen = () => {
     setOpen(true);
+    setActiveTab('messages');
     void fetchMessages(1);
   };
 
@@ -112,16 +172,97 @@ export default function MonitorCenter() {
     };
     el.addEventListener('scroll', onScroll);
     return () => el.removeEventListener('scroll', onScroll);
-  }, [hasMore, messagesPage, fetchMessages]);
+  }, [hasMore, messagesPage, fetchMessages, activeTab, open]);
+
+  const sortedRules = [...rules].sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    return b.createdAt - a.createdAt;
+  });
+
+  const tabItems = [
+    {
+      key: 'messages',
+      label: (
+        <Badge count={unreadCount} size="small" offset={[10, -2]}>
+          消息通知
+        </Badge>
+      ),
+      children: (
+        <>
+          {messages.length > 0 && (
+            <div className={styles.tabToolbar}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                共 {messagesTotal} 条
+              </Typography.Text>
+            </div>
+          )}
+          {messages.length === 0 ? (
+            <Empty
+              description="暂无消息"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              style={{ marginTop: 32, marginBottom: 32 }}
+            />
+          ) : (
+            <div className={styles.scrollList} ref={scrollRef}>
+              {messages.map((msg) => (
+                <MessageItem
+                  key={msg.id}
+                  msg={msg}
+                  onClickStock={() => {
+                    navigate(`/stock/${msg.stockMarket}/${msg.stockCode}`);
+                    setOpen(false);
+                  }}
+                />
+              ))}
+              {hasMore && loadingMore && (
+                <div style={{ textAlign: 'center', padding: '8px 0', color: '#999', fontSize: 12 }}>
+                  加载中…
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'rules',
+      label: `监控规则 (${rules.length})`,
+      children: (
+        <>
+          {rules.length === 0 ? (
+            <Empty
+              description="暂无监控规则"
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              style={{ marginTop: 32, marginBottom: 32 }}
+            />
+          ) : (
+            <div className={styles.scrollList}>
+              {sortedRules.map((rule) => (
+                <RuleItem
+                  key={rule.id}
+                  rule={rule}
+                  onToggle={() => void toggleRule(rule.id, !rule.active)}
+                  onDelete={() => void deleteRule(rule.id)}
+                  onClickStock={() => {
+                    navigate(`/stock/${rule.stockMarket}/${rule.stockCode}`);
+                    setOpen(false);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      ),
+    },
+  ];
 
   return (
     <>
       <div className={styles.trigger}>
-        <Badge count={unreadCount} size="small" offset={[-4, 4]}>
+        <Badge count={unreadCount} size="small" offset={[-2, 2]}>
           <Button
-            type="primary"
-            shape="circle"
-            size="large"
+            type="text"
+            size="small"
             icon={<BellOutlined />}
             onClick={handleOpen}
           />
@@ -136,31 +277,11 @@ export default function MonitorCenter() {
         width={480}
         styles={{ body: { padding: '8px 16px' } }}
       >
-        {messages.length > 0 && (
-          <div className={styles.tabToolbar}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              共 {messagesTotal} 条
-            </Typography.Text>
-          </div>
-        )}
-        {messages.length === 0 ? (
-          <Empty
-            description="暂无消息"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            style={{ marginTop: 32 }}
-          />
-        ) : (
-          <div className={styles.scrollList} ref={scrollRef}>
-            {messages.map((msg) => (
-              <MessageItem key={msg.id} msg={msg} />
-            ))}
-            {hasMore && loadingMore && (
-              <div style={{ textAlign: 'center', padding: '8px 0', color: '#999', fontSize: 12 }}>
-                加载中…
-              </div>
-            )}
-          </div>
-        )}
+        <Tabs
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          items={tabItems}
+        />
       </Modal>
     </>
   );
