@@ -1,13 +1,6 @@
 .trigger {
-  position: fixed;
-  bottom: 20px;
-  /* 居中于 200px 宽的 sidebar */
-  left: 0;
-  width: 200px;
-  display: flex;
-  justify-content: center;
-  z-index: 1000;
-  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
 }
 
 .trigger > * {

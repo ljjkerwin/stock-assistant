@@ -117,11 +117,10 @@ export default function MonitorCenter() {
   return (
     <>
       <div className={styles.trigger}>
-        <Badge count={unreadCount} size="small" offset={[-4, 4]}>
+        <Badge count={unreadCount} size="small" offset={[-2, 2]}>
           <Button
-            type="primary"
-            shape="circle"
-            size="large"
+            type="text"
+            size="small"
             icon={<BellOutlined />}
             onClick={handleOpen}
           />

@@ -16,6 +16,7 @@ import { useWatchListStore } from '../../store/watchListStore';
 import { useAuthStore } from '../../store/authStore';
 import StockSearch from '../StockSearch';
 import FundSearch from '../FundSearch';
+import MonitorCenter from '../MonitorCenter';
 import type { Stock, BoardType } from '../../types';
 import styles from './Sidebar.module.css';
 
@@ -245,12 +246,17 @@ export default function Sidebar() {
       )}
 
       <div className={styles.userBar}>
-        <Text type="secondary" ellipsis>
-          <UserOutlined /> {username}
-        </Text>
-        <Tooltip title="退出登录">
-          <Button type="text" size="small" icon={<LogoutOutlined />} onClick={logout} />
-        </Tooltip>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Text type="secondary" ellipsis>
+            <UserOutlined /> {username}
+          </Text>
+        </div>
+        <Space size={4}>
+          <MonitorCenter />
+          <Tooltip title="退出登录">
+            <Button type="text" size="small" icon={<LogoutOutlined />} onClick={logout} />
+          </Tooltip>
+        </Space>
       </div>
 
       <Modal

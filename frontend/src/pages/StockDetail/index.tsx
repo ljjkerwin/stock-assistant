@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Typography, Descriptions, Spin, Tag, Button, Tooltip } from 'antd';
+import { Typography, Spin, Tag, Button, Tooltip } from 'antd';
 import { StarOutlined, StarFilled, LineChartOutlined } from '@ant-design/icons';
 import { stocksApi, darktradeApi } from '../../api/stock';
 import KLineChart from '../../components/KLineChart';
@@ -123,29 +123,34 @@ export default function StockDetail() {
 
       <Spin spinning={loading}>
         {info && (
-          <Descriptions size="small" column={5} className={styles.info}>
-            <Descriptions.Item label="现价">
+          <div className={styles.info}>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>现价</span>
               <span style={{ color: isUp ? '#ef5350' : isDown ? '#26a69a' : undefined, fontWeight: 600 }}>
                 {info.price != null ? info.price.toFixed(2) : '-'}
               </span>
-            </Descriptions.Item>
-            <Descriptions.Item label="涨跌幅">
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>涨跌幅</span>
               <span style={{ color: isUp ? '#ef5350' : isDown ? '#26a69a' : undefined }}>
                 {info.change_pct != null
                   ? `${isUp ? '+' : ''}${info.change_pct.toFixed(2)}%`
                   : '-'}
               </span>
-            </Descriptions.Item>
-            <Descriptions.Item label="成交额">
-              {formatNumber(info.turnover)}
-            </Descriptions.Item>
-            <Descriptions.Item label="市值">
-              {formatNumber(info.market_cap)}
-            </Descriptions.Item>
-            <Descriptions.Item label="PE">
-              {info.pe != null ? info.pe.toFixed(2) : '-'}
-            </Descriptions.Item>
-          </Descriptions>
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>成交额</span>
+              <span>{formatNumber(info.turnover)}</span>
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>市值</span>
+              <span>{formatNumber(info.market_cap)}</span>
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>PE</span>
+              <span>{info.pe != null ? info.pe.toFixed(2) : '-'}</span>
+            </div>
+          </div>
         )}
       </Spin>
 

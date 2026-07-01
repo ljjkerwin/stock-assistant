@@ -50,3 +50,13 @@
 - 标的列表（`stockLists`/`fundLists`）及当前选中列表 id（`currentStockListId`/`currentFundListId`）通过 `watchListStore` 管理；当前选中列表 id 按 boardType 分别缓存于 localStorage（key `watchList:current:stock` / `watchList:current:fund`），`fetchLists` 拉取列表后优先沿用已选 id，其次回退到 localStorage 中保存的 id（若仍存在于新列表中），都不满足则回退到 `isDefault` 列表或第一个列表；`setCurrentList`/`createList`/`deleteList` 变更选中列表时同步写入 localStorage，刷新页面后默认展示上次选中的列表
 - 监控规则和消息通过 `monitorStore` 管理，规则数据从后端 API 获取（不用 localStorage）
 - 组件不直接调用 API，通过 store action 触发请求
+
+---
+
+## 移动端响应式布局
+
+- **菜单折叠机制**：移动端视口（屏幕宽度 ≤ 768px）下，左侧侧边栏（Sidebar）默认收起，并通过 `fixed` 浮动遮罩形式在屏幕左侧隐藏。
+- **左栏入口**：移除了顶部固定的标题栏以增加页面可视面积。改在左下角提供一个圆形的菜单展开悬浮按钮（`menuToggle`），支持沿 Y 轴拖拽位置以防遮挡图表元素，最高可拖动到屏幕高度的一半。
+- **侧滑与折叠**：点击菜单展开按钮后，侧边栏以侧滑动画形式展出，并展示背景半透明遮罩（`overlay`）。
+- **自动收起**：用户点击遮罩区域，或在侧边栏中点击任意导航项（或个股）进行路由切换时，侧边栏会自动折叠收起。
+

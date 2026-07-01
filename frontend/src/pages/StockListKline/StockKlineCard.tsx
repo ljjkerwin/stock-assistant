@@ -38,7 +38,7 @@ interface Props {
   onDateResolved?: (date: string) => void;
 }
 
-const MAIN_HEIGHT = 200;
+const MAIN_HEIGHT = 150;
 // 分时图全天时间槽总数：上午 121(09:30–11:30) + 下午 120(13:01–15:00)，午休不画
 const TIMESHARE_SLOTS = 241;
 const VOLUME_HEIGHT = 50;
