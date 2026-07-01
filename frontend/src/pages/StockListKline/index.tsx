@@ -50,6 +50,20 @@ function loadShowDarkTrade(): boolean {
   try { return localStorage.getItem('stockListKline:showDarkTrade') === 'true'; } catch { return false; }
 }
 
+function isInTradingHours(market: 'A' | 'HK'): boolean {
+  const now = new Date();
+  const utc8 = new Date(now.getTime() + 8 * 3600 * 1000);
+  const h = utc8.getUTCHours();
+  const m = utc8.getUTCMinutes();
+  const day = utc8.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const t = h * 60 + m;
+  if (market === 'A') {
+    return (t >= 570 && t < 690) || (t >= 780 && t < 900);
+  }
+  return (t >= 570 && t < 720) || (t >= 780 && t < 960);
+}
+
 export default function StockListKline() {
   const { itemsByList, fetchList } = useFavoritesStore();
   const { currentStockListId, stockLists, fetchLists } = useWatchListStore();
@@ -124,21 +138,34 @@ export default function StockListKline() {
   const listName = stockLists.find((l) => l.id === currentStockListId)?.name ?? '';
   const stockItems = items.filter((s) => s.market !== 'FUND');
 
+  // 批量拉取/刷新标的的暗盘最新数据及快照，交易时间内每 30 秒轮询更新
   useEffect(() => {
-    if (stockItems.length === 0 || !klineDate) return;
-    const codes = stockItems.map((s) => s.code);
-    darktradeApi.getBatch(codes, klineDate).then(setDarkTradeMap);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStockListId, itemsByList, klineDate]);
-
-  useEffect(() => {
-    if (!showDarkTrade || stockItems.length === 0 || !klineDate) {
+    if (stockItems.length === 0 || !klineDate) {
+      setDarkTradeMap({});
       setDarkSnapshotMap({});
       return;
     }
-    const codes = stockItems.filter((s) => s.market === 'A').map((s) => s.code);
-    if (codes.length === 0) return;
-    darktradeApi.getSnapshotsBatch(codes, klineDate).then(setDarkSnapshotMap);
+    const codes = stockItems.map((s) => s.code);
+    const aCodes = stockItems.filter((s) => s.market === 'A').map((s) => s.code);
+
+    const fetchData = () => {
+      darktradeApi.getBatch(codes, klineDate).then(setDarkTradeMap);
+      if (showDarkTrade && aCodes.length > 0) {
+        darktradeApi.getSnapshotsBatch(aCodes, klineDate).then(setDarkSnapshotMap);
+      } else {
+        setDarkSnapshotMap({});
+      }
+    };
+
+    fetchData();
+
+    const timer = setInterval(() => {
+      if (isInTradingHours('A')) {
+        fetchData();
+      }
+    }, 30000);
+
+    return () => clearInterval(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDarkTrade, currentStockListId, itemsByList, klineDate]);
 

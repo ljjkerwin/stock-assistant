@@ -447,11 +447,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
           `<span style="color:${LJJ_MA_COLOR}">KMA:${a?.kma ? '✓' : '✗'}</span>`;
       }
 
-      if (darkTradeLegendRef.current && darkTradeSnapshotsRef.current.length > 0) {
+      if (darkTradeLegendRef.current) {
         // 快照为当日分钟粒度且按时间升序：取「不晚于光标所在分钟」的最后一条（即截至当前的累计值）
         const hovered = bar?.time;
         let snap: DarkTradeSnapshot | undefined;
-        if (hovered) {
+        if (hovered && darkTradeSnapshotsRef.current.length > 0) {
           for (const s of darkTradeSnapshotsRef.current) {
             if (s.time <= hovered) snap = s;
             else break;
@@ -467,6 +467,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
             `明盘&nbsp;<span style="color:${DT_LIGHT_COLOR}">${light}</span>` +
             `&nbsp;&nbsp;暗盘&nbsp;<span style="color:${DT_DARK_COLOR}">${dark}</span>` +
             `&nbsp;&nbsp;总&nbsp;<span style="color:${totalColor}">${total}</span>`;
+        } else {
+          darkTradeLegendRef.current.innerHTML =
+            `明盘&nbsp;<span style="color:${DT_LIGHT_COLOR}">--</span>` +
+            `&nbsp;&nbsp;暗盘&nbsp;<span style="color:${DT_DARK_COLOR}">--</span>` +
+            `&nbsp;&nbsp;总&nbsp;<span style="color:${DT_TOTAL_COLOR}">--</span>`;
         }
       }
     }

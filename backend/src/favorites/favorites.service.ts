@@ -45,8 +45,12 @@ export class FavoritesService {
       market: data.market,
     });
     if (existing) return existing;
-    const count = await this.repo.count({ where: { watchListId: data.watchListId } });
-    const fav = this.repo.create({ ...data, sortOrder: count });
+    const lastFav = await this.repo.findOne({
+      where: { watchListId: data.watchListId },
+      order: { sortOrder: 'DESC' },
+    });
+    const nextSortOrder = lastFav ? lastFav.sortOrder + 1 : 0;
+    const fav = this.repo.create({ ...data, sortOrder: nextSortOrder });
     return this.repo.save(fav);
   }
 

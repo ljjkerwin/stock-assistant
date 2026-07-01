@@ -308,6 +308,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
 
   // Effect 3: 交易时段内 30 秒轮询刷新（只在数据实际变化时触发重绘）
   useEffect(() => {
+    if (period === 'timeshare') return;
     const timer = setInterval(() => {
       if (!isInTradingHours(market)) return;
       klineApi

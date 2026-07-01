@@ -18,6 +18,20 @@ function formatNumber(n: number | null, digits = 2): string {
   return n.toFixed(digits);
 }
 
+function isInTradingHours(market: 'A' | 'HK'): boolean {
+  const now = new Date();
+  const utc8 = new Date(now.getTime() + 8 * 3600 * 1000);
+  const h = utc8.getUTCHours();
+  const m = utc8.getUTCMinutes();
+  const day = utc8.getUTCDay();
+  if (day === 0 || day === 6) return false;
+  const t = h * 60 + m;
+  if (market === 'A') {
+    return (t >= 570 && t < 690) || (t >= 780 && t < 900);
+  }
+  return (t >= 570 && t < 720) || (t >= 780 && t < 960);
+}
+
 export default function StockDetail() {
   const { market, code } = useParams<{ market: string; code: string }>();
   const navigate = useNavigate();
@@ -60,13 +74,27 @@ export default function StockDetail() {
   }, [market, code]);
 
   // 按 K 线实际交易日拉取当日分钟粒度暗盘快照（与分时图同一交易日）
+  // 交易时间内每 30 秒轮询，确保暗盘快照数据实时更新且副图能动态画线与查询最新 legend
   useEffect(() => {
     if (market !== 'A' || !code || !klineDate) return;
-    darktradeApi
-      .getBatch([code], klineDate)
-      .then(() => darktradeApi.getSnapshotsBatch([code], klineDate))
-      .then((map) => setDtSnapshots(map[code] ?? []))
-      .catch(() => { });
+
+    const fetchSnapshots = () => {
+      darktradeApi
+        .getBatch([code], klineDate)
+        .then(() => darktradeApi.getSnapshotsBatch([code], klineDate))
+        .then((map) => setDtSnapshots(map[code] ?? []))
+        .catch(() => { });
+    };
+
+    fetchSnapshots();
+
+    const timer = setInterval(() => {
+      if (isInTradingHours(market as 'A' | 'HK')) {
+        fetchSnapshots();
+      }
+    }, 30000);
+
+    return () => clearInterval(timer);
   }, [market, code, klineDate]);
 
   const isUp = info?.change_pct != null && info.change_pct > 0;
