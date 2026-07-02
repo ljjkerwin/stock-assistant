@@ -13,7 +13,7 @@ import {
 } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, SeriesType, LogicalRange, Time, LineData, HistogramData } from 'lightweight-charts';
 import { klineApi } from '../../api/stock';
-import type { DarkTradeData, DarkTradeSnapshot, KlineBar, KlinePeriod } from '../../types';
+import type { DarkTradeData, DarkTradeSnapshot, KlineBar, KlinePeriod, StockInfo } from '../../types';
 import styles from './StockListKline.module.css';
 
 export type OverlayMode = 'ma' | 'boll';
@@ -34,6 +34,7 @@ interface Props {
   showDarkTrade?: boolean;
   darkTradeData?: DarkTradeData | null;
   darkTradeSnapshots?: DarkTradeSnapshot[];
+  stockInfo?: StockInfo;
   onRangeChange?: (range: LogicalRange) => void;
   onDateResolved?: (date: string) => void;
 }
@@ -138,7 +139,7 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
 }
 
 const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
-  { code, market, name, period, overlay, showVolume, showMacd, showRsi, showDarkTrade, darkTradeData, darkTradeSnapshots, onRangeChange, onDateResolved },
+  { code, market, name, period, overlay, showVolume, showMacd, showRsi, showDarkTrade, darkTradeData, darkTradeSnapshots, stockInfo, onRangeChange, onDateResolved },
   ref,
 ) {
   const [loading, setLoading] = useState(true);
@@ -147,7 +148,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   const darkCapital = darkTradeData?.darkCapital ?? null;
   const lightCapital = darkTradeData?.lightCapital ?? null;
 
-  const todayChange = useMemo(() => {
+  const barsChange = useMemo(() => {
     if (bars.length === 0) return null;
     if (period === 'daily' || period === 'weekly') {
       return bars[bars.length - 1].changePercent;
@@ -155,13 +156,15 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     // 分时/分钟线：取最后一个交易日的所有 bar，算当日开盘→收盘涨幅
     const lastDate = bars[bars.length - 1].time.slice(0, 10);
     const dayBars = bars.filter((b) => b.time.startsWith(lastDate));
+    if (dayBars.length === 0) return null;
     const open = dayBars[0].open;
     const close = dayBars[dayBars.length - 1].close;
     if (!open) return null;
     return ((close - open) / open) * 100;
   }, [bars, period]);
 
-  const currentPrice = bars.length > 0 ? bars[bars.length - 1].close : null;
+  const currentPrice = stockInfo?.price ?? (bars.length > 0 ? bars[bars.length - 1].close : null);
+  const todayChange = stockInfo?.change_pct ?? barsChange;
 
   const mainRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);

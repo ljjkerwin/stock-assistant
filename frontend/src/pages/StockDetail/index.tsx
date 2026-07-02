@@ -67,9 +67,8 @@ export default function StockDetail() {
       .finally(() => setLoading(false));
   }, [market, code]);
 
-  // 切换股票时重置当日日期与快照，等待 K 线图上报实际交易日
+  // 切换股票时重置快照，等待新数据加载
   useEffect(() => {
-    setKlineDate(null);
     setDtSnapshots([]);
   }, [market, code]);
 
@@ -80,8 +79,7 @@ export default function StockDetail() {
 
     const fetchSnapshots = () => {
       darktradeApi
-        .getBatch([code], klineDate)
-        .then(() => darktradeApi.getSnapshotsBatch([code], klineDate))
+        .getSnapshotsBatch([code], klineDate)
         .then((map) => setDtSnapshots(map[code] ?? []))
         .catch(() => { });
     };

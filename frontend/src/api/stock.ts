@@ -78,6 +78,16 @@ export const stocksApi = {
 
   getInfo: (market: 'A' | 'HK', code: string): Promise<StockInfo> =>
     api.get<StockInfo>(`/stocks/${market}/${code}`).then((r) => r.data),
+
+  getBatch: (symbols: string[]): Promise<Record<string, StockInfo>> =>
+    symbols.length === 0
+      ? Promise.resolve({})
+      : api
+          .get<Record<string, StockInfo>>('/stocks/batch', {
+            params: { symbols: symbols.join(',') },
+          })
+          .then((r) => r.data)
+          .catch(() => ({})),
 };
 
 export const klineApi = {

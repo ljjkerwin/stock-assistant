@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { MemCache, tradingTtl } from '../cache';
 
@@ -7,6 +7,12 @@ const BROWSER_HEADERS = {
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
   Referer: 'https://quote.eastmoney.com/',
   Origin: 'https://quote.eastmoney.com',
+};
+
+const SINA_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  Referer: 'https://finance.sina.com.cn/',
 };
 
 export interface StockInfo {
@@ -36,30 +42,12 @@ interface EastmoneySearchResponse {
   QuotationCodeTable?: { Data?: EastmoneySearchItem[] };
 }
 
-interface EastmoneyQuoteData {
-  f43?: number | string;
-  f47?: number | string;
-  f48?: number | string;
-  f58?: string;
-  f116?: number | string;
-  f167?: number | string;
-  f170?: number | string;
-}
-
-interface EastmoneyQuoteResponse {
-  data?: EastmoneyQuoteData;
-}
-
-function numOrNull(v: number | string | undefined): number | null {
-  if (v == null || v === '-') return null;
-  return typeof v === 'number' ? v : parseFloat(String(v));
-}
-
 const INFO_TTL_TRADING = 30_000; // 盘中 30s
 const INFO_TTL_OFF_HOURS = 10 * 60_000; // 盘外 10min
 
 @Injectable()
 export class StocksService {
+  private readonly logger = new Logger(StocksService.name);
   private infoCache = new MemCache<StockInfo>();
 
   async search(q: string): Promise<SearchResult[]> {
@@ -94,6 +82,100 @@ export class StocksService {
     return list;
   }
 
+  async getBatchInfo(symbols: string[]): Promise<Record<string, StockInfo>> {
+    if (symbols.length === 0) return {};
+
+    const result: Record<string, StockInfo> = {};
+    const missingSymbols: { market: 'A' | 'HK'; code: string; key: string; sinaSymbol: string }[] =
+      [];
+
+    for (const sym of symbols) {
+      const parts = sym.split(':');
+      if (parts.length !== 2) continue;
+      const market = parts[0] as 'A' | 'HK';
+      const code = parts[1];
+      const key = `${market}:${code}`;
+      const cached = this.infoCache.get(key);
+      if (cached) {
+        result[key] = cached;
+      } else {
+        const sinaSymbol =
+          market === 'HK'
+            ? 'hk' + code.padStart(5, '0')
+            : (code.startsWith('6') || code.startsWith('5') ? 'sh' : 'sz') + code;
+        missingSymbols.push({ market, code, key, sinaSymbol });
+      }
+    }
+
+    if (missingSymbols.length > 0) {
+      const sinaSymbolsStr = missingSymbols.map((item) => item.sinaSymbol).join(',');
+      const url = `https://hq.sinajs.cn/list=${sinaSymbolsStr}`;
+
+      try {
+        const res = await axios.get<ArrayBuffer>(url, {
+          responseType: 'arraybuffer',
+          timeout: 5000,
+          headers: SINA_HEADERS,
+        });
+        const text = new TextDecoder('gbk').decode(res.data);
+        const lines = text.split('\n').filter((l) => l.trim());
+
+        for (const item of missingSymbols) {
+          const line = lines.find((l) => l.includes(`hq_str_${item.sinaSymbol}=`));
+          if (!line) continue;
+
+          const match = line.match(/"([^"]*)"/);
+          if (!match) continue;
+          const csv = match[1];
+          const r = csv.split(',');
+          if (r.length < 10) continue;
+
+          let info: StockInfo;
+          if (item.market === 'A') {
+            const name = r[0];
+            const preClose = parseFloat(r[2]);
+            const price = parseFloat(r[3]);
+            const change_pct =
+              preClose > 0 ? parseFloat((((price - preClose) / preClose) * 100).toFixed(2)) : null;
+            const turnover = parseFloat(r[9]);
+            info = {
+              code: item.code,
+              name,
+              market: 'A',
+              price: isNaN(price) || price === 0 ? null : price,
+              change_pct,
+              turnover: isNaN(turnover) ? null : turnover,
+              market_cap: null,
+              pe: null,
+            };
+          } else {
+            const name = r[1];
+            const price = parseFloat(r[6]);
+            const change_pct = parseFloat(r[8]);
+            const turnover = parseFloat(r[11]);
+            info = {
+              code: item.code,
+              name,
+              market: 'HK',
+              price: isNaN(price) || price === 0 ? null : price,
+              change_pct: isNaN(change_pct) ? null : change_pct,
+              turnover: isNaN(turnover) ? null : turnover,
+              market_cap: null,
+              pe: null,
+            };
+          }
+
+          result[item.key] = info;
+          this.infoCache.set(item.key, info, tradingTtl(INFO_TTL_TRADING, INFO_TTL_OFF_HOURS));
+        }
+      } catch (err) {
+        this.logger.error(`Failed to batch fetch Sina quotes: ${(err as Error).message}`);
+      }
+    }
+
+    return result;
+  }
+
   async getInfo(market: 'A' | 'HK', code: string): Promise<StockInfo> {
     const key = `${market}:${code}`;
     const cached = this.infoCache.get(key);
@@ -104,72 +186,80 @@ export class StocksService {
   }
 
   private async getInfoAShare(code: string): Promise<StockInfo> {
-    const secid = this.buildAShareSecid(code);
-    const url = `https://push2delay.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f47,f48,f57,f58,f116,f167,f170`;
+    const symbol = (code.startsWith('6') || code.startsWith('5') ? 'sh' : 'sz') + code;
+    const url = `https://hq.sinajs.cn/list=${symbol}`;
     const res = await axios
-      .get<EastmoneyQuoteResponse>(url, { timeout: 5000, headers: BROWSER_HEADERS })
+      .get<ArrayBuffer>(url, { responseType: 'arraybuffer', timeout: 5000, headers: SINA_HEADERS })
       .catch((err: Error) => {
         throw new HttpException(
           `Failed to fetch stock info: ${err.message}`,
           HttpStatus.BAD_GATEWAY,
         );
       });
-    const d = res.data?.data ?? {};
-
-    const f43 = numOrNull(d.f43);
-    const f47 = numOrNull(d.f47);
-    const f48 = numOrNull(d.f48);
-    const f116 = numOrNull(d.f116);
-    const f167 = numOrNull(d.f167);
-    const f170 = numOrNull(d.f170);
-
-    const price = f43 != null ? f43 / 100 : null;
-    const change_pct = f170 != null ? f170 / 100 : f47 != null ? f47 / 100 : null;
-    const market_cap = f116;
-    const pe = f167 != null ? f167 / 100 : null;
-    const turnover = f48;
+    const text = new TextDecoder('gbk').decode(res.data);
+    const match = text.match(/"([^"]*)"/);
+    if (!match) {
+      throw new HttpException('Invalid Sina response format', HttpStatus.BAD_GATEWAY);
+    }
+    const csv = match[1];
+    const r = csv.split(',');
+    if (r.length < 10) {
+      throw new HttpException('Invalid Sina csv data', HttpStatus.BAD_GATEWAY);
+    }
+    const name = r[0];
+    const preClose = parseFloat(r[2]);
+    const price = parseFloat(r[3]); // 最新价
+    const change_pct =
+      preClose > 0 ? parseFloat((((price - preClose) / preClose) * 100).toFixed(2)) : null;
+    const turnover = parseFloat(r[9]); // 成交额 (元)
 
     return {
       code,
-      name: d.f58 ?? '',
+      name,
       market: 'A',
-      price,
+      price: isNaN(price) || price === 0 ? null : price,
       change_pct,
-      turnover,
-      market_cap,
-      pe,
+      turnover: isNaN(turnover) ? null : turnover,
+      market_cap: null,
+      pe: null,
     };
   }
 
   private async getInfoHK(code: string): Promise<StockInfo> {
-    const secid = `116.${code.padStart(5, '0')}`;
-    const url = `https://push2delay.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f47,f48,f58,f116,f167,f170`;
+    const symbol = `hk` + code.padStart(5, '0');
+    const url = `https://hq.sinajs.cn/list=${symbol}`;
     const res = await axios
-      .get<EastmoneyQuoteResponse>(url, { timeout: 5000, headers: BROWSER_HEADERS })
+      .get<ArrayBuffer>(url, { responseType: 'arraybuffer', timeout: 5000, headers: SINA_HEADERS })
       .catch((err: Error) => {
         throw new HttpException(
           `Failed to fetch HK stock info: ${err.message}`,
           HttpStatus.BAD_GATEWAY,
         );
       });
-    const d = res.data?.data ?? {};
-    const f43 = numOrNull(d.f43);
-    const f167 = numOrNull(d.f167);
-    const f170 = numOrNull(d.f170);
+    const text = new TextDecoder('gbk').decode(res.data);
+    const match = text.match(/"([^"]*)"/);
+    if (!match) {
+      throw new HttpException('Invalid Sina response format', HttpStatus.BAD_GATEWAY);
+    }
+    const csv = match[1];
+    const r = csv.split(',');
+    if (r.length < 10) {
+      throw new HttpException('Invalid Sina csv data', HttpStatus.BAD_GATEWAY);
+    }
+    const name = r[1]; // 港股中文名称在索引 1 处
+    const price = parseFloat(r[6]); // 最新价在索引 6
+    const change_pct = parseFloat(r[8]); // 涨跌幅在索引 8
+    const turnover = parseFloat(r[11]); // 成交额在索引 11
+
     return {
       code,
-      name: d.f58 ?? '',
+      name,
       market: 'HK',
-      price: f43 != null ? f43 / 1000 : null,
-      change_pct: f170 != null ? f170 / 100 : null,
-      turnover: numOrNull(d.f48),
-      market_cap: numOrNull(d.f116),
-      pe: f167 != null ? f167 / 10 : null,
+      price: isNaN(price) || price === 0 ? null : price,
+      change_pct: isNaN(change_pct) ? null : change_pct,
+      turnover: isNaN(turnover) ? null : turnover,
+      market_cap: null,
+      pe: null,
     };
-  }
-
-  private buildAShareSecid(code: string): string {
-    const prefix = code.startsWith('6') || code.startsWith('5') ? '1' : '0';
-    return `${prefix}.${code}`;
   }
 }

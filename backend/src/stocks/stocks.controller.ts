@@ -10,6 +10,12 @@ export class StocksController {
     return this.service.search(q ?? '');
   }
 
+  @Get('batch')
+  getBatchInfo(@Query('symbols') symbolsStr: string) {
+    const symbols = symbolsStr ? symbolsStr.split(',').filter(Boolean) : [];
+    return this.service.getBatchInfo(symbols);
+  }
+
   @Get(':market/:code')
   getInfo(@Param('market') market: 'A' | 'HK', @Param('code') code: string) {
     return this.service.getInfo(market, code);

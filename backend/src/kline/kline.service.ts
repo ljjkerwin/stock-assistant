@@ -2,6 +2,42 @@ import { Injectable } from '@nestjs/common';
 import axios from 'axios';
 import { yahooGet } from '../yahoo-session';
 import { MemCache, tradingTtl } from '../cache';
+export class RequestQueue {
+  private queue: (() => Promise<unknown>)[] = [];
+  private activeCount = 0;
+  private readonly concurrency: number;
+
+  constructor(concurrency = 1) {
+    this.concurrency = concurrency;
+  }
+
+  enqueue<T>(task: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const res = await task();
+          resolve(res);
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
+      });
+      this.next();
+    });
+  }
+
+  private next() {
+    if (this.activeCount >= this.concurrency || this.queue.length === 0) {
+      return;
+    }
+    const task = this.queue.shift();
+    if (!task) return;
+    this.activeCount++;
+    void task().finally(() => {
+      this.activeCount--;
+      this.next();
+    });
+  }
+}
 
 // ── 腾讯财经（A股/ETF 全周期 + 港股日/周线；日/周线前复权 qfq）────────────────
 //
@@ -12,6 +48,12 @@ const TENCENT_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   Referer: 'https://gu.qq.com/',
+};
+
+const EASTMONEY_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  Referer: 'https://quote.eastmoney.com/',
 };
 
 const TENCENT_FQKLINE_URL = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get'; // 日/周线，支持 qfq 前复权
@@ -169,6 +211,7 @@ const OFF_HOURS_TTL = 60 * 60_000; // 1h
 @Injectable()
 export class KlineService {
   private klineCache = new MemCache<KlineBar[]>();
+  private timeshareQueue = new RequestQueue(1);
 
   async getKline(
     market: 'A' | 'HK',
@@ -207,12 +250,71 @@ export class KlineService {
     return { code, market, period, data: filteredBars };
   }
 
+  private buildEastmoneySecid(market: 'A' | 'HK', code: string): string {
+    if (market === 'HK') {
+      return `116.${code.padStart(5, '0')}`;
+    }
+    const prefix = code.startsWith('6') || code.startsWith('5') ? '1' : '0';
+    return `${prefix}.${code}`;
+  }
+
+  private async fetchEastmoneyTimeshare(market: 'A' | 'HK', code: string): Promise<RawBar[]> {
+    const secid = this.buildEastmoneySecid(market, code);
+    const url = `http://push2.eastmoney.com/api/qt/stock/trends2/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0`;
+    const resp = await this.get<{ data?: { trends?: string[] } }>(url, EASTMONEY_HEADERS);
+    const trends = resp?.data?.trends;
+    if (!Array.isArray(trends)) return [];
+
+    const bars: RawBar[] = [];
+    for (const trend of trends) {
+      const parts = trend.split(',');
+      if (parts.length < 8) continue;
+      const time = parts[0]; // YYYY-MM-DD HH:MM
+      const open = parseFloat(parts[1]);
+      const close = parseFloat(parts[2]);
+      const high = parseFloat(parts[3]);
+      const low = parseFloat(parts[4]);
+      const volume = parseFloat(parts[5]);
+      if (isNaN(open) || isNaN(high) || isNaN(low) || isNaN(close)) continue;
+      bars.push({
+        time,
+        open,
+        high,
+        low,
+        close,
+        volume: isNaN(volume) ? 0 : volume,
+      });
+    }
+    return bars;
+  }
+
   /**
    * 路由：
+   * - 分时线：走东方财富 trends2
    * - 日/周线（需前复权）：A股/ETF 与港股均走腾讯 fqkline（qfq）
-   * - 分时/分钟线（不复权）：A股/ETF 走腾讯 mkline；港股走 Yahoo（腾讯不提供港股分钟线）
+   * - 分钟线（不复权）：A股/ETF 走腾讯 mkline；港股走 Yahoo（腾讯不提供港股分钟线）
    */
   private async fetchBars(market: 'A' | 'HK', code: string, period: string): Promise<RawBar[]> {
+    if (period === 'timeshare') {
+      if (market === 'A') {
+        // A股/ETF 重新用回腾讯 ifzq m1，极度稳定，无延迟且不限流
+        return this.fetchTencentMin(code, 'timeshare');
+      } else {
+        // 港股优先尝试东财实时分时，并带有 Yahoo Finance 的自动降级兜底
+        try {
+          const bars = await this.timeshareQueue.enqueue(() =>
+            this.fetchEastmoneyTimeshare(market, code),
+          );
+          if (bars.length > 0) return bars;
+          throw new Error('empty trends data');
+        } catch (err) {
+          console.warn(
+            `[kline] HK timeshare eastmoney failed, falling back to Yahoo: ${(err as Error).message}`,
+          );
+          return this.fetchYahoo(code, 'timeshare');
+        }
+      }
+    }
     if (period === 'daily' || period === 'weekly') {
       return this.fetchTencentFq(market, code, period);
     }

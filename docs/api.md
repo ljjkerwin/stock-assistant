@@ -44,6 +44,7 @@
 |------|------|------|
 | GET | `/api/stocks/search?q=` | 按代码或名称搜索（A股 + 港股） |
 | GET | `/api/stocks/:market/:code` | 获取股票基本信息 |
+| GET | `/api/stocks/batch?symbols=` | 批量查询多只股票的基本详情，`symbols` 为逗号分隔的 `market:code` 列表，返回 `Record<market:code, StockInfo>` |
 | GET | `/api/kline/:market/:code?period=` | 获取 K 线数据 |
 
 ## 监控
@@ -84,9 +85,9 @@
 |------|------|------|
 | GET | `/api/darktrade/index-status` | 查询暗盘索引状态 `{ count, date, updatedAt }` |
 | POST | `/api/darktrade/refresh-index` | 抓取所有页暗盘数据并建立 code→(page,index) 映射（body 可选 `{ date?, sortFlag?, desc? }`，默认按股票名称 Unicode 降序 sortFlag=4） |
-| GET | `/api/darktrade/batch?codes=&date=` | 批量查询多只股票的暗盘资金数据，`codes` 为逗号分隔的代码列表，返回 `Record<code, DarkTradeData>`（不在索引中的代码静默忽略）；可选 `date=YYYYMMDD`，传入时若当前索引日期不匹配则**自动触发 refresh-index**（服务端并发锁，多请求只刷新一次），无需手动脚本 |
+| GET | `/api/darktrade/batch?codes=&date=` | 【已废弃，前端已改用 snapshots-batch】批量查询多只股票的暗盘资金数据 |
 | GET | `/api/darktrade/:code` | 通过映射查询指定股票的暗盘资金数据，返回 `DarkTradeData`（需先 refresh-index） |
 | GET | `/api/darktrade/snapshots/:code?days=` | 单只股票的历史暗盘快照（**日粒度**：每个交易日取当日最后一条，默认 60 天），返回 `DarkTradeSnapshot[]`，`time` 为 `YYYY-MM-DD` |
-| GET | `/api/darktrade/snapshots-batch?codes=&date=` | 批量暗盘快照（**分钟粒度**），`codes` 逗号分隔；传 `date=YYYYMMDD` 时只取当天，返回 `Record<code, DarkTradeSnapshot[]>`，`time` 为 `YYYY-MM-DD HH:MM`。股票详情页分时暗盘副图与 K 线总览页均用此接口按当日交易日拉取 |
+| GET | `/api/darktrade/snapshots-batch?codes=&date=` | 批量暗盘快照（**分钟粒度**），`codes` 逗号分隔；传 `date=YYYYMMDD` 时只取当天。若 `date` 不匹配，**自动在服务端并发锁中触发 refresh-index** 进行全量刷新。股票详情页与 K 线总览页均用此接口，K 线总览页右上角最新明暗盘数据也会直接从该快照列表的最后一根中提取渲染。 |
 
 字段映射与使用说明详见 [docs/modules/darktrade.md](./modules/darktrade.md)。
