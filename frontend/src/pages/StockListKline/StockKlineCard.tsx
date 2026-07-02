@@ -13,7 +13,7 @@ import {
 } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, SeriesType, LogicalRange, Time, LineData, HistogramData } from 'lightweight-charts';
 import { klineApi } from '../../api/stock';
-import type { DarkTradeData, DarkTradeSnapshot, KlineBar, KlinePeriod, StockInfo } from '../../types';
+import type { DarkTradeSnapshot, KlineBar, KlinePeriod, StockInfo } from '../../types';
 import styles from './StockListKline.module.css';
 
 export type OverlayMode = 'ma' | 'boll';
@@ -32,7 +32,7 @@ interface Props {
   showMacd: boolean;
   showRsi: boolean;
   showDarkTrade?: boolean;
-  darkTradeData?: DarkTradeData | null;
+  darkTradeData?: DarkTradeSnapshot | null;
   darkTradeSnapshots?: DarkTradeSnapshot[];
   stockInfo?: StockInfo;
   onRangeChange?: (range: LogicalRange) => void;
@@ -737,10 +737,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
           const parts: string[] = [];
           if (lightCapital != null) parts.push(`明${formatCapital(lightCapital)}`);
           if (darkCapital != null) {
-            const act = darkTradeData?.darkActivity != null
-              ? `(${+(darkTradeData.darkActivity * 100).toFixed(2)}%)`
-              : '';
-            parts.push(`暗${formatCapital(darkCapital)}${act}`);
+            parts.push(`暗${formatCapital(darkCapital)}`);
           }
           if (hasTotal) parts.push(`总${formatCapital(total)}`);
           return (
