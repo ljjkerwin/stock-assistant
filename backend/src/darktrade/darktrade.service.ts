@@ -483,6 +483,24 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
     Record<string, { time: string; darkCapital: number | null; lightCapital: number | null }[]>
   > {
     if (codes.length === 0) return {};
+
+    const targetDate = date ?? todayDate();
+    const status = await this.getIndexStatus();
+    if (status.date !== targetDate) {
+      if (!this.refreshLock) {
+        this.refreshLock = this.refreshIndex(targetDate)
+          .then(() => undefined)
+          .finally(() => {
+            this.refreshLock = null;
+          });
+      }
+      try {
+        await this.refreshLock;
+      } catch {
+        this.logger.warn(`暗盘索引自动刷新失败（date=${targetDate}），继续使用旧索引`);
+      }
+    }
+
     const qb = this.snapshotRepo
       .createQueryBuilder('s')
       .where('s.code IN (:...codes)', { codes })

@@ -1,4 +1,4 @@
-import { KlineService, computeKlineAttrs } from './kline.service';
+import { KlineService, computeKlineAttrs, RequestQueue } from './kline.service';
 
 describe('KlineService', () => {
   let service: KlineService;
@@ -243,6 +243,53 @@ describe('KlineService', () => {
         expect(typeof bar.attrs.krsi).toBe('boolean');
         expect(typeof bar.attrs.kma).toBe('boolean');
       });
+    });
+  });
+
+  describe('RequestQueue', () => {
+    it('executes tasks one by one with concurrency=1', async () => {
+      const queue = new RequestQueue(1);
+      const log: number[] = [];
+      const makeTask = (id: number, delayMs: number) => async () => {
+        log.push(id * 10); // 开始执行
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        log.push(id * 10 + 1); // 执行完成
+        return id;
+      };
+
+      const p1 = queue.enqueue(makeTask(1, 30));
+      const p2 = queue.enqueue(makeTask(2, 10));
+      const p3 = queue.enqueue(makeTask(3, 20));
+
+      const results = await Promise.all([p1, p2, p3]);
+
+      expect(results).toEqual([1, 2, 3]);
+      // 串行执行的日志顺序应该是: 10(开), 11(关), 20(开), 21(关), 30(开), 31(关)
+      expect(log).toEqual([10, 11, 20, 21, 30, 31]);
+    });
+
+    it('limits concurrency with concurrency=2', async () => {
+      const queue = new RequestQueue(2);
+      const log: number[] = [];
+      const makeTask = (id: number, delayMs: number) => async () => {
+        log.push(id * 10);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        log.push(id * 10 + 1);
+        return id;
+      };
+
+      const p1 = queue.enqueue(makeTask(1, 40));
+      const p2 = queue.enqueue(makeTask(2, 20));
+      const p3 = queue.enqueue(makeTask(3, 10));
+
+      // 并发度为 2。
+      // p1 和 p2 会同时启动: [10, 20]
+      // p2 较快完成(20ms): 21。此时空出一个位置，p3 启动: 30
+      // p3 完成(10ms): 31
+      // p1 完成(40ms): 11
+      await Promise.all([p1, p2, p3]);
+
+      expect(log).toEqual([10, 20, 21, 30, 31, 11]);
     });
   });
 });
