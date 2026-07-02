@@ -4,11 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - 'backend/src/**'
-      - 'backend/package.json'
-      - 'backend/tsconfig*.json'
-      - 'pnpm-lock.yaml'
   workflow_dispatch:
 
 jobs:
