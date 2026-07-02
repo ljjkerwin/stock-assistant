@@ -39,13 +39,9 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
-      - name: 前端 ESLint 检查
+      - name: 前端语法与类型检查 (ESLint & Typecheck)
         working-directory: frontend
         run: pnpm lint
-
-      - name: 前端 TypeScript 类型检查
-        working-directory: frontend
-        run: pnpm exec tsc --noEmit
 
       - name: 后端 ESLint 检查
         working-directory: backend
