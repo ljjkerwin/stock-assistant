@@ -125,25 +125,17 @@ export default function StockListKline() {
   const listName = stockLists.find((l) => l.id === currentStockListId)?.name ?? '';
   const stockItems = items.filter((s) => s.market !== 'FUND');
 
+  const aCodesStr = stockItems.filter((s) => s.market === 'A').map((s) => s.code).join(',');
+
   // 批量拉取/刷新标的的暗盘数据及快照，不再进行定时轮询
   useEffect(() => {
-    if (stockItems.length === 0 || !klineDate) {
+    if (!aCodesStr || !klineDate) {
       setDarkSnapshotMap({});
       return;
     }
-    const aCodes = stockItems.filter((s) => s.market === 'A').map((s) => s.code);
-
-    const fetchData = () => {
-      if (aCodes.length > 0) {
-        darktradeApi.getSnapshotsBatch(aCodes, klineDate).then(setDarkSnapshotMap);
-      } else {
-        setDarkSnapshotMap({});
-      }
-    };
-
-    fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStockListId, itemsByList, klineDate]);
+    const aCodes = aCodesStr.split(',');
+    darktradeApi.getSnapshotsBatch(aCodes, klineDate).then(setDarkSnapshotMap);
+  }, [aCodesStr, klineDate]);
 
   const stockSymbolsStr = stockItems.map((s) => `${s.market}:${s.code}`).join(',');
 

@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Favorite } from './favorite.entity';
 import { WatchList } from './watch-list.entity';
+import { StocksService } from '../stocks/stocks.service';
+import { FundService } from '../fund/fund.service';
 
 @Injectable()
 export class FavoritesService {
@@ -11,6 +13,8 @@ export class FavoritesService {
     private readonly repo: Repository<Favorite>,
     @InjectRepository(WatchList)
     private readonly watchListRepo: Repository<WatchList>,
+    private readonly stocksService: StocksService,
+    private readonly fundService: FundService,
   ) {}
 
   /** 校验列表归属当前用户，否则视为不存在。 */
@@ -39,6 +43,26 @@ export class FavoritesService {
     if (list.boardType !== expectedBoardType) {
       throw new BadRequestException(`标的市场 ${data.market} 与列表板块 ${list.boardType} 不匹配`);
     }
+
+    // Backend self-correction: if name is empty or is equal to the code, fetch the name from stock or fund service
+    if (!data.name || data.name.trim() === data.code.trim()) {
+      try {
+        if (data.market === 'FUND') {
+          const info = await this.fundService.getFundInfo(data.code);
+          if (info?.name) {
+            data.name = info.name;
+          }
+        } else {
+          const info = await this.stocksService.getInfo(data.market as 'A' | 'HK', data.code);
+          if (info?.name) {
+            data.name = info.name;
+          }
+        }
+      } catch {
+        // Fallback to whatever name was provided (even if code)
+      }
+    }
+
     const existing = await this.repo.findOneBy({
       watchListId: data.watchListId,
       code: data.code,

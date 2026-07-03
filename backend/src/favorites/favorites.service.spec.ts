@@ -1,5 +1,10 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Repository } from 'typeorm';
 import { FavoritesService } from './favorites.service';
+import { Favorite } from './favorite.entity';
+import { WatchList } from './watch-list.entity';
+import { StocksService } from '../stocks/stocks.service';
+import { FundService } from '../fund/fund.service';
 
 describe('FavoritesService', () => {
   let repo: {
@@ -12,6 +17,8 @@ describe('FavoritesService', () => {
     findOne: jest.Mock;
   };
   let watchListRepo: { findOneBy: jest.Mock };
+  let stocksService: { getInfo: jest.Mock };
+  let fundService: { getFundInfo: jest.Mock };
 
   let service: FavoritesService;
 
@@ -28,8 +35,15 @@ describe('FavoritesService', () => {
       findOne: jest.fn(),
     };
     watchListRepo = { findOneBy: jest.fn() };
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    service = new FavoritesService(repo as any, watchListRepo as any);
+    stocksService = { getInfo: jest.fn() };
+    fundService = { getFundInfo: jest.fn() };
+
+    service = new FavoritesService(
+      repo as unknown as Repository<Favorite>,
+      watchListRepo as unknown as Repository<WatchList>,
+      stocksService as unknown as StocksService,
+      fundService as unknown as FundService,
+    );
   });
 
   describe('findAll', () => {
@@ -117,6 +131,36 @@ describe('FavoritesService', () => {
       expect(repo.findOneBy).toHaveBeenCalledWith({ watchListId: 1, code: '600000', market: 'A' });
       expect(repo.create).not.toHaveBeenCalled();
       expect(result).toBe(existing);
+    });
+
+    it('corrects stock name using stocksService if code is passed as name', async () => {
+      watchListRepo.findOneBy.mockResolvedValue({ id: 1, userId: 42, boardType: 'stock' });
+      repo.findOneBy.mockResolvedValue(null);
+      repo.findOne.mockResolvedValue({ sortOrder: 2 });
+      stocksService.getInfo.mockResolvedValue({ name: '中国巨石' });
+
+      const result = await service.add(
+        { code: '600176', market: 'A', name: '600176', watchListId: 1 },
+        42,
+      );
+
+      expect(stocksService.getInfo).toHaveBeenCalledWith('A', '600176');
+      expect(result.name).toBe('中国巨石');
+    });
+
+    it('corrects fund name using fundService if code is passed as name', async () => {
+      watchListRepo.findOneBy.mockResolvedValue({ id: 2, userId: 42, boardType: 'fund' });
+      repo.findOneBy.mockResolvedValue(null);
+      repo.findOne.mockResolvedValue({ sortOrder: 1 });
+      fundService.getFundInfo.mockResolvedValue({ name: '万家精选' });
+
+      const result = await service.add(
+        { code: '519191', market: 'FUND', name: '519191', watchListId: 2 },
+        42,
+      );
+
+      expect(fundService.getFundInfo).toHaveBeenCalledWith('519191');
+      expect(result.name).toBe('万家精选');
     });
   });
 
