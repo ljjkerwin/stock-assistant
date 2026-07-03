@@ -19,6 +19,9 @@
 |------|------|------|
 | POST | `/api/auth/login` | 登录（**公开**），body `{ username, password }`，成功返回 `{ token, user: { id, username } }`；用户名或密码错误返回 401 |
 | GET | `/api/auth/me` | 返回当前登录用户 `{ id, username }`（凭令牌） |
+| GET | `/api/auth/smtp` | 获取当前用户的 SMTP 配置 |
+| POST | `/api/auth/smtp` | 保存当前用户的 SMTP 配置，body 为 `SmtpConfig` 结构 |
+| POST | `/api/auth/smtp/test` | 测试发送 SMTP 测试邮件，body 为 `SmtpConfig` 结构，成功返回 `{ success: true }`，失败返回详细错误信息 |
 
 > 令牌为精简版 JWT（HMAC-SHA256 签名，含 `sub`/`username`/`exp`，默认 7 天有效），密钥取环境变量 `AUTH_SECRET`（缺省有开发兜底值）。密码用 scrypt 加盐哈希存储。首次启动自动种入内置账号 `ljj`，并把历史无归属的标的列表/收藏归到该账号下。
 
@@ -36,6 +39,7 @@
 | PATCH | `/api/favorites/:id` | 更新排序 / 置顶状态 |
 | GET | `/api/watchlists?boardType=stock\|fund` | 获取该板块的标的列表（`isDefault` 列表「收藏夹」排最前，其余按创建时间升序） |
 | POST | `/api/watchlists` | 新建自定义标的列表，body `{ name, boardType }` |
+| PATCH | `/api/watchlists/:id` | 修改标的列表名称，body `{ name }` |
 | DELETE | `/api/watchlists/:id` | 删除标的列表（默认列表「收藏夹」不可删，返回 400；级联删除列表内的收藏） |
 
 ## 股票 / K线

@@ -8,6 +8,7 @@ import StockMonitorButton from '../../components/StockMonitorButton';
 import AddToListMenu from '../../components/AddToListMenu';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import { useWatchListStore } from '../../store/watchListStore';
+import { useAuthStore } from '../../store/authStore';
 import type { StockInfo, DarkTradeSnapshot } from '../../types';
 import styles from './StockDetail.module.css';
 
@@ -47,6 +48,8 @@ export default function StockDetail() {
       ? (itemsByList[defaultListId] ?? []).find((f) => f.market === market && f.code === code)
       : undefined;
   const isFavorited = !!favoriteEntry;
+  const username = useAuthStore((s) => s.user?.username);
+  const isLjj = username === 'ljj';
 
   useEffect(() => {
     fetchLists('stock');
@@ -132,13 +135,15 @@ export default function StockDetail() {
         )}
         {market && code && (
           <>
-            <Tooltip title="策略回测">
-              <Button
-                type="text"
-                icon={<LineChartOutlined />}
-                onClick={() => navigate(`/strategy-backtest/${code}`)}
-              />
-            </Tooltip>
+            {isLjj && (
+              <Tooltip title="策略回测">
+                <Button
+                  type="text"
+                  icon={<LineChartOutlined />}
+                  onClick={() => navigate(`/strategy-backtest/${code}`)}
+                />
+              </Tooltip>
+            )}
             <StockMonitorButton
               market={market as 'A' | 'HK'}
               code={code}

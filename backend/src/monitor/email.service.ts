@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, Not, IsNull } from 'typeorm';
 import * as nodemailer from 'nodemailer';
+import { User } from '../auth/user.entity';
 
 const RULE_TYPE_LABELS: Record<string, string> = {
   price_above: '价格突破上方目标',
@@ -14,13 +17,18 @@ export class EmailService {
   private readonly transporter: nodemailer.Transporter | null;
   private readonly to: string;
 
-  constructor() {
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {
     const user = process.env.EMAIL_USER;
     const pass = process.env.EMAIL_PASS;
-    this.to = process.env.EMAIL_TO ?? 'ljjnotice@163.com';
+    this.to = process.env.EMAIL_TO ?? '';
 
-    if (!user || !pass) {
-      this.logger.warn('EMAIL_USER 或 EMAIL_PASS 未配置，邮件通知已禁用');
+    if (!user || !pass || !this.to) {
+      this.logger.warn(
+        'EMAIL_USER, EMAIL_PASS 或 EMAIL_TO 未配置，环境配置的邮件通知已禁用，将仅使用数据库动态配置',
+      );
       this.transporter = null;
       return;
     }
@@ -43,8 +51,6 @@ export class EmailService {
     maPeriod?: string | null;
     triggeredAt: number;
   }): Promise<void> {
-    if (!this.transporter) return;
-
     const {
       stockName,
       stockCode,
@@ -68,16 +74,74 @@ export class EmailService {
       `触发时间：${time}`,
     ].join('\n');
 
+    let sentToDbUsers = false;
     try {
-      await this.transporter.sendMail({
-        from: `"股票助手" <${process.env.EMAIL_USER}>`,
-        to: this.to,
-        subject,
-        text,
+      const users = await this.userRepo.find({
+        where: {
+          smtpHost: Not(IsNull()),
+          smtpUser: Not(IsNull()),
+          smtpPass: Not(IsNull()),
+          smtpTo: Not(IsNull()),
+        },
       });
-      this.logger.log(`[邮件] 已发送通知至 ${this.to}：${subject}`);
-    } catch (err) {
-      this.logger.error(`[邮件] 发送失败：${(err as Error).message}`);
+
+      for (const u of users) {
+        if (!u.smtpHost || !u.smtpUser || !u.smtpPass || !u.smtpTo) continue;
+        const config = {
+          host: u.smtpHost,
+          port: u.smtpPort ?? 465,
+          secure: u.smtpSecure ?? true,
+          user: u.smtpUser,
+          pass: u.smtpPass,
+        };
+
+        let fromEmail = config.user;
+        if (!config.user.includes('@')) {
+          const hostParts = config.host.split('.');
+          if (hostParts.length >= 2) {
+            const domain = hostParts.slice(-2).join('.');
+            fromEmail = `${config.user}@${domain}`;
+          }
+        }
+
+        const transporter = nodemailer.createTransport({
+          host: config.host,
+          port: config.port,
+          secure: config.secure,
+          auth: { user: config.user, pass: config.pass },
+        });
+
+        try {
+          await transporter.sendMail({
+            from: `"股票助手" <${fromEmail}>`,
+            to: u.smtpTo,
+            subject,
+            text,
+          });
+          this.logger.log(
+            `[邮件] 已发送通知至数据库配置的用户邮箱 ${u.smtpTo}，由 ${fromEmail} 发出`,
+          );
+          sentToDbUsers = true;
+        } catch (err) {
+          this.logger.error(`[邮件] 发送失败(用户 ${u.username}): ${(err as Error).message}`);
+        }
+      }
+    } catch (dbErr) {
+      this.logger.error(`[邮件] 查询用户自定义SMTP失败: ${(dbErr as Error).message}`);
+    }
+
+    if (!sentToDbUsers && this.transporter) {
+      try {
+        await this.transporter.sendMail({
+          from: `"股票助手" <${process.env.EMAIL_USER}>`,
+          to: this.to,
+          subject,
+          text,
+        });
+        this.logger.log(`[邮件] 已通过环境变量兜底发送通知至 ${this.to}`);
+      } catch (err) {
+        this.logger.error(`[邮件] 兜底发送失败：${(err as Error).message}`);
+      }
     }
   }
 }

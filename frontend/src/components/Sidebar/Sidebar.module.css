@@ -8,6 +8,9 @@
 .sectionSelect {
   padding: 12px 12px 10px;
   border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
 }
 
 .listSwitcher {
@@ -108,4 +111,20 @@
   border-top: 1px solid #f0f0f0;
 }
 
+.usernameDropdown {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}
 
+.usernameDropdown:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.88);
+}

@@ -12,6 +12,7 @@ function extractErrorMessage(error: unknown): string {
 
 interface FavoritesStore {
   itemsByList: Record<number, Stock[]>;
+  loading: boolean;
   fetchList: (watchListId: number) => Promise<void>;
   addToList: (
     watchListId: number,
@@ -28,6 +29,7 @@ const inFlight = new Map<number, Promise<void>>();
 
 export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
   itemsByList: {},
+  loading: false,
 
   fetchList: async (watchListId) => {
     const pending = inFlight.get(watchListId);
@@ -45,15 +47,19 @@ export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
   },
 
   addToList: async (watchListId, stock) => {
+    set({ loading: true });
     try {
       await favoritesApi.add({ ...stock, watchListId });
       await get().fetchList(watchListId);
     } catch (error) {
       message.error(extractErrorMessage(error));
+    } finally {
+      set({ loading: false });
     }
   },
 
   removeItem: async (favoriteId, watchListId) => {
+    set({ loading: true });
     try {
       await favoritesApi.remove(favoriteId);
       set((s) => ({
@@ -64,24 +70,32 @@ export const useFavoritesStore = create<FavoritesStore>((set, get) => ({
       }));
     } catch (error) {
       message.error(extractErrorMessage(error));
+    } finally {
+      set({ loading: false });
     }
   },
 
   reorder: async (watchListId, orderedIds) => {
+    set({ loading: true });
     try {
       await Promise.all(orderedIds.map((id, index) => favoritesApi.update(id, { sortOrder: index })));
       await get().fetchList(watchListId);
     } catch (error) {
       message.error(extractErrorMessage(error));
+    } finally {
+      set({ loading: false });
     }
   },
 
   pin: async (favoriteId, watchListId, pinned) => {
+    set({ loading: true });
     try {
       await favoritesApi.update(favoriteId, { pinned });
       await get().fetchList(watchListId);
     } catch (error) {
       message.error(extractErrorMessage(error));
+    } finally {
+      set({ loading: false });
     }
   },
 }));

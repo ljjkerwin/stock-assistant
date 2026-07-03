@@ -8,6 +8,7 @@ vi.mock('../api/stock', () => ({
   watchListsApi: {
     list: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
     remove: vi.fn(),
   },
 }));
@@ -185,6 +186,25 @@ describe('watchListStore', () => {
       await useWatchListStore.getState().fetchLists('stock');
 
       expect(localStorage.getItem('watchList:current:stock')).toBe('2');
+    });
+  });
+
+  describe('updateList', () => {
+    it('updates the name of the specified watchlist in the store', async () => {
+      useWatchListStore.setState({
+        stockLists: [
+          { id: 1, name: '旧名字', boardType: 'stock', isDefault: false },
+          { id: 2, name: '收藏夹', boardType: 'stock', isDefault: true },
+        ],
+      });
+      const updated: WatchList = { id: 1, name: '新名字', boardType: 'stock', isDefault: false };
+      vi.mocked(watchListsApi.update).mockResolvedValue(updated);
+
+      await useWatchListStore.getState().updateList(1, '新名字', 'stock');
+
+      expect(watchListsApi.update).toHaveBeenCalledWith(1, '新名字');
+      const state = useWatchListStore.getState();
+      expect(state.stockLists.find((l) => l.id === 1)?.name).toBe('新名字');
     });
   });
 });

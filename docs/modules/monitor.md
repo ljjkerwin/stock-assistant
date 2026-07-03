@@ -5,7 +5,9 @@
 ---
 
 - 规则触发时，除写入消息表并推送 SSE 外，还通过 `EmailService` 向配置的收件人发送邮件通知；发送为异步 fire-and-forget，失败时只记录日志，不影响主流程
-- 邮件通过 163 SMTP（smtp.163.com:465）发送，凭证通过环境变量配置：`EMAIL_USER`（发件人）、`EMAIL_PASS`（163 SMTP 授权码）、`EMAIL_TO`（收件人，默认 ljjnotice@163.com）；未配置时邮件功能自动禁用
+- 邮件发送的 SMTP 凭证支持两种方式：
+  1. **数据库动态配置**：用户在前端左下角菜单中设置并保存。如果数据库中存在任何用户配置的 SMTP 设置，系统将依次使用这些配置发送邮件。
+  2. **环境变量兜底**：若数据库中无任何有效的用户 SMTP 配置，且显式配置了环境变量 `EMAIL_TO`，则兜底使用 163 SMTP（smtp.163.com:465），凭证通过环境变量配置：`EMAIL_USER`（发件人）、`EMAIL_PASS`（163 SMTP 授权码）、`EMAIL_TO`（收件人）；若未配置 `EMAIL_TO` 且无数据库配置时邮件功能自动禁用。
 - 参考 `backend/.env.example` 创建 `backend/.env` 文件填写凭证
 - 后端 `MonitorService` 在 `OnModuleInit` 启动 60s 定时轮询；外层守卫用 `isTrading()`（任意市场开盘即进入），内层按股票市场调用 `isTradingMarket(market)` 过滤，非交易时段的规则静默跳过（无任何日志）
 - 规则检查：价格规则直接对比当前价；MA 均线穿越规则使用**边沿触发**（`prevAboveMA` 字段记录上次方向），避免持续满足时重复触发

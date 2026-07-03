@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Button, Tooltip, Space, Typography, Select, Modal, Input, Popconfirm } from 'antd';
+import { Button, Tooltip, Space, Typography, Select, Modal, Input, Dropdown } from 'antd';
 import {
   DeleteOutlined,
   PushpinOutlined,
@@ -10,6 +10,9 @@ import {
   PlusOutlined,
   LogoutOutlined,
   UserOutlined,
+  EllipsisOutlined,
+  EditOutlined,
+  MailOutlined,
 } from '@ant-design/icons';
 import { useFavoritesStore } from '../../store/favoritesStore';
 import { useWatchListStore } from '../../store/watchListStore';
@@ -17,6 +20,7 @@ import { useAuthStore } from '../../store/authStore';
 import StockSearch from '../StockSearch';
 import FundSearch from '../FundSearch';
 import MonitorCenter from '../MonitorCenter';
+import SmtpConfigModal from '../SmtpConfigModal';
 import type { Stock, BoardType } from '../../types';
 import styles from './Sidebar.module.css';
 
@@ -41,6 +45,7 @@ export default function Sidebar() {
     currentFundListId,
     fetchLists,
     createList,
+    updateList,
     deleteList,
     setCurrentList,
   } = useWatchListStore();
@@ -48,6 +53,12 @@ export default function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const [addListOpen, setAddListOpen] = useState(false);
   const [newListName, setNewListName] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const [renameListOpen, setRenameListOpen] = useState(false);
+  const [renameListName, setRenameListName] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [smtpModalOpen, setSmtpModalOpen] = useState(false);
 
   const section = pathname.startsWith('/strategy-backtest')
     ? 'backtest'
@@ -97,10 +108,109 @@ export default function Sidebar() {
   };
 
   const handleCreateList = async () => {
-    if (!boardType || !newListName.trim()) return;
-    await createList(newListName.trim(), boardType);
-    setAddListOpen(false);
-    setNewListName('');
+    if (!boardType || !newListName.trim() || creating) return;
+    setCreating(true);
+    try {
+      await createList(newListName.trim(), boardType);
+      setAddListOpen(false);
+      setNewListName('');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleRenameList = async () => {
+    if (!currentList || !renameListName.trim() || renaming) return;
+    setRenaming(true);
+    try {
+      await updateList(currentList.id, renameListName.trim(), boardType!);
+      setRenameListOpen(false);
+      setRenameListName('');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const handleDeleteList = () => {
+    if (!currentList || !boardType) return;
+    Modal.confirm({
+      title: `确定删除列表「${currentList.name}」？`,
+      content: `列表内的 ${items.length} 个标的也会被删除`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        await deleteList(currentList.id, boardType);
+      },
+    });
+  };
+
+  const menuProps = {
+    items: [
+      {
+        key: 'rename',
+        label: '修改列表名称',
+        icon: <EditOutlined />,
+        disabled: !currentList || currentList.isDefault,
+      },
+      {
+        key: 'delete',
+        label: '删除列表',
+        icon: <DeleteOutlined />,
+        danger: true,
+        disabled: !currentList || currentList.isDefault,
+      },
+      {
+        type: 'divider' as const,
+      },
+      {
+        key: 'create',
+        label: '新建列表',
+        icon: <PlusOutlined />,
+      },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      if (key === 'rename') {
+        if (currentList) {
+          setRenameListName(currentList.name);
+          setRenameListOpen(true);
+        }
+      } else if (key === 'delete') {
+        handleDeleteList();
+      } else if (key === 'create') {
+        setAddListOpen(true);
+      }
+    },
+  };
+
+  const userMenuProps = {
+    items: [
+      {
+        key: 'smtp',
+        label: '通知邮箱SMTP设置',
+        icon: <MailOutlined />,
+      },
+      {
+        type: 'divider' as const,
+      },
+      {
+        key: 'logout',
+        label: '退出登录',
+        icon: <LogoutOutlined />,
+        danger: true,
+      },
+    ],
+    onClick: ({ key }: { key: string }) => {
+      if (key === 'smtp') {
+        setSmtpModalOpen(true);
+      } else if (key === 'logout') {
+        logout();
+      }
+    },
   };
 
   const renderItem = (stock: Stock, index: number, list: Stock[], urlFn: (s: Stock) => string) => (
@@ -159,12 +269,18 @@ export default function Sidebar() {
     </div>
   );
 
+  const visibleOptions = SECTION_OPTIONS.filter((opt) => {
+    if (username === 'ljj') return true;
+    return opt.value === 'stock' || opt.value === 'klinegrid';
+  });
+
   return (
     <div className={styles.sidebar}>
       <div className={styles.sectionSelect}>
+        <span>页面：</span>
         <Select
           value={section}
-          options={SECTION_OPTIONS}
+          options={visibleOptions}
           onChange={(val) => handleSectionChange(val)}
           style={{ width: '100%' }}
         />
@@ -172,15 +288,6 @@ export default function Sidebar() {
 
       {boardType && (
         <div className={styles.listSwitcher}>
-          <Tooltip title="新建列表">
-            <Button
-              type="text"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={() => setAddListOpen(true)}
-            />
-          </Tooltip>
-
           <Select
             value={currentListId ?? undefined}
             options={lists.map((l) => ({ value: l.id, label: l.name }))}
@@ -189,20 +296,13 @@ export default function Sidebar() {
             size="small"
           />
 
-          {currentList && !currentList.isDefault && (
-            <Popconfirm
-              title={`确定删除列表「${currentList.name}」？`}
-              description={`列表内的 ${items.length} 个标的也会被删除`}
-              onConfirm={() => deleteList(currentList.id, boardType)}
-              okText="删除"
-              okButtonProps={{ danger: true }}
-              cancelText="取消"
-            >
-              <Tooltip title="删除列表">
-                <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-              </Tooltip>
-            </Popconfirm>
-          )}
+          <Dropdown menu={menuProps} trigger={['click']} placement="bottomRight">
+            <Button
+              type="text"
+              size="small"
+              icon={<EllipsisOutlined />}
+            />
+          </Dropdown>
         </div>
       )}
 
@@ -246,15 +346,14 @@ export default function Sidebar() {
 
       <div className={styles.userBar}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Text type="secondary" ellipsis>
-            <UserOutlined /> {username}
-          </Text>
+          <Dropdown menu={userMenuProps} trigger={['click']} placement="topLeft">
+            <span className={styles.usernameDropdown}>
+              <UserOutlined /> {username}
+            </span>
+          </Dropdown>
         </div>
         <Space size={4}>
           <MonitorCenter />
-          <Tooltip title="退出登录">
-            <Button type="text" size="small" icon={<LogoutOutlined />} onClick={logout} />
-          </Tooltip>
         </Space>
       </div>
 
@@ -262,11 +361,13 @@ export default function Sidebar() {
         title="新建列表"
         open={addListOpen}
         onCancel={() => {
+          if (creating) return;
           setAddListOpen(false);
           setNewListName('');
         }}
         onOk={handleCreateList}
-        okButtonProps={{ disabled: !newListName.trim() }}
+        confirmLoading={creating}
+        okButtonProps={{ disabled: !newListName.trim() || creating }}
         okText="创建"
         cancelText="取消"
       >
@@ -275,9 +376,39 @@ export default function Sidebar() {
           value={newListName}
           onChange={(e) => setNewListName(e.target.value)}
           onPressEnter={handleCreateList}
+          disabled={creating}
           autoFocus
         />
       </Modal>
+
+      <Modal
+        title="修改列表名称"
+        open={renameListOpen}
+        onCancel={() => {
+          if (renaming) return;
+          setRenameListOpen(false);
+          setRenameListName('');
+        }}
+        onOk={handleRenameList}
+        confirmLoading={renaming}
+        okButtonProps={{ disabled: !renameListName.trim() || renaming || renameListName.trim() === currentList?.name }}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Input
+          placeholder="请输入列表名称"
+          value={renameListName}
+          onChange={(e) => setRenameListName(e.target.value)}
+          onPressEnter={handleRenameList}
+          disabled={renaming}
+          autoFocus
+        />
+      </Modal>
+
+      <SmtpConfigModal
+        open={smtpModalOpen}
+        onCancel={() => setSmtpModalOpen(false)}
+      />
     </div>
   );
 }

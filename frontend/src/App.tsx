@@ -12,10 +12,12 @@ import FundDetail from './pages/FundDetail';
 import StockListImport from './pages/StockListImport';
 import StockListKline from './pages/StockListKline';
 import StrategyBacktest from './pages/StrategyBacktest';
+import { useFavoritesStore } from './store/favoritesStore';
 import styles from './App.module.css';
 
 export default function App() {
   const user = useAuthStore((s) => s.user);
+  const favoritesLoading = useFavoritesStore((s) => s.loading);
   const initialized = useAuthStore((s) => s.initialized);
   const init = useAuthStore((s) => s.init);
   const { pathname } = useLocation();
@@ -124,9 +126,12 @@ export default function App() {
     );
   }
 
+  const isLjj = user?.username === 'ljj';
+
   return (
     <ConfigProvider locale={zhCN}>
       <div className={styles.layout}>
+        {favoritesLoading && <Spin size="large" fullscreen tip="请求中..." />}
         <Button
           type="text"
           shape="circle"
@@ -152,12 +157,27 @@ export default function App() {
             <Route path="/" element={<Navigate to="/stock" replace />} />
             <Route path="/stock" element={<Home />} />
             <Route path="/stock/:market/:code" element={<StockDetail />} />
-            <Route path="/fund" element={<Home />} />
-            <Route path="/fund/:code" element={<FundDetail />} />
-            <Route path="/stock-list-import" element={<StockListImport />} />
+            <Route
+              path="/fund"
+              element={isLjj ? <Home /> : <Navigate to="/stock" replace />}
+            />
+            <Route
+              path="/fund/:code"
+              element={isLjj ? <FundDetail /> : <Navigate to="/stock" replace />}
+            />
+            <Route
+              path="/stock-list-import"
+              element={isLjj ? <StockListImport /> : <Navigate to="/stock" replace />}
+            />
             <Route path="/stock-list-kline" element={<StockListKline />} />
-            <Route path="/strategy-backtest" element={<StrategyBacktest />} />
-            <Route path="/strategy-backtest/:code" element={<StrategyBacktest />} />
+            <Route
+              path="/strategy-backtest"
+              element={isLjj ? <StrategyBacktest /> : <Navigate to="/stock" replace />}
+            />
+            <Route
+              path="/strategy-backtest/:code"
+              element={isLjj ? <StrategyBacktest /> : <Navigate to="/stock" replace />}
+            />
           </Routes>
         </main>
       </div>
