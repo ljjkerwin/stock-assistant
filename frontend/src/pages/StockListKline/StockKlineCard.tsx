@@ -11,8 +11,8 @@ import {
   HistogramSeries,
   AreaSeries,
 } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi, SeriesType, LogicalRange, Time, LineData, HistogramData } from 'lightweight-charts';
-import { klineApi } from '../../api/stock';
+import type { IChartApi, ISeriesApi, SeriesType, LogicalRange, Time, LineData, HistogramData, WhitespaceData } from 'lightweight-charts';
+import { klineApi, darktradeApi } from '../../api/stock';
 import type { DarkTradeSnapshot, KlineBar, KlinePeriod, StockInfo } from '../../types';
 import styles from './StockListKline.module.css';
 
@@ -144,6 +144,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
 ) {
   const [loading, setLoading] = useState(true);
   const [bars, setBars] = useState<KlineBar[]>([]);
+  const [localDailySnapshots, setLocalDailySnapshots] = useState<DarkTradeSnapshot[]>([]);
   const hasDarkData = darkTradeData != null;
   const darkCapital = darkTradeData?.darkCapital ?? null;
   const lightCapital = darkTradeData?.lightCapital ?? null;
@@ -185,6 +186,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   const onRangeChangeRef = useRef(onRangeChange);
   useEffect(() => { onRangeChangeRef.current = onRangeChange; });
   const periodRef = useRef(period);
+  const lastPeriodRef = useRef(period);
   useEffect(() => { periodRef.current = period; });
   const isRebuildingRef = useRef(false);
 
@@ -206,7 +208,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       }
       liveCharts.forEach((c) => c.priceScale('right').applyOptions({ minimumWidth: maxWidth }));
       // 价格轴宽度变化后重新锁定暗盘副图的逻辑范围，避免 applyOptions 触发重排后靠右贴边
-      if (darkTradeChartRef.current) {
+      if (darkTradeChartRef.current && periodRef.current === 'timeshare') {
         darkTradeChartRef.current.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
       }
     });
@@ -215,6 +217,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   const populateDarkTradeData = useCallback(() => {
     const chart = darkTradeChartRef.current;
     if (!chart) return;
+    const savedRange = chart.timeScale().getVisibleLogicalRange();
     dtSeriesRef.current.forEach((s) => chart.removeSeries(s));
     dtSeriesRef.current = [];
 
@@ -226,7 +229,9 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       return true;
     });
     if (snaps.length === 0 || !date) {
-      chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
+      if (period === 'timeshare') {
+        chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
+      }
       return;
     }
 
@@ -246,7 +251,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const symmetricAutoscale = (original: any) => {
       const res = original();
-      if (res === null) return res;
+      if (res === null || !res.priceRange) return res;
       const maxAbs = Math.max(Math.abs(res.priceRange.maxValue), Math.abs(res.priceRange.minValue), 1);
       return { priceRange: { minValue: -maxAbs, maxValue: maxAbs } };
     };
@@ -257,8 +262,22 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         autoscaleInfoProvider: symmetricAutoscale,
       });
       series.priceScale().applyOptions({ scaleMargins: { top: 0.02, bottom: 0.02 } });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      series.setData(buildTimeshare241(dataMap, date) as any);
+      
+      if (period === 'daily') {
+        const seriesData = bars.map((b) => {
+          const dateStr = b.time.slice(0, 10);
+          const val = dataMap.get(dateStr);
+          if (val !== undefined) {
+            return { time: toChartTime(b.time), value: val } as LineData;
+          }
+          return { time: toChartTime(b.time) } as WhitespaceData;
+        });
+        series.setData(seriesData);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        series.setData(buildTimeshare241(dataMap, date) as any);
+      }
+      
       if (needZeroLine && !zeroLineAdded) {
         series.createPriceLine({ price: 0, color: DT_ZERO_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         zeroLineAdded = true;
@@ -266,16 +285,71 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       dtSeriesRef.current.push(series);
     };
 
+    if (period === 'daily') {
+      // 1. 总资金柱状图
+      const histSeries = chart.addSeries(HistogramSeries, {
+        lastValueVisible: false,
+        priceLineVisible: false,
+        autoscaleInfoProvider: symmetricAutoscale,
+      });
+      histSeries.priceScale().applyOptions({ scaleMargins: { top: 0.02, bottom: 0.02 } });
 
-    // 明盘蓝线 + 暗盘黄线 + 总中灰折线，与详情页 KLineChart 完全一致
-    addLine(DT_LIGHT_COLOR, lightMap, true);
-    addLine(DT_DARK_COLOR, darkMap);
-    addLine('#888', totalMap);
+      const histData = bars.map((b) => {
+        const dateStr = b.time.slice(0, 10);
+        const val = totalMap.get(dateStr);
+        if (val !== undefined) {
+          return {
+            time: toChartTime(b.time),
+            value: val,
+            color: val >= 0 ? '#ef5350' : '#26a69a',
+          } as HistogramData;
+        }
+        return { time: toChartTime(b.time) } as WhitespaceData;
+      });
+      histSeries.setData(histData);
+      dtSeriesRef.current.push(histSeries);
 
-    // 与主图同用 242 逻辑索引，不用 fitContent
-    chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
+      // 2. 明盘/暗盘折线图
+      const addDailyLine = (color: string, dataMap: Map<string, number>, needZeroLine = false) => {
+        if (dataMap.size === 0 && snaps.length > 0) return;
+        const series = chart.addSeries(LineSeries, {
+          color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+          autoscaleInfoProvider: symmetricAutoscale,
+        });
+        series.priceScale().applyOptions({ scaleMargins: { top: 0.02, bottom: 0.02 } });
+
+        const seriesData = bars.map((b) => {
+          const dateStr = b.time.slice(0, 10);
+          const val = dataMap.get(dateStr);
+          if (val !== undefined) {
+            return { time: toChartTime(b.time), value: val } as LineData;
+          }
+          return { time: toChartTime(b.time) } as WhitespaceData;
+        });
+        
+        series.setData(seriesData);
+        if (needZeroLine && !zeroLineAdded) {
+          series.createPriceLine({ price: 0, color: DT_ZERO_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+          zeroLineAdded = true;
+        }
+        dtSeriesRef.current.push(series);
+      };
+
+      addDailyLine(DT_LIGHT_COLOR, lightMap, true);
+      addDailyLine(DT_DARK_COLOR, darkMap);
+    } else {
+      addLine(DT_LIGHT_COLOR, lightMap, true);
+      addLine(DT_DARK_COLOR, darkMap);
+      addLine('#888', totalMap);
+    }
+
+    if (period === 'timeshare') {
+      chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
+    } else if (savedRange) {
+      chart.timeScale().setVisibleLogicalRange(savedRange);
+    }
     alignPriceAxisWidth();
-  }, [alignPriceAxisWidth]);
+  }, [alignPriceAxisWidth, period, bars]);
 
   useImperativeHandle(ref, () => ({
     setRange: (range: LogicalRange) => {
@@ -293,21 +367,35 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     let cancelled = false;
     setLoading(true);
     setBars([]);
-    klineApi
-      .get(market, code, period)
-      .then((res) => {
+
+    const fetchPromises = [
+      klineApi.get(market, code, period),
+      showDarkTrade && period === 'daily' && market === 'A'
+        ? darktradeApi.getSnapshots(code, 1000)
+        : Promise.resolve(null),
+    ] as const;
+
+    Promise.all(fetchPromises)
+      .then(([klineRes, darkTradeRes]) => {
         if (!cancelled) {
-          setBars(res.data);
-          if (res.data.length > 0) {
-            const date = res.data[res.data.length - 1].time.slice(0, 10).replace(/-/g, '');
+          if (darkTradeRes) {
+            setLocalDailySnapshots(darkTradeRes);
+          } else {
+            setLocalDailySnapshots([]);
+          }
+
+          setBars(klineRes.data);
+          if (klineRes.data.length > 0) {
+            const date = klineRes.data[klineRes.data.length - 1].time.slice(0, 10).replace(/-/g, '');
             onDateResolvedRef.current?.(date);
           }
         }
       })
       .catch(() => { })
       .finally(() => { if (!cancelled) setLoading(false); });
+
     return () => { cancelled = true; };
-  }, [code, market, period]);
+  }, [code, market, period, showDarkTrade]);
 
   // Effect 3: 交易时段内 30 秒轮询刷新（只在数据实际变化时触发重绘）
   useEffect(() => {
@@ -340,8 +428,13 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   useEffect(() => {
     if (!mainRef.current || bars.length === 0) return;
 
-    isRebuildingRef.current = true;
     const currentPeriod = periodRef.current;
+    let savedRange: LogicalRange | null = null;
+    if (mainChartRef.current) {
+      savedRange = mainChartRef.current.timeScale().getVisibleLogicalRange();
+    }
+
+    isRebuildingRef.current = true;
     const isTimeshare = currentPeriod === 'timeshare';
     const latestDate = isTimeshare && bars.length > 0 ? bars[bars.length - 1].time.slice(0, 10) : '';
     const timeVisible = currentPeriod !== 'daily' && currentPeriod !== 'weekly';
@@ -654,23 +747,28 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       mainChart.timeScale().setVisibleLogicalRange(fullRange);
       subCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(fullRange));
     } else {
-      mainChart.timeScale().fitContent();
-      subCharts.forEach((c) => c.timeScale().fitContent());
-      try {
-        const saved = localStorage.getItem(`stockListKline:range:${currentPeriod}`);
-        if (saved) {
-          const r = JSON.parse(saved) as { from: number; to: number };
-          if (typeof r.from === 'number' && typeof r.to === 'number') {
-            const barMax = dedupedBars.length - 1;
-            if (r.to < barMax) {
-              const width = r.to - r.from;
-              mainChart.timeScale().setVisibleLogicalRange({ from: barMax - width, to: barMax });
-            } else {
-              mainChart.timeScale().setVisibleLogicalRange(r);
+      if (savedRange && lastPeriodRef.current === currentPeriod) {
+        mainChart.timeScale().setVisibleLogicalRange(savedRange);
+        subCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(savedRange));
+      } else {
+        mainChart.timeScale().fitContent();
+        subCharts.forEach((c) => c.timeScale().fitContent());
+        try {
+          const saved = localStorage.getItem(`stockListKline:range:${currentPeriod}`);
+          if (saved) {
+            const r = JSON.parse(saved) as { from: number; to: number };
+            if (typeof r.from === 'number' && typeof r.to === 'number') {
+              const barMax = dedupedBars.length - 1;
+              if (r.to < barMax) {
+                const width = r.to - r.from;
+                mainChart.timeScale().setVisibleLogicalRange({ from: barMax - width, to: barMax });
+              } else {
+                mainChart.timeScale().setVisibleLogicalRange(r);
+              }
             }
           }
-        }
-      } catch { /* ignore */ }
+        } catch { /* ignore */ }
+      }
     }
 
     // 等下一帧读取各图实际价格轴宽度，取最大值统一对齐右边距
@@ -678,6 +776,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
 
     // 图表重建完成，允许跨卡片同步和 localStorage 保存
     requestAnimationFrame(() => { isRebuildingRef.current = false; });
+    lastPeriodRef.current = currentPeriod;
 
     return () => {
       if (alignWidthRafRef.current !== null) cancelAnimationFrame(alignWidthRafRef.current);
@@ -697,10 +796,14 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
 
   // 快照数据更新时独立刷新暗盘副图，不触发主图重建
   useEffect(() => {
-    darkTradeSnapshotsRef.current = darkTradeSnapshots ?? [];
+    if (period === 'daily') {
+      darkTradeSnapshotsRef.current = localDailySnapshots;
+    } else {
+      darkTradeSnapshotsRef.current = darkTradeSnapshots ?? [];
+    }
     if (bars.length > 0) lastDateRef.current = bars[bars.length - 1].time.slice(0, 10);
     populateDarkTradeData();
-  }, [darkTradeSnapshots, bars, populateDarkTradeData]);
+  }, [darkTradeSnapshots, localDailySnapshots, period, bars, populateDarkTradeData]);
 
   const minSpinHeight =
     MAIN_HEIGHT +

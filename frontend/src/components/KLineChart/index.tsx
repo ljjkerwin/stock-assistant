@@ -16,13 +16,14 @@ import type {
   CandlestickData,
   LineData,
   HistogramData,
+  WhitespaceData,
   SeriesType,
   SeriesMarker,
   Time,
   Logical,
   LogicalRange,
 } from 'lightweight-charts';
-import { klineApi } from '../../api/stock';
+import { klineApi, darktradeApi } from '../../api/stock';
 import type { KlinePeriod, KlineBar, DarkTradeSnapshot } from '../../types';
 import { PERIOD_LABELS } from '../../types';
 import styles from './KLineChart.module.css';
@@ -188,6 +189,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? controlledPeriod ?? 'timeshare');
   const [loading, setLoading] = useState(false);
   const [overlay, setOverlay] = useState<MainOverlay>(loadOverlay);
+  const [localDailySnapshots, setLocalDailySnapshots] = useState<DarkTradeSnapshot[]>([]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
@@ -228,6 +230,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const zoomSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const viewStartDateRef = useRef<string | undefined>(undefined);
   const viewEndDateRef = useRef<string | undefined>(undefined);
+  const savedRangeRef = useRef<LogicalRange | null>(null);
 
   // Data refs — used by legend updater to look up values by time
   const barsRef = useRef<KlineBar[]>([]);
@@ -267,7 +270,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       }
       liveCharts.forEach((c) => c.applyOptions({ rightPriceScale: { minimumWidth: maxWidth } }));
       // 价格轴变宽后重排会使暗盘副图靠右贴边，重新锁定其 242 逻辑范围
-      if (darkTradeChartRef.current) {
+      if (darkTradeChartRef.current && periodRef.current === 'timeshare') {
         darkTradeChartRef.current.timeScale().setVisibleLogicalRange({ from: 0 as Logical, to: (TIMESHARE_SLOTS - 1) as Logical });
       }
     });
@@ -277,8 +280,12 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     if (!containerRef.current || !volumeRef.current || !macdRef.current) return;
     if (showRsi && !rsiRef.current) return;
     if (showLjj && !ljjRef.current) return;
-    const showDT = showDarkTrade && period === 'timeshare';
+    const showDT = showDarkTrade && (period === 'timeshare' || period === 'daily');
     if (showDT && !darkTradeRef.current) return;
+
+    if (mainChartRef.current) {
+      savedRangeRef.current = mainChartRef.current.timeScale().getVisibleLogicalRange();
+    }
 
     if (alignWidthRafRef.current !== null) {
       cancelAnimationFrame(alignWidthRafRef.current);
@@ -448,13 +455,19 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       }
 
       if (darkTradeLegendRef.current) {
-        // 快照为当日分钟粒度且按时间升序：取「不晚于光标所在分钟」的最后一条（即截至当前的累计值）
         const hovered = bar?.time;
         let snap: DarkTradeSnapshot | undefined;
         if (hovered && darkTradeSnapshotsRef.current.length > 0) {
-          for (const s of darkTradeSnapshotsRef.current) {
-            if (s.time <= hovered) snap = s;
-            else break;
+          if (period === 'daily') {
+            // 日线：精确匹配当天数据
+            const dateStr = hovered.slice(0, 10);
+            snap = darkTradeSnapshotsRef.current.find((s) => s.time.slice(0, 10) === dateStr);
+          } else {
+            // 分时：快照为当日分钟粒度且按时间升序：取「不晚于光标所在分钟」的最后一条（即截至当前的累计值）
+            for (const s of darkTradeSnapshotsRef.current) {
+              if (s.time <= hovered) snap = s;
+              else break;
+            }
           }
         }
         if (snap) {
@@ -886,6 +899,9 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
 
     if (preserveViewport && savedRange) {
       setAllRange(savedRange);
+    } else if (savedRangeRef.current && pd !== 'timeshare') {
+      setAllRange(savedRangeRef.current);
+      savedRangeRef.current = null;
     } else if (bars.length === 0) {
       fitAll();
     } else if (isTimeshare) {
@@ -937,14 +953,15 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     alignPriceAxisWidth();
   }, [alignPriceAxisWidth]);
 
-  // 暗盘副图：用当日分钟快照绘制分时折线（明盘/暗盘 × 正/负），横轴 242 槽位对齐分时主图
+  // 暗盘副图：用当日分钟快照/历史日线快照绘制折线，横轴对齐主图
   const applyDarkTradeData = useCallback(() => {
     if (!darkTradeChartRef.current) return;
     const chart = darkTradeChartRef.current;
+    const savedRange = chart.timeScale().getVisibleLogicalRange();
     dtSeriesRef.current.forEach((s) => chart.removeSeries(s));
     dtSeriesRef.current = [];
 
-    // 按 time 去重（快照可能重复上报同一分钟）
+    // 按 time 去重（快照可能重复上报）
     const seen = new Set<string>();
     const snaps = darkTradeSnapshotsRef.current.filter((s) => {
       if (seen.has(s.time)) return false;
@@ -972,7 +989,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const symmetricAutoscale = (original: any) => {
       const res = original();
-      if (res === null) return res;
+      if (res === null || !res.priceRange) return res;
       const maxAbs = Math.max(Math.abs(res.priceRange.maxValue), Math.abs(res.priceRange.minValue), 1);
       return { priceRange: { minValue: -maxAbs, maxValue: maxAbs } };
     };
@@ -983,8 +1000,24 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         autoscaleInfoProvider: symmetricAutoscale,
       });
       series.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 } });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      series.setData(buildTimeshare241(dataMap, date) as any);
+      
+      if (period === 'daily') {
+        const seriesData = barsRef.current
+          .map((b) => {
+            const dateStr = b.time.slice(0, 10);
+            const val = dataMap.get(dateStr);
+            if (val !== undefined) {
+              return { time: toChartTime(b.time), value: val } as LineData;
+            }
+            return null;
+          })
+          .filter((item): item is LineData => item !== null);
+        series.setData(seriesData);
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        series.setData(buildTimeshare241(dataMap, date) as any);
+      }
+
       if (needZeroLine && !zeroLineAdded) {
         series.createPriceLine({ price: 0, color: DT_ZERO_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         zeroLineAdded = true;
@@ -992,33 +1025,105 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       dtSeriesRef.current.push(series);
     };
 
-    if (snaps.length === 0) {
-      // 撑起 timeScale，保证空数据时也能和主图一一对齐
-      addLine(DT_LIGHT_COLOR, lightMap, true);
+    if (period === 'daily') {
+      // 1. 总资金柱状图
+      const histSeries = chart.addSeries(HistogramSeries, {
+        lastValueVisible: false,
+        priceLineVisible: false,
+        autoscaleInfoProvider: symmetricAutoscale,
+      });
+      histSeries.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 } });
+
+      const histData = barsRef.current
+        .map((b) => {
+          const dateStr = b.time.slice(0, 10);
+          const val = totalMap.get(dateStr);
+          if (val !== undefined) {
+            return {
+              time: toChartTime(b.time),
+              value: val,
+              color: val >= 0 ? '#ef5350' : '#26a69a',
+            } as HistogramData;
+          }
+          return { time: toChartTime(b.time) } as WhitespaceData;
+        });
+      histSeries.setData(histData);
+      dtSeriesRef.current.push(histSeries);
+
+      // 2. 明盘/暗盘折线图
+      const addDailyLine = (color: string, dataMap: Map<string, number>, needZeroLine = false) => {
+        if (dataMap.size === 0 && snaps.length > 0) return;
+        const series = chart.addSeries(LineSeries, {
+          color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+          autoscaleInfoProvider: symmetricAutoscale,
+        });
+        series.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 } });
+
+        const seriesData = barsRef.current
+          .map((b) => {
+            const dateStr = b.time.slice(0, 10);
+            const val = dataMap.get(dateStr);
+            if (val !== undefined) {
+              return { time: toChartTime(b.time), value: val } as LineData;
+            }
+            return { time: toChartTime(b.time) } as WhitespaceData;
+          });
+        
+        series.setData(seriesData);
+        if (needZeroLine && !zeroLineAdded) {
+          series.createPriceLine({ price: 0, color: DT_ZERO_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
+          zeroLineAdded = true;
+        }
+        dtSeriesRef.current.push(series);
+      };
+
+      addDailyLine(DT_LIGHT_COLOR, lightMap, true);
+      addDailyLine(DT_DARK_COLOR, darkMap);
     } else {
-      addLine(DT_LIGHT_COLOR, lightMap, true);
-      addLine(DT_DARK_COLOR, darkMap);
-      addLine(DT_TOTAL_COLOR, totalMap);
+      if (snaps.length === 0) {
+        // 撑起 timeScale，保证空数据时也能和主图一一对齐
+        addLine(DT_LIGHT_COLOR, lightMap, true);
+      } else {
+        addLine(DT_LIGHT_COLOR, lightMap, true);
+        addLine(DT_DARK_COLOR, darkMap);
+        addLine(DT_TOTAL_COLOR, totalMap);
+      }
     }
 
-    // 与分时主图同用 242 逻辑索引，不用 fitContent
-    chart.timeScale().setVisibleLogicalRange({ from: 0 as Logical, to: (TIMESHARE_SLOTS - 1) as Logical });
+    if (period === 'timeshare') {
+      // 与分时主图同用 242 逻辑索引，不用 fitContent
+      chart.timeScale().setVisibleLogicalRange({ from: 0 as Logical, to: (TIMESHARE_SLOTS - 1) as Logical });
+    } else if (savedRange) {
+      chart.timeScale().setVisibleLogicalRange(savedRange);
+    }
     // 暗盘折线（亿/万 量级）会撑宽价格轴，重新对齐各图右边距
     alignPriceAxisWidth();
-  }, [alignPriceAxisWidth]);
+  }, [alignPriceAxisWidth, period]);
 
   const loadData = useCallback(
     async (mkt: 'A' | 'HK', cd: string, pd: KlinePeriod, preserveViewport = false) => {
       if (!preserveViewport) setLoading(true);
       try {
-        const res = await klineApi.get(mkt, cd, pd);
-        if (res.data.length === 0) {
+        const [klineRes, darkTradeRes] = await Promise.all([
+          klineApi.get(mkt, cd, pd),
+          showDarkTrade && pd === 'daily' && mkt === 'A'
+            ? darktradeApi.getSnapshots(cd, 1000)
+            : Promise.resolve(null),
+        ]);
+
+        if (darkTradeRes) {
+          setLocalDailySnapshots(darkTradeRes);
+        } else {
+          setLocalDailySnapshots([]);
+        }
+
+        if (klineRes.data.length === 0) {
           applyData([], pd, preserveViewport);
           if (!preserveViewport) void message.warning(`${PERIOD_LABELS[pd]}暂无数据`);
         } else {
-          applyData(res.data, pd, preserveViewport);
+          applyData(klineRes.data, pd, preserveViewport);
           // 上报 K 线实际交易日（YYYYMMDD），供父组件按当日拉取暗盘快照
-          const lastDate = res.data[res.data.length - 1].time.slice(0, 10).replace(/-/g, '');
+          const lastDate = klineRes.data[klineRes.data.length - 1].time.slice(0, 10).replace(/-/g, '');
           onDateResolvedRef.current?.(lastDate);
         }
       } catch (e) {
@@ -1028,7 +1133,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         if (!preserveViewport) setLoading(false);
       }
     },
-    [applyData],
+    [applyData, showDarkTrade],
   );
 
   useEffect(() => {
@@ -1076,12 +1181,17 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
 
   // 暗盘快照数据变化时：更新 ref（供 legend 查值）并重绘副图
   useEffect(() => {
-    darkTradeSnapshotsRef.current = darkTradeSnapshots ?? [];
+    if (period === 'daily') {
+      darkTradeSnapshotsRef.current = localDailySnapshots;
+    } else {
+      darkTradeSnapshotsRef.current = darkTradeSnapshots ?? [];
+    }
     applyDarkTradeData();
-  }, [darkTradeSnapshots, applyDarkTradeData]);
+  }, [darkTradeSnapshots, localDailySnapshots, period, applyDarkTradeData]);
 
   useEffect(() => {
     if (!code) return;
+    savedRangeRef.current = null;
 
     if (initialData) {
       applyData(initialData.data, period, false, initialData.backtestStartTime ?? undefined);
@@ -1160,7 +1270,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
             <div ref={ljjRef} className={styles.sub} />
           </div>
         )}
-        {showDarkTrade && period === 'timeshare' && (
+        {showDarkTrade && (period === 'timeshare' || period === 'daily') && (
           <div className={styles.subWrapper}>
             <div ref={darkTradeLegendRef} className={styles.subLegend}>
               明盘&nbsp;<span style={{ color: DT_LIGHT_COLOR }}>--</span>

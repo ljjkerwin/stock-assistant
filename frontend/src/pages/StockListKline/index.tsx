@@ -229,7 +229,7 @@ export default function StockListKline() {
                 showVolume={subCharts.includes('volume')}
                 showMacd={subCharts.includes('macd')}
                 showRsi={subCharts.includes('rsi')}
-                showDarkTrade={showDarkTrade && stock.market === 'A' && period === 'timeshare'}
+                showDarkTrade={showDarkTrade && stock.market === 'A' && (period === 'timeshare' || period === 'daily')}
                 darkTradeData={(() => {
                   const snaps = darkSnapshotMap[stock.code] || [];
                   return snaps.length > 0 ? snaps[snaps.length - 1] : null;
