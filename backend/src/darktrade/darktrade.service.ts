@@ -473,6 +473,7 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       byDay.set(r.tradeDate, r);
     }
     return Array.from(byDay.values())
+      .filter((r) => r.captureMinute.endsWith('1500'))
       .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
       .map((r) => ({
         time: `${r.tradeDate.slice(0, 4)}-${r.tradeDate.slice(4, 6)}-${r.tradeDate.slice(6, 8)}`,
