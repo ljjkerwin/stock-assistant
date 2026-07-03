@@ -151,4 +151,31 @@ describe('WatchListsService', () => {
       expect(repo.delete).toHaveBeenCalledWith(5);
     });
   });
+
+  describe('update', () => {
+    it('throws NotFoundException when the list does not exist', async () => {
+      repo.findOneBy.mockResolvedValue(null);
+      await expect(service.update(99, 42, '新名字')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when the list belongs to another user', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 5, userId: 7, isDefault: false });
+      await expect(service.update(5, 42, '新名字')).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws BadRequestException when updating a default list', async () => {
+      repo.findOneBy.mockResolvedValue({ id: 1, userId: 42, isDefault: true });
+      await expect(service.update(1, 42, '新名字')).rejects.toThrow(BadRequestException);
+    });
+
+    it('saves and returns the updated list when details are valid', async () => {
+      const mockList = { id: 5, userId: 42, name: '旧名字', isDefault: false };
+      repo.findOneBy.mockResolvedValue(mockList);
+
+      await service.update(5, 42, '新名字');
+
+      expect(mockList.name).toBe('新名字');
+      expect(repo.save).toHaveBeenCalledWith(mockList);
+    });
+  });
 });

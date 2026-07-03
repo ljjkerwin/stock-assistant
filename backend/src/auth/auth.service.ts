@@ -6,6 +6,15 @@ import { User } from './user.entity';
 import { WatchListsService } from '../favorites/watch-lists.service';
 import type { AuthUser } from './current-user.decorator';
 
+export class SmtpConfigDto {
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpTo?: string;
+}
+
 /** 令牌默认有效期：7 天（秒）。 */
 const TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
@@ -44,6 +53,17 @@ export class AuthService implements OnModuleInit {
       );
     }
     await this.watchListsService.migrateLegacyData(user.id);
+
+    // 种入账号 lhy
+    const lhyUser = await this.userRepo.findOne({ where: { username: 'lhy' } });
+    if (!lhyUser) {
+      await this.userRepo.save(
+        this.userRepo.create({
+          username: 'lhy',
+          passwordHash: this.hashPassword('aaa.123456'),
+        }),
+      );
+    }
   }
 
   // ---- 密码哈希（scrypt，格式 salt:hash 十六进制）----
@@ -112,5 +132,35 @@ export class AuthService implements OnModuleInit {
     }
     const authUser: AuthUser = { id: user.id, username: user.username };
     return { token: this.signToken(authUser), user: authUser };
+  }
+
+  // ---- SMTP 设置 ----
+
+  async getSmtp(userId: number) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('用户不存在');
+    return {
+      smtpHost: user.smtpHost || '',
+      smtpPort: user.smtpPort || 465,
+      smtpSecure: user.smtpSecure ?? true,
+      smtpUser: user.smtpUser || '',
+      smtpPass: user.smtpPass || '',
+      smtpTo: user.smtpTo || '',
+    };
+  }
+
+  async saveSmtp(userId: number, config: SmtpConfigDto) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('用户不存在');
+
+    await this.userRepo.update(userId, {
+      smtpHost: config.smtpHost || null,
+      smtpPort: config.smtpPort || null,
+      smtpSecure: config.smtpSecure !== undefined ? config.smtpSecure : null,
+      smtpUser: config.smtpUser || null,
+      smtpPass: config.smtpPass || null,
+      smtpTo: config.smtpTo || null,
+    });
+    return { success: true };
   }
 }

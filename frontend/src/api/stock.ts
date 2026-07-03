@@ -46,12 +46,26 @@ export interface AuthUser {
   username: string;
 }
 
+export interface SmtpConfig {
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPass: string;
+  smtpTo: string;
+}
+
 export const authApi = {
   login: (username: string, password: string): Promise<{ token: string; user: AuthUser }> =>
     api
       .post<{ token: string; user: AuthUser }>('/auth/login', { username, password })
       .then((r) => r.data),
   me: (): Promise<AuthUser> => api.get<AuthUser>('/auth/me').then((r) => r.data),
+  getSmtp: (): Promise<SmtpConfig> => api.get<SmtpConfig>('/auth/smtp').then((r) => r.data),
+  saveSmtp: (config: SmtpConfig): Promise<{ success: boolean }> =>
+    api.post<{ success: boolean }>('/auth/smtp', config).then((r) => r.data),
+  testSmtp: (config: SmtpConfig): Promise<{ success: boolean }> =>
+    api.post<{ success: boolean }>('/auth/smtp/test', config).then((r) => r.data),
 };
 
 export const favoritesApi = {
@@ -69,6 +83,8 @@ export const watchListsApi = {
     api.get<WatchList[]>('/watchlists', { params: { boardType } }).then((r) => r.data),
   create: (name: string, boardType: BoardType): Promise<WatchList> =>
     api.post<WatchList>('/watchlists', { name, boardType }).then((r) => r.data),
+  update: (id: number, name: string): Promise<WatchList> =>
+    api.patch<WatchList>(`/watchlists/${id}`, { name }).then((r) => r.data),
   remove: (id: number): Promise<void> => api.delete(`/watchlists/${id}`).then(() => undefined),
 };
 

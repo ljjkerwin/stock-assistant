@@ -70,7 +70,7 @@ export default function StockSearch({ size = 'middle', onSelect: onSelectProp }:
         variant="borderless"
         prefix={<SearchOutlined />}
         suffix={loading ? <Spin size="small" /> : null}
-        placeholder="搜索股票代码/名称"
+        placeholder="搜索标的代码/名称"
         onPressEnter={doSearch}
       />
     </AutoComplete>

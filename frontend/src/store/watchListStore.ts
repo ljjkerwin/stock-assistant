@@ -17,6 +17,7 @@ interface WatchListStore {
   currentFundListId: number | null;
   fetchLists: (boardType: BoardType) => Promise<void>;
   createList: (name: string, boardType: BoardType) => Promise<WatchList | undefined>;
+  updateList: (id: number, name: string, boardType: BoardType) => Promise<void>;
   deleteList: (id: number, boardType: BoardType) => Promise<void>;
   setCurrentList: (boardType: BoardType, id: number) => void;
 }
@@ -101,6 +102,23 @@ export const useWatchListStore = create<WatchListStore>((set, get) => ({
     } catch (error) {
       message.error(extractErrorMessage(error));
       return undefined;
+    }
+  },
+
+  updateList: async (id, name, boardType) => {
+    try {
+      const updated = await watchListsApi.update(id, name);
+      if (boardType === 'stock') {
+        set((s) => ({
+          stockLists: s.stockLists.map((l) => (l.id === id ? updated : l)),
+        }));
+      } else {
+        set((s) => ({
+          fundLists: s.fundLists.map((l) => (l.id === id ? updated : l)),
+        }));
+      }
+    } catch (error) {
+      message.error(extractErrorMessage(error));
     }
   },
 

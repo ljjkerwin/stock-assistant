@@ -84,4 +84,12 @@ export class WatchListsService {
     await this.favoriteRepo.delete({ watchListId: id });
     await this.repo.delete(id);
   }
+
+  async update(id: number, userId: number, name: string): Promise<WatchList> {
+    const list = await this.repo.findOneBy({ id });
+    if (!list || list.userId !== userId) throw new NotFoundException(`WatchList ${id} not found`);
+    if (list.isDefault) throw new BadRequestException('默认列表不可修改名称');
+    list.name = name;
+    return this.repo.save(list);
+  }
 }
