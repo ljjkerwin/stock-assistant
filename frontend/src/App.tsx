@@ -12,6 +12,7 @@ import FundDetail from './pages/FundDetail';
 import StockListImport from './pages/StockListImport';
 import StockListKline from './pages/StockListKline';
 import StrategyBacktest from './pages/StrategyBacktest';
+import Admin from './pages/Admin';
 import { useFavoritesStore } from './store/favoritesStore';
 import styles from './App.module.css';
 
@@ -154,7 +155,7 @@ export default function App() {
         </aside>
         <main className={styles.content}>
           <Routes>
-            <Route path="/" element={<Navigate to="/stock" replace />} />
+            <Route path="/" element={<Navigate to="/stock-list-kline" replace />} />
             <Route path="/stock" element={<Home />} />
             <Route path="/stock/:market/:code" element={<StockDetail />} />
             <Route
@@ -177,6 +178,10 @@ export default function App() {
             <Route
               path="/strategy-backtest/:code"
               element={isLjj ? <StrategyBacktest /> : <Navigate to="/stock" replace />}
+            />
+            <Route
+              path="/admin"
+              element={isLjj ? <Admin /> : <Navigate to="/stock" replace />}
             />
           </Routes>
         </main>

@@ -262,7 +262,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         autoscaleInfoProvider: symmetricAutoscale,
       });
       series.priceScale().applyOptions({ scaleMargins: { top: 0.02, bottom: 0.02 } });
-      
+
       if (period === 'daily') {
         const seriesData = bars.map((b) => {
           const dateStr = b.time.slice(0, 10);
@@ -277,7 +277,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         series.setData(buildTimeshare241(dataMap, date) as any);
       }
-      
+
       if (needZeroLine && !zeroLineAdded) {
         series.createPriceLine({ price: 0, color: DT_ZERO_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
         zeroLineAdded = true;
@@ -326,7 +326,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
           }
           return { time: toChartTime(b.time) } as WhitespaceData;
         });
-        
+
         series.setData(seriesData);
         if (needZeroLine && !zeroLineAdded) {
           series.createPriceLine({ price: 0, color: DT_ZERO_COLOR, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false });
@@ -445,6 +445,11 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       ...interactionOpts,
       autoSize: true,
       height: MAIN_HEIGHT,
+      rightPriceScale: {
+        ...CHART_BASE.rightPriceScale,
+        // 分时图缩小上下留白（默认约10%，改为3%）
+        ...(isTimeshare ? { scaleMargins: { top: 0.03, bottom: 0.03 } } : {}),
+      },
       timeScale: { ...CHART_BASE.timeScale, timeVisible, fixRightEdge: !isTimeshare },
     });
     mainChartRef.current = mainChart;
@@ -501,8 +506,8 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
           priceFormatter: (v: number) => {
             const abs = Math.abs(v);
             const str = abs >= 1e7 ? +(v / 1e8).toFixed(2) + '亿'
-                      : abs >= 1e4 ? (v / 1e4).toFixed(0) + '万'
-                      : v.toFixed(0);
+              : abs >= 1e4 ? (v / 1e4).toFixed(0) + '万'
+                : v.toFixed(0);
             return str + '    ';
           },
         },
@@ -613,6 +618,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
           return res;
         },
       });
+
       areaSeries.setData(latestDate ? (buildTimeshareSeriesData(dedupedBars, latestDate, (b) => ({ value: b.close })) as unknown as LineData[]) : []);
       mainSeries = areaSeries;
       if (zeroPrice > 0) {

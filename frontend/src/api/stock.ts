@@ -212,6 +212,16 @@ export const darktradeApi = {
           })
           .then((r) => r.data)
           .catch(() => ({})),
+
+  fetchAllDailySnapshot: (
+    date: string,
+  ): Promise<{ date: string; total: number; written: number }> =>
+    api
+      .post<{ date: string; total: number; written: number }>(
+        '/darktrade/fetch-all-daily-snapshot',
+        { date },
+      )
+      .then((r) => r.data),
 };
 
 export const strategyApi = {

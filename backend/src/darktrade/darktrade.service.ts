@@ -70,6 +70,12 @@ export interface RefreshResult {
   pages: number;
 }
 
+export interface FetchAllDailySnapshotResult {
+  date: string;
+  total: number;
+  written: number;
+}
+
 function todayDate(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -548,6 +554,55 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       });
     }
     return result;
+  }
+
+  /**
+   * 抓取指定日期全市场（约 5300 只）的明暗盘收盘数据并写入快照表。
+   * 步骤：
+   *   1. refreshIndex(date) — 爬取所有页（约 177 页），建全量索引
+   *   2. 读取该日期全量 index 记录，批量写 captureMinute=${date}1500 快照（幂等）
+   */
+  async fetchAllDailySnapshot(date: string): Promise<FetchAllDailySnapshotResult> {
+    this.logger.log(`[全市场快照] 开始抓取 ${date} 全量明暗盘数据...`);
+
+    // 1. 重建该日期索引（全量爬取）
+    const { indexed } = await this.refreshIndex(date);
+
+    // 2. 读取本次建立的全量 index（以 refreshDate 过滤，防止读到其他日期残留数据）
+    const allEntries = await this.indexRepo.find({ where: { refreshDate: date } });
+    this.logger.log(
+      `[全市场快照] 索引完成，共 ${allEntries.length} 只股票，开始写入 ${date}1500 快照...`,
+    );
+
+    const captureMinute = `${date}1500`;
+    const snapshotEntities = allEntries
+      .filter((e) => e.darkCapital != null || e.lightCapital != null)
+      .map((e) => ({
+        code: e.code,
+        tradeDate: date,
+        captureMinute,
+        darkCapital: e.darkCapital,
+        lightCapital: e.lightCapital,
+      }));
+
+    const CHUNK = 500;
+    let written = 0;
+    for (let i = 0; i < snapshotEntities.length; i += CHUNK) {
+      const chunk = snapshotEntities.slice(i, i + CHUNK);
+      await this.snapshotRepo
+        .createQueryBuilder()
+        .insert()
+        .into(DarkTradeSnapshot)
+        .values(chunk)
+        .orUpdate(['dark_capital', 'light_capital', 'trade_date'], ['code', 'capture_minute'])
+        .updateEntity(false)
+        .execute();
+      written += chunk.length;
+      this.logger.log(`[全市场快照] 已写入 ${written}/${snapshotEntities.length}`);
+    }
+
+    this.logger.log(`[全市场快照] 完成：date=${date}, indexed=${indexed}, written=${written}`);
+    return { date, total: indexed, written };
   }
 
   async getIndexStatus(): Promise<{ count: number; date: string | null; updatedAt: Date | null }> {

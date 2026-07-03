@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Button, Tooltip, Space, Typography, Select, Modal, Input, Dropdown } from 'antd';
+import { Button, Space, Typography, Select, Modal, Input, Dropdown } from 'antd';
 import {
   DeleteOutlined,
   PushpinOutlined,
@@ -28,10 +28,11 @@ const { Text } = Typography;
 
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
-  { value: 'klinegrid', label: 'K线总览' },
+  { value: 'klinegrid', label: '总览' },
   { value: 'fund', label: '基金' },
   { value: 'list', label: '股票列表导入' },
   { value: 'backtest', label: '策略回测' },
+  { value: 'admin', label: '管理' },
 ];
 
 export default function Sidebar() {
@@ -62,13 +63,15 @@ export default function Sidebar() {
 
   const section = pathname.startsWith('/strategy-backtest')
     ? 'backtest'
-    : pathname.startsWith('/fund')
-      ? 'fund'
-      : pathname.startsWith('/stock-list-import')
-        ? 'list'
-        : pathname.startsWith('/stock-list-kline')
-          ? 'klinegrid'
-          : 'stock';
+    : pathname.startsWith('/admin')
+      ? 'admin'
+      : pathname.startsWith('/fund')
+        ? 'fund'
+        : pathname.startsWith('/stock-list-import')
+          ? 'list'
+          : pathname.startsWith('/stock-list-kline')
+            ? 'klinegrid'
+            : 'stock';
 
   const boardType: BoardType | null = section === 'list' ? null : section === 'fund' ? 'fund' : 'stock';
   const lists = boardType === 'fund' ? fundLists : stockLists;
@@ -96,6 +99,8 @@ export default function Sidebar() {
   const handleSectionChange = (val: string) => {
     if (val === 'backtest') {
       navigate('/strategy-backtest');
+    } else if (val === 'admin') {
+      navigate('/admin');
     } else if (val === 'stock') {
       navigate('/stock');
     } else if (val === 'fund') {
@@ -229,43 +234,57 @@ export default function Sidebar() {
           {stock.code} · {stock.market === 'HK' ? '港股' : stock.market === 'FUND' ? '基金' : 'A股'}
         </Text>
       </div>
-      <Space size={0} className={styles.actions} onClick={(e) => e.stopPropagation()}>
-        <Tooltip title={stock.pinned ? '取消置顶' : '置顶'}>
+      <div className={styles.actions} onClick={(e) => e.stopPropagation()}>
+        <Dropdown
+          menu={{
+            items: [
+              {
+                key: 'pin',
+                label: stock.pinned ? '取消置顶' : '置顶',
+                icon: stock.pinned ? <PushpinFilled /> : <PushpinOutlined />,
+              },
+              {
+                key: 'up',
+                label: '上移',
+                icon: <ArrowUpOutlined />,
+                disabled: index === 0,
+              },
+              {
+                key: 'down',
+                label: '下移',
+                icon: <ArrowDownOutlined />,
+                disabled: index === list.length - 1,
+              },
+              {
+                key: 'delete',
+                label: '删除',
+                icon: <DeleteOutlined />,
+                danger: true,
+              },
+            ],
+            onClick: ({ domEvent, key }) => {
+              domEvent.stopPropagation();
+              if (key === 'pin') {
+                if (currentListId != null) pin(stock.id!, currentListId, !stock.pinned);
+              } else if (key === 'up') {
+                moveItem(list, index, 'up');
+              } else if (key === 'down') {
+                moveItem(list, index, 'down');
+              } else if (key === 'delete') {
+                if (currentListId != null) removeItem(stock.id!, currentListId);
+              }
+            },
+          }}
+          trigger={['click']}
+          placement="bottomRight"
+        >
           <Button
             type="text"
             size="small"
-            icon={stock.pinned ? <PushpinFilled /> : <PushpinOutlined />}
-            onClick={() => currentListId != null && pin(stock.id!, currentListId, !stock.pinned)}
+            icon={<EllipsisOutlined />}
           />
-        </Tooltip>
-        <Tooltip title="上移">
-          <Button
-            type="text"
-            size="small"
-            icon={<ArrowUpOutlined />}
-            disabled={index === 0}
-            onClick={() => moveItem(list, index, 'up')}
-          />
-        </Tooltip>
-        <Tooltip title="下移">
-          <Button
-            type="text"
-            size="small"
-            icon={<ArrowDownOutlined />}
-            disabled={index === list.length - 1}
-            onClick={() => moveItem(list, index, 'down')}
-          />
-        </Tooltip>
-        <Tooltip title="删除">
-          <Button
-            type="text"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => currentListId != null && removeItem(stock.id!, currentListId)}
-          />
-        </Tooltip>
-      </Space>
+        </Dropdown>
+      </div>
     </div>
   );
 

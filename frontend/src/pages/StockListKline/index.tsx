@@ -199,7 +199,7 @@ export default function StockListKline() {
             type={showDarkTrade ? 'primary' : 'default'}
             onClick={handleDarkTradeToggle}
           >
-            暗盘
+            明暗盘
           </Button>
         </div>
       </div>
