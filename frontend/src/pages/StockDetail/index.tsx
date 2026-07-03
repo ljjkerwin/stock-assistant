@@ -170,11 +170,15 @@ export default function StockDetail() {
               <span>{formatNumber(info.turnover)}</span>
             </div>
             <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>市值</span>
+              <span className={styles.infoLabel}>换手率</span>
+              <span>{info.turnover_rate != null ? `${info.turnover_rate.toFixed(2)}%` : '-'}</span>
+            </div>
+            <div className={styles.infoItem}>
+              <span className={styles.infoLabel}>总市值</span>
               <span>{formatNumber(info.market_cap)}</span>
             </div>
             <div className={styles.infoItem}>
-              <span className={styles.infoLabel}>PE</span>
+              <span className={styles.infoLabel}>市盈率</span>
               <span>{info.pe != null ? info.pe.toFixed(2) : '-'}</span>
             </div>
           </div>

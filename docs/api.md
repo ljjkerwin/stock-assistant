@@ -43,9 +43,22 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/stocks/search?q=` | 按代码或名称搜索（A股 + 港股） |
-| GET | `/api/stocks/:market/:code` | 获取股票基本信息 |
+| GET | `/api/stocks/:market/:code` | 获取股票基本信息，返回 `StockInfo` 结构 |
 | GET | `/api/stocks/batch?symbols=` | 批量查询多只股票的基本详情，`symbols` 为逗号分隔的 `market:code` 列表，返回 `Record<market:code, StockInfo>` |
 | GET | `/api/kline/:market/:code?period=` | 获取 K 线数据 |
+
+`StockInfo` 结构说明：
+- `code`: 股票代码
+- `name`: 股票名称
+- `market`: 市场（`A` / `HK`）
+- `price`: 最新价
+- `change_pct`: 涨跌幅 (%)
+- `turnover`: 成交额 (元)
+- `volume`: 成交量 (股)
+- `turnover_rate`: 换手率 (%) (新浪数据源不支持时为 null)
+- `market_cap`: 总市值 (元) (新浪数据源不支持时为 null)
+- `pe`: 市盈率 (新浪数据源不支持时为 null)
+
 
 ## 监控
 

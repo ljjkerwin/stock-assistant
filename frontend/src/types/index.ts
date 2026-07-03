@@ -14,6 +14,8 @@ export interface StockInfo {
   price: number | null;
   change_pct: number | null;
   turnover: number | null;
+  volume: number | null;
+  turnover_rate: number | null;
   market_cap: number | null;
   pe: number | null;
 }
