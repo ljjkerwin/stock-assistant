@@ -122,12 +122,10 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    this.logger.log('已启动收藏夹暗盘数据轮询订阅（基于中央心跳，2分钟/次）');
-    this.schedulerSubscription = this.schedulerService.tick$.subscribe((tick) => {
-      // tick 从 1 开始，tick 1 (10s后) 触发，之后每 2 个 tick (120s后) 触发一次
-      if ((tick - 1) % 2 === 0) {
-        void this.pollFavorites();
-      }
+    this.logger.log('已启动收藏夹暗盘数据轮询订阅（基于中央心跳，1分钟/次）');
+    this.schedulerSubscription = this.schedulerService.tick$.subscribe(() => {
+      // 每 1 个 tick (60s后) 触发一次
+      void this.pollFavorites();
     });
 
     this.logger.log('已启动北京时间 09:28 定时重建暗盘数据索引订阅（仅限开盘日）');
@@ -422,7 +420,15 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
     const inTradingHours = minsNow >= 9 * 60 + 30 && minsNow < 15 * 60;
     const afterClose = minsNow >= 15 * 60;
     if (inTradingHours || afterClose) {
-      const minute = afterClose ? `${targetDate}1500` : captureMinuteForSnapshot(targetDate);
+      let minute: string;
+      if (afterClose) {
+        minute = `${targetDate}1500`;
+      } else if (minsNow > 11 * 60 + 30 && minsNow <= 13 * 60) {
+        // 中午休息时间（11:30 - 13:00）的暗盘资金，算作是 11:30 的数据
+        minute = `${targetDate}1130`;
+      } else {
+        minute = captureMinuteForSnapshot(targetDate);
+      }
       const snapshotEntities = Object.values(result)
         .filter((d) => d.darkCapital != null || d.lightCapital != null)
         .map((d) => ({
@@ -498,6 +504,16 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
         await this.refreshLock;
       } catch {
         this.logger.warn(`暗盘索引自动刷新失败（date=${targetDate}），继续使用旧索引`);
+      }
+    }
+
+    // 如果查询的是今天，则在获取快照前，先触发一次最新数据的拉取与快照写入
+    if (targetDate === todayDate()) {
+      try {
+        await this.getBatchDarkTrade(codes, targetDate);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`获取实时暗盘数据并生成快照失败 (codes=${codes.join(',')}): ${msg}`);
       }
     }
 

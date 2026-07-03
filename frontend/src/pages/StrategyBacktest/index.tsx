@@ -152,11 +152,11 @@ export default function StrategyBacktest() {
   }, [defaultListId, fetchList]);
 
   const toggleFavorite = () => {
-    if (!code || defaultListId == null) return;
+    if (!code || defaultListId == null || !stockName) return;
     if (isFavorited) {
       void removeItem(favoriteEntry!.id!, defaultListId);
     } else {
-      void addToList(defaultListId, { code, market, name: stockName ?? code });
+      void addToList(defaultListId, { code, market, name: stockName });
     }
   };
 
@@ -315,10 +315,11 @@ export default function StrategyBacktest() {
                 type="text"
                 size="small"
                 icon={isFavorited ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+                disabled={!stockName}
                 onClick={toggleFavorite}
               />
             </Tooltip>
-            {code && <AddToListMenu boardType="stock" stock={{ code, market, name: stockName ?? code }} />}
+            {code && stockName && <AddToListMenu boardType="stock" stock={{ code, market, name: stockName }} />}
           </span>
         }
         className={styles.card}

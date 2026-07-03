@@ -5,5 +5,6 @@ import { FundService } from './fund.service';
 @Module({
   controllers: [FundController],
   providers: [FundService],
+  exports: [FundService],
 })
 export class FundModule {}

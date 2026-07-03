@@ -110,17 +110,18 @@ export default function FundDetail() {
             <Button
               type="text"
               icon={isFavorited ? <StarFilled style={{ color: '#faad14' }} /> : <StarOutlined />}
+              disabled={loading || !info}
               onClick={() => {
                 if (isFavorited) {
                   removeItem(favoriteEntry!.id!, defaultListId!);
-                } else if (defaultListId != null) {
-                  addToList(defaultListId, { code, market: 'FUND', name: info?.name ?? code });
+                } else if (defaultListId != null && info) {
+                  addToList(defaultListId, { code, market: 'FUND', name: info.name });
                 }
               }}
             />
           </Tooltip>
         )}
-        {code && <AddToListMenu boardType="fund" stock={{ code, market: 'FUND', name: info?.name ?? code }} />}
+        {code && info && <AddToListMenu boardType="fund" stock={{ code, market: 'FUND', name: info.name }} />}
       </div>
 
       <Spin spinning={loading}>
