@@ -17,7 +17,7 @@ function makeGbkBuffer(template: string, chineseReplacements: Record<string, num
     placeholders.push({ placeholder, bytes });
   });
 
-  const parts: (Buffer | number[])[] = [];
+  const parts: number[][] = [];
   let currentIdx = 0;
 
   while (currentIdx < tempStr.length) {
