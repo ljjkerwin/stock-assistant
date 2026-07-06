@@ -60,7 +60,7 @@ jobs:
     name: 部署到 VPS
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     steps:
       - name: 下载产物
         uses: actions/download-artifact@v8
