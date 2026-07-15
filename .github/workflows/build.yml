@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # push 触发时固定检出本次推送的提交，避免部署到默认分支内容。
+          ref: ${{ github.sha }}
 
       - name: 设置 pnpm
         uses: pnpm/action-setup@v4

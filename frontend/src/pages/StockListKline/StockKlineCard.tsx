@@ -182,6 +182,8 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   const darkTradeSnapshotsRef = useRef<DarkTradeSnapshot[]>([]);
   const lastDateRef = useRef<string>('');
   const syncingRef = useRef(false);
+  // 明暗盘副图更新 series 时会自动重算时间轴；这不是用户操作，不能反向覆盖主图视口。
+  const updatingDarkTradeRef = useRef(false);
   const isLockedRef = useRef(false);
   const onRangeChangeRef = useRef(onRangeChange);
   useEffect(() => { onRangeChangeRef.current = onRangeChange; });
@@ -217,9 +219,11 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
   const populateDarkTradeData = useCallback(() => {
     const chart = darkTradeChartRef.current;
     if (!chart) return;
-    const savedRange = chart.timeScale().getVisibleLogicalRange();
-    dtSeriesRef.current.forEach((s) => chart.removeSeries(s));
-    dtSeriesRef.current = [];
+    const savedRange = mainChartRef.current?.timeScale().getVisibleLogicalRange() ?? null;
+    updatingDarkTradeRef.current = true;
+    try {
+      dtSeriesRef.current.forEach((s) => chart.removeSeries(s));
+      dtSeriesRef.current = [];
 
     const date = lastDateRef.current;
     const seen = new Set<string>();
@@ -343,12 +347,15 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
       addLine('#888', totalMap);
     }
 
-    if (period === 'timeshare') {
-      chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
-    } else if (savedRange) {
-      chart.timeScale().setVisibleLogicalRange(savedRange);
+      if (period === 'timeshare') {
+        chart.timeScale().setVisibleLogicalRange({ from: 0, to: TIMESHARE_SLOTS - 1 });
+      } else if (savedRange) {
+        chart.timeScale().setVisibleLogicalRange(savedRange);
+      }
+      alignPriceAxisWidth();
+    } finally {
+      updatingDarkTradeRef.current = false;
     }
-    alignPriceAxisWidth();
   }, [alignPriceAxisWidth, period, bars]);
 
   useImperativeHandle(ref, () => ({
@@ -537,7 +544,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
 
     // 主图变化时同步所有副图，并向上通知跨卡片联动
     mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (syncingRef.current || !range) return;
+      if (syncingRef.current || updatingDarkTradeRef.current || !range) return;
       syncingRef.current = true;
       subCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(range));
       syncingRef.current = false;
@@ -547,7 +554,7 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     // 任意副图变化时同步主图和其他副图
     subCharts.forEach((subChart) => {
       subChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-        if (syncingRef.current || !range) return;
+        if (syncingRef.current || updatingDarkTradeRef.current || !range) return;
         syncingRef.current = true;
         mainChart.timeScale().setVisibleLogicalRange(range);
         subCharts.filter((c) => c !== subChart).forEach((c) => c.timeScale().setVisibleLogicalRange(range));
@@ -757,23 +764,30 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
         mainChart.timeScale().setVisibleLogicalRange(savedRange);
         subCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(savedRange));
       } else {
-        mainChart.timeScale().fitContent();
-        subCharts.forEach((c) => c.timeScale().fitContent());
+        // 总览日/周线默认定位到最新 K 线；fitContent 会把全量历史压进当前宽度，
+        // 看起来像没有滚动到最右侧。
+        const barMax = dedupedBars.length - 1;
+        const defaultVisible = currentPeriod === 'daily' || currentPeriod === 'weekly' ? 100 : 120;
+        let initialRange = {
+          from: Math.max(0, barMax - defaultVisible + 1),
+          to: barMax,
+        };
         try {
           const saved = localStorage.getItem(`stockListKline:range:${currentPeriod}`);
           if (saved) {
             const r = JSON.parse(saved) as { from: number; to: number };
             if (typeof r.from === 'number' && typeof r.to === 'number') {
-              const barMax = dedupedBars.length - 1;
               if (r.to < barMax) {
                 const width = r.to - r.from;
-                mainChart.timeScale().setVisibleLogicalRange({ from: barMax - width, to: barMax });
+                initialRange = { from: Math.max(0, barMax - width), to: barMax };
               } else {
-                mainChart.timeScale().setVisibleLogicalRange(r);
+                initialRange = r;
               }
             }
           }
         } catch { /* ignore */ }
+        mainChart.timeScale().setVisibleLogicalRange(initialRange);
+        subCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(initialRange));
       }
     }
 

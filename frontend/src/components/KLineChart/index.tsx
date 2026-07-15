@@ -16,7 +16,6 @@ import type {
   CandlestickData,
   LineData,
   HistogramData,
-  WhitespaceData,
   SeriesType,
   SeriesMarker,
   Time,
@@ -82,6 +81,20 @@ function loadOverlay(): MainOverlay {
 }
 
 const PERIODS = Object.keys(PERIOD_LABELS) as KlinePeriod[];
+
+const PERIOD_STORAGE_KEY = 'kline:period';
+
+function loadPeriod(): KlinePeriod {
+  try {
+    const val = localStorage.getItem(PERIOD_STORAGE_KEY);
+    if (val && PERIODS.includes(val as KlinePeriod)) {
+      return val as KlinePeriod;
+    }
+  } catch {
+    // Ignore
+  }
+  return 'timeshare';
+}
 
 function fmtVol(v: number): string {
   if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
@@ -186,10 +199,22 @@ function isInTradingHours(market: 'A' | 'HK'): boolean {
 }
 
 export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, showDarkTrade = false, darkTradeSnapshots, onDateResolved, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
-  const [period, setPeriod] = useState<KlinePeriod>(initialData?.period ?? controlledPeriod ?? 'timeshare');
+  const [period, setPeriod] = useState<KlinePeriod>(() => {
+    return initialData?.period ?? controlledPeriod ?? loadPeriod();
+  });
   const [loading, setLoading] = useState(false);
   const [overlay, setOverlay] = useState<MainOverlay>(loadOverlay);
   const [localDailySnapshots, setLocalDailySnapshots] = useState<DarkTradeSnapshot[]>([]);
+
+  useEffect(() => {
+    if (showPeriodTabs) {
+      try {
+        localStorage.setItem(PERIOD_STORAGE_KEY, period);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [period, showPeriodTabs]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
@@ -1047,7 +1072,12 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
               color: val >= 0 ? '#ef5350' : '#26a69a',
             } as HistogramData;
           }
-          return { time: toChartTime(b.time) } as WhitespaceData;
+          // Default missing day to 0 instead of WhitespaceData to ensure time scale consistency and prevent scroll freezing
+          return {
+            time: toChartTime(b.time),
+            value: 0,
+            color: '#ef5350',
+          } as HistogramData;
         });
       histSeries.setData(histData);
       dtSeriesRef.current.push(histSeries);
@@ -1061,14 +1091,17 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         });
         series.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.05 } });
 
+        let lastVal = 0;
         const seriesData = barsRef.current
           .map((b) => {
             const dateStr = b.time.slice(0, 10);
             const val = dataMap.get(dateStr);
             if (val !== undefined) {
+              lastVal = val;
               return { time: toChartTime(b.time), value: val } as LineData;
             }
-            return { time: toChartTime(b.time) } as WhitespaceData;
+            // Carry over the last available value (or 0 if none) to keep line continuous and maintain time scale range
+            return { time: toChartTime(b.time), value: lastVal } as LineData;
           });
         
         series.setData(seriesData);
