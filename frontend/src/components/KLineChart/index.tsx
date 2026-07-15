@@ -283,8 +283,10 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     const showDT = showDarkTrade && (period === 'timeshare' || period === 'daily');
     if (showDT && !darkTradeRef.current) return;
 
-    if (mainChartRef.current) {
+    if (mainChartRef.current && periodRef.current === period) {
       savedRangeRef.current = mainChartRef.current.timeScale().getVisibleLogicalRange();
+    } else {
+      savedRangeRef.current = null;
     }
 
     if (alignWidthRafRef.current !== null) {
@@ -501,7 +503,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
           if (zoomSaveTimerRef.current) clearTimeout(zoomSaveTimerRef.current);
           zoomSaveTimerRef.current = setTimeout(() => {
             try {
-              localStorage.setItem(`kline:zoom:${zoomStorageKeyRef.current!}`, JSON.stringify(range));
+              localStorage.setItem(`kline:zoom:${zoomStorageKeyRef.current!}:${periodRef.current}`, JSON.stringify(range));
             } catch { /* localStorage unavailable */ }
           }, 500);
         }
@@ -931,7 +933,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       let restoredZoom: LogicalRange | null = null;
       if (zoomStorageKeyRef.current) {
         try {
-          const s = localStorage.getItem(`kline:zoom:${zoomStorageKeyRef.current}`);
+          const s = localStorage.getItem(`kline:zoom:${zoomStorageKeyRef.current}:${pd}`);
           restoredZoom = s ? (JSON.parse(s) as LogicalRange) : null;
         } catch { /* localStorage unavailable */ }
       }
@@ -957,7 +959,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const applyDarkTradeData = useCallback(() => {
     if (!darkTradeChartRef.current) return;
     const chart = darkTradeChartRef.current;
-    const savedRange = chart.timeScale().getVisibleLogicalRange();
+    const savedRange = mainChartRef.current ? mainChartRef.current.timeScale().getVisibleLogicalRange() : null;
     dtSeriesRef.current.forEach((s) => chart.removeSeries(s));
     dtSeriesRef.current = [];
 

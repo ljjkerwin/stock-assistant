@@ -9,6 +9,7 @@ import {
   DefaultValuePipe,
 } from '@nestjs/common';
 import { DarkTradeService } from './darktrade.service';
+import type { FetchAllDailySnapshotResult } from './darktrade.service';
 
 interface RefreshIndexBody {
   date?: string;
@@ -29,6 +30,11 @@ export class DarkTradeController {
   refreshIndex(@Body() body: RefreshIndexBody = {}) {
     const { date, sortFlag, desc } = body;
     return this.darkTradeService.refreshIndex(date, sortFlag, desc);
+  }
+
+  @Post('fetch-all-daily-snapshot')
+  fetchAllDailySnapshot(@Body() body: { date: string }): Promise<FetchAllDailySnapshotResult> {
+    return this.darkTradeService.fetchAllDailySnapshot(body.date);
   }
 
   @Get('batch')
