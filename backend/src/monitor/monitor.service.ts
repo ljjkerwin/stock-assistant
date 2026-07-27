@@ -156,7 +156,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
       await this.ruleRepo.update(rule.id, { prevAboveMA: res.nextPrevAboveMA });
       if (rule.prevAboveMA === null && res.nextPrevAboveMA !== null) {
         this.logger.debug(
-          `[轮询] 规则 #${rule.id} 初始化均线状态：价格${res.nextPrevAboveMA ? '在' : '在'}${rule.maPeriod?.toUpperCase()}${res.nextPrevAboveMA ? '上方' : '下方'}`,
+          `[轮询] 规则 #${rule.id} 初始化方向状态：价格在${res.nextPrevAboveMA ? '上方' : '下方'}`,
         );
       }
     }
@@ -262,8 +262,8 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
     const update: Partial<MonitorRule> = { active };
     if (active) {
       const rule = await this.ruleRepo.findOneBy({ id });
-      if (rule && (rule.type === 'ma_cross_above' || rule.type === 'ma_cross_below')) {
-        // 重新激活时重置均线状态，下次轮询重新初始化
+      if (rule) {
+        // 重新激活时重置方向状态；固定价格规则首次满足时会立即触发，均线规则仅初始化方向。
         update.prevAboveMA = null;
       }
     }

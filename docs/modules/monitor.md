@@ -10,11 +10,11 @@
   2. **环境变量兜底**：若数据库中无任何有效的用户 SMTP 配置，且显式配置了环境变量 `EMAIL_TO`，则兜底使用 163 SMTP（smtp.163.com:465），凭证通过环境变量配置：`EMAIL_USER`（发件人）、`EMAIL_PASS`（163 SMTP 授权码）、`EMAIL_TO`（收件人）；若未配置 `EMAIL_TO` 且无数据库配置时邮件功能自动禁用。
 - 参考 `backend/.env.example` 创建 `backend/.env` 文件填写凭证
 - 后端 `MonitorService` 在 `OnModuleInit` 启动 60s 定时轮询；外层守卫用 `isTrading()`（任意市场开盘即进入），内层按股票市场调用 `isTradingMarket(market)` 过滤，非交易时段的规则静默跳过（无任何日志）
-- 规则检查：价格规则直接对比当前价；MA 均线穿越规则使用**边沿触发**（`prevAboveMA` 字段记录上次方向），避免持续满足时重复触发
+- 规则检查统一使用**边沿触发**：`prevAboveMA` 记录上次价格在监控阈值（固定目标价或均线）的哪一侧。同一侧持续停留不会重复通知；价格回到另一侧后才重新布防并允许下次穿越通知。固定价格规则在首次检查已满足时仍会触发一次，均线规则首次检查只初始化方向、不追溯触发
 - MA 均线穿越规则支持日线（`klinePeriod=null`）、15min（`klinePeriod='15min'`）、5min（`klinePeriod='5min'`）、30min（`klinePeriod='30min'`）和 60min（`klinePeriod='60min'`）等 K 线周期；`maPeriod` 支持 `ma5 | ma10 | ma20 | ma60`；轮询时按 `klinePeriod` 分组拉取 K 线，同一股票的不同周期规则各自复用对应缓存
-- 每条规则每 30 分钟最多触发一次（`lastTriggeredAt` + `COOLDOWN_MS = 30 * 60_000`）
+- 触发后仍保留 30 分钟冷却（`lastTriggeredAt` + `COOLDOWN_MS = 30 * 60_000`），用于抑制短时间内来回穿越时的高频提醒；冷却结束本身不会产生新的提醒
 - 触发后写入 `monitor_messages` 表，并通过 RxJS `Subject` 推送 SSE 事件至前端
-- MA 均线穿越规则重新激活时，`prevAboveMA` 重置为 null，下次轮询重新初始化方向
+- 规则重新激活时，`prevAboveMA` 重置为 null；下次轮询重新初始化方向（固定价格规则若首次检查已满足会立即触发一次）
 - 轮询日志格式：`[轮询] 开始检查，共 N 条活跃规则` / `[轮询] 规则 #id 触发 ...` / `[轮询] 完成，触发 N 条规则`
 
 ## 前端

@@ -35,24 +35,44 @@ export function evaluateRule(
 ): RuleEvalResult {
   const cooledDown = rule.lastTriggeredAt == null || now - rule.lastTriggeredAt >= COOLDOWN_MS;
 
-  if (rule.type === 'price_above' && rule.targetPrice != null) {
-    if (currentPrice >= rule.targetPrice) {
-      if (cooledDown) {
-        return { shouldFire: true, nextPrevAboveMA: null, targetValue: rule.targetPrice };
-      }
-      return { shouldFire: false, nextPrevAboveMA: null, targetValue: null, reason: 'cooldown' };
-    }
-    return { shouldFire: false, nextPrevAboveMA: null, targetValue: null, reason: 'no_match' };
-  }
+  if ((rule.type === 'price_above' || rule.type === 'price_below') && rule.targetPrice != null) {
+    const isAboveNow = currentPrice > rule.targetPrice;
+    const conditionMet = rule.type === 'price_above' ? isAboveNow : !isAboveNow;
 
-  if (rule.type === 'price_below' && rule.targetPrice != null) {
-    if (currentPrice <= rule.targetPrice) {
-      if (cooledDown) {
-        return { shouldFire: true, nextPrevAboveMA: null, targetValue: rule.targetPrice };
-      }
-      return { shouldFire: false, nextPrevAboveMA: null, targetValue: null, reason: 'cooldown' };
+    // 固定价格规则也按边沿触发：同一侧持续停留时不重复通知；价格回到另一侧后重新布防。
+    // 首次检查若已满足条件仍通知一次，保持新建规则的即时生效体验。
+    if (rule.prevAboveMA == null) {
+      return {
+        shouldFire: conditionMet,
+        nextPrevAboveMA: isAboveNow,
+        targetValue: conditionMet ? rule.targetPrice : null,
+        reason: conditionMet ? undefined : 'initialize',
+      };
     }
-    return { shouldFire: false, nextPrevAboveMA: null, targetValue: null, reason: 'no_match' };
+
+    const crossed =
+      rule.type === 'price_above'
+        ? !rule.prevAboveMA && isAboveNow
+        : rule.prevAboveMA && !isAboveNow;
+
+    if (!crossed) {
+      return {
+        shouldFire: false,
+        nextPrevAboveMA: isAboveNow,
+        targetValue: null,
+        reason: 'no_match',
+      };
+    }
+
+    if (cooledDown) {
+      return { shouldFire: true, nextPrevAboveMA: isAboveNow, targetValue: rule.targetPrice };
+    }
+    return {
+      shouldFire: false,
+      nextPrevAboveMA: isAboveNow,
+      targetValue: null,
+      reason: 'cooldown',
+    };
   }
 
   if (

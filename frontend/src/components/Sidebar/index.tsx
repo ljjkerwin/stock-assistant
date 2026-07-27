@@ -87,12 +87,15 @@ export default function Sidebar() {
     if (currentListId != null) fetchList(currentListId);
   }, [currentListId, fetchList]);
 
-  const moveItem = (list: Stock[], index: number, direction: 'up' | 'down') => {
+  const moveItem = (list: Stock[], index: number, direction: 'top' | 'bottom') => {
     if (currentListId == null) return;
     const copy = [...list];
-    const target = direction === 'up' ? index - 1 : index + 1;
-    if (target < 0 || target >= copy.length) return;
-    [copy[index], copy[target]] = [copy[target], copy[index]];
+    const [item] = copy.splice(index, 1);
+    if (direction === 'top') {
+      copy.unshift(item);
+    } else {
+      copy.push(item);
+    }
     reorder(currentListId, copy.map((f) => f.id!));
   };
 
@@ -244,14 +247,14 @@ export default function Sidebar() {
                 icon: stock.pinned ? <PushpinFilled /> : <PushpinOutlined />,
               },
               {
-                key: 'up',
-                label: '上移',
+                key: 'top',
+                label: '移到最前',
                 icon: <ArrowUpOutlined />,
                 disabled: index === 0,
               },
               {
-                key: 'down',
-                label: '下移',
+                key: 'bottom',
+                label: '移到最后',
                 icon: <ArrowDownOutlined />,
                 disabled: index === list.length - 1,
               },
@@ -266,10 +269,10 @@ export default function Sidebar() {
               domEvent.stopPropagation();
               if (key === 'pin') {
                 if (currentListId != null) pin(stock.id!, currentListId, !stock.pinned);
-              } else if (key === 'up') {
-                moveItem(list, index, 'up');
-              } else if (key === 'down') {
-                moveItem(list, index, 'down');
+              } else if (key === 'top') {
+                moveItem(list, index, 'top');
+              } else if (key === 'bottom') {
+                moveItem(list, index, 'bottom');
               } else if (key === 'delete') {
                 if (currentListId != null) removeItem(stock.id!, currentListId);
               }

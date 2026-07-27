@@ -15,24 +15,30 @@ describe('rule-evaluator.ts', () => {
       const result = evaluateRule(baseRule, 101, null);
       expect(result.shouldFire).toBe(true);
       expect(result.targetValue).toBe(100);
+      expect(result.nextPrevAboveMA).toBe(true);
     });
 
     it('does not fire when price is below targetPrice', () => {
       const result = evaluateRule(baseRule, 99, null);
       expect(result.shouldFire).toBe(false);
-      expect(result.reason).toBe('no_match');
+      expect(result.reason).toBe('initialize');
     });
 
-    it('respects cooldown time', () => {
+    it('only fires again after returning below the threshold and crossing above again', () => {
       const now = Date.now();
-      const rule = { ...baseRule, lastTriggeredAt: now - 1000 }; // Triggered 1s ago
+      const rule = { ...baseRule, prevAboveMA: true, lastTriggeredAt: now - 1000 };
 
+      // Still above: remaining in the triggered state never repeats, even after cooldown.
       const result = evaluateRule(rule, 101, null, now);
       expect(result.shouldFire).toBe(false);
-      expect(result.reason).toBe('cooldown');
+      expect(result.reason).toBe('no_match');
 
-      // After cooldown passes
-      const result2 = evaluateRule(rule, 101, null, now + COOLDOWN_MS);
+      // Once price returns below it is re-armed; the next upward crossing can notify.
+      const rearmed = evaluateRule(rule, 99, null, now + 1);
+      expect(rearmed.shouldFire).toBe(false);
+      expect(rearmed.nextPrevAboveMA).toBe(false);
+
+      const result2 = evaluateRule({ ...rule, prevAboveMA: false }, 101, null, now + COOLDOWN_MS);
       expect(result2.shouldFire).toBe(true);
     });
   });
@@ -49,7 +55,21 @@ describe('rule-evaluator.ts', () => {
     it('does not fire when price exceeds targetPrice', () => {
       const result = evaluateRule(rule, 51, null);
       expect(result.shouldFire).toBe(false);
+      expect(result.reason).toBe('initialize');
+    });
+
+    it('does not repeat while price remains below the target after cooldown', () => {
+      const now = Date.now();
+      const result = evaluateRule(
+        { ...rule, prevAboveMA: false, lastTriggeredAt: now - COOLDOWN_MS },
+        49,
+        null,
+        now,
+      );
+
+      expect(result.shouldFire).toBe(false);
       expect(result.reason).toBe('no_match');
+      expect(result.nextPrevAboveMA).toBe(false);
     });
   });
 

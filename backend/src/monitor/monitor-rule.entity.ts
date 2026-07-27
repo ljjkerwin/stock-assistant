@@ -41,7 +41,7 @@ export class MonitorRule {
   @Column({ type: 'bigint', nullable: true, transformer: bigintCol })
   lastTriggeredAt!: number | null;
 
-  /** MA 穿越规则：上一次轮询时价格是否在均线上方；null 表示尚未初始化 */
+  /** 上一次轮询时价格是否在监控阈值/均线上方；null 表示尚未初始化 */
   @Column({ type: 'boolean', nullable: true })
   prevAboveMA!: boolean | null;
 
