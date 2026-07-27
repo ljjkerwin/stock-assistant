@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Typography, Spin, Tag, Button, Tooltip } from 'antd';
 import { StarOutlined, StarFilled } from '@ant-design/icons';
@@ -66,6 +66,16 @@ export default function FundDetail() {
   }, [code]);
 
   const maxHoldingLen = Math.max(...holdings.map((p) => p.holdings.length), 0);
+  const holdingReportMarkers = useMemo(
+    () =>
+      holdings
+        .filter((period) => period.endDate)
+        .map((period) => ({
+          date: period.endDate,
+          isHolding: period.holdings.some((holding) => holding.code === hoveredHolding?.code),
+        })),
+    [holdings, hoveredHolding?.code],
+  );
   const parsedFundSize = info?.fundSize ? parseFloat(info.fundSize) : null;
 
   const prevCodesByPeriod = holdings.map((_, idx) =>
@@ -221,7 +231,7 @@ export default function FundDetail() {
         <HoldingKlinePopup
           code={hoveredHolding.code}
           name={hoveredHolding.name}
-          endDate={holdings[hoveredHolding.periodIndex]?.endDate}
+          reportMarkers={holdingReportMarkers}
           anchorRect={hoveredHolding.rect}
           onMouseEnter={handlePopupEnter}
           onMouseLeave={handlePopupLeave}
