@@ -133,7 +133,7 @@ export default function StockMonitorButton({ market, code, stockName }: Props) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12, flex: 1 }}>
-            每条规则每 30 分钟最多触发一次
+            同一方向只提醒一次；回到另一侧后才会重新触发
           </Typography.Text>
           <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
             添加规则
