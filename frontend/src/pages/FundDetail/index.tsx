@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Typography, Spin, Tag, Button, Tooltip } from 'antd';
-import { StarOutlined, StarFilled } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowUpOutlined, StarOutlined, StarFilled } from '@ant-design/icons';
 import { fundApi } from '../../api/stock';
 import NavChart from '../../components/NavChart';
 import HoldingKlinePopup from '../../components/HoldingKlinePopup';
@@ -81,6 +81,11 @@ export default function FundDetail() {
   const prevCodesByPeriod = holdings.map((_, idx) =>
     idx + 1 < holdings.length
       ? new Set(holdings[idx + 1].holdings.map((h) => h.code))
+      : null,
+  );
+  const prevHoldingsByPeriod = holdings.map((_, idx) =>
+    idx + 1 < holdings.length
+      ? new Map(holdings[idx + 1].holdings.map((holding) => [holding.code, holding]))
       : null,
   );
 
@@ -194,6 +199,15 @@ export default function FundDetail() {
                     {Array.from({ length: maxHoldingLen }, (_, i) => p.holdings[i] ?? null).map((h, i) => {
                       if (!h) return <div key={i} className={styles.holdingItemEmpty} />;
                       const isNew = prevCodesByPeriod[periodIndex] !== null && !prevCodesByPeriod[periodIndex]!.has(h.code);
+                      const previousHolding = prevHoldingsByPeriod[periodIndex]?.get(h.code);
+                      const holdingChange =
+                        !isNew && h.marketValue != null && previousHolding?.marketValue != null
+                          ? h.marketValue > previousHolding.marketValue
+                            ? 'up'
+                            : h.marketValue < previousHolding.marketValue
+                              ? 'down'
+                              : null
+                          : null;
                       return (
                         <div key={h.rank} className={styles.holdingItem}>
                           <span className={styles.holdingRank}>{h.rank}</span>
@@ -205,6 +219,12 @@ export default function FundDetail() {
                             {h.name}
                             <span className={styles.holdingCode}>（{h.code}）</span>
                             {isNew && <span className={styles.newBadge}>新</span>}
+                            {holdingChange === 'up' && (
+                              <ArrowUpOutlined className={styles.increaseIcon} title="较上一期加仓" />
+                            )}
+                            {holdingChange === 'down' && (
+                              <ArrowDownOutlined className={styles.decreaseIcon} title="较上一期减仓" />
+                            )}
                           </span>
                           <div className={styles.holdingRight}>
                             <span className={styles.holdingRatio}>

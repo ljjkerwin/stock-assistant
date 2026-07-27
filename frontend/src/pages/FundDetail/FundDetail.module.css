@@ -148,6 +148,18 @@
   flex-shrink: 0;
 }
 
+.increaseIcon {
+  color: #ef5350;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.decreaseIcon {
+  color: #26a69a;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
 .holdingNameHoverable {
   cursor: pointer;
 }

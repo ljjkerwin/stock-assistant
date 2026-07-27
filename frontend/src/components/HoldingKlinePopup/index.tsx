@@ -30,6 +30,8 @@ const POPUP_WIDTH = 920;
 const CHART_HEIGHT = 440;
 const HEADER_HEIGHT = 34;
 const POPUP_HEIGHT = CHART_HEIGHT + HEADER_HEIGHT;
+const POPUP_GAP = 12;
+const VERTICAL_OFFSET = 20;
 
 function nineMonthsAgo(): string {
   const d = new Date();
@@ -42,18 +44,21 @@ function calcPosition(rect: DOMRect): { left: number; top: number } {
   const vh = window.innerHeight;
   const margin = 8;
 
-  let left = rect.right + 12;
-  let top = rect.top + rect.height / 2 - POPUP_HEIGHT / 2;
+  let left = rect.right + POPUP_GAP;
+  let top = rect.top + rect.height / 2 - POPUP_HEIGHT - VERTICAL_OFFSET;
 
+  // 沿用左右避让；浮窗整体上移半个自身高度，避免遮住鼠标。
   if (left + POPUP_WIDTH > vw - margin) {
-    left = rect.left - POPUP_WIDTH - 12;
+    left = rect.left - POPUP_WIDTH - POPUP_GAP;
   }
-  if (left < margin) left = margin;
-  if (top < margin) top = margin;
-  if (top + POPUP_HEIGHT > vh - margin) {
-    top = vh - POPUP_HEIGHT - margin;
-  }
-  return { left, top };
+  // 顶部空间不足时改放在 hover 行下方。
+  if (top < margin) top = rect.bottom + POPUP_GAP;
+  const maxLeft = Math.max(margin, vw - POPUP_WIDTH - margin);
+  const maxTop = Math.max(margin, vh - POPUP_HEIGHT - margin);
+  return {
+    left: Math.min(Math.max(left, margin), maxLeft),
+    top: Math.min(Math.max(top, margin), maxTop),
+  };
 }
 
 export default function HoldingKlinePopup({
