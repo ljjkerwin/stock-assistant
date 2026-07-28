@@ -247,4 +247,20 @@ describe('DarkTradeService', () => {
       jest.useRealTimers();
     });
   });
+
+  describe('getDiscoveryStocks', () => {
+    it('returns only stocks whose dark capital clears both discovery thresholds', async () => {
+      indexRepo.find.mockResolvedValue([
+        { code: 'A', name: '符合但较小', darkCapital: 30_000_000, lightCapital: 10_000_000 },
+        { code: 'B', name: '符合且较大', darkCapital: 60_000_000, lightCapital: 20_000_000 },
+        { code: 'C', name: '暗盘不足', darkCapital: 20_000_000, lightCapital: 1_000_000 },
+        { code: 'D', name: '倍率不足', darkCapital: 30_000_000, lightCapital: 15_000_000 },
+        { code: 'E', name: '缺少明盘', darkCapital: 30_000_000, lightCapital: null },
+      ]);
+
+      const result = await service.getDiscoveryStocks();
+
+      expect(result.map((item) => item.code)).toEqual(['B', 'A']);
+    });
+  });
 });

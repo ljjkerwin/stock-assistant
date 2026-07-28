@@ -101,6 +101,7 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/darktrade/index-status` | 查询暗盘索引状态 `{ count, date, updatedAt }` |
+| GET | `/api/darktrade/discovery` | 明暗盘挖掘列表：从全市场暗盘索引筛出 `darkCapital > 20,000,000` 且 `darkCapital > lightCapital × 2` 的标的，按暗盘资金降序返回 `DarkTradeData[]` |
 | POST | `/api/darktrade/refresh-index` | 抓取所有页暗盘数据并建立 code→(page,index) 映射（body 可选 `{ date?, sortFlag?, desc? }`，默认按股票名称 Unicode 降序 sortFlag=4） |
 | POST | `/api/darktrade/fetch-all-daily-snapshot` | 抓取指定日期全市场（约 5300 只）明暗盘收盘数据写入快照表，body `{ date: YYYYMMDD }`，返回 `{ date, total, written }`；内部先调 `refresh-index` 重建索引，再从索引批量写 `${date}1500` 快照（幂等）。供管理页手动补录历史日线副图数据 |
 | GET | `/api/darktrade/batch?codes=&date=` | 【已废弃，前端已改用 snapshots-batch】批量查询多只股票的暗盘资金数据 |

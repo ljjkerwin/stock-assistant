@@ -43,6 +43,11 @@ export class DarkTradeController {
     return this.darkTradeService.getBatchDarkTrade(codeList, date);
   }
 
+  @Get('discovery')
+  getDiscoveryStocks() {
+    return this.darkTradeService.getDiscoveryStocks();
+  }
+
   @Get('snapshots-batch')
   getSnapshotsBatch(@Query('codes') codes: string, @Query('date') date?: string) {
     const codeList = codes ? codes.split(',').filter(Boolean) : [];

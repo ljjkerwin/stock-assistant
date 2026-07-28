@@ -26,7 +26,7 @@ const HEADERS = {
 
 // field "3": market (1=沪, 0=深); "4": code; "6": 暗盘资金(元); "7": 明盘资金(元);
 // "8": 主力净流入含暗盘(元); "11": 暗盘活跃度(小数); "13": 最新价×1000;
-// "14": 涨幅(小数); "16": 名称; "17": 行业; "18": 概念
+// "14": 涨幅（小数，如 0.0188 表示 1.88%）; "16": 名称; "17": 行业; "18": 概念
 interface RawItem {
   3: number;
   4: string;
@@ -75,6 +75,8 @@ export interface FetchAllDailySnapshotResult {
   total: number;
   written: number;
 }
+
+const DISCOVERY_MIN_DARK_CAPITAL = 20_000_000;
 
 function todayDate(): string {
   const now = new Date();
@@ -288,6 +290,25 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException(`股票 ${code} 不在暗盘索引中，请先调用 refresh-index`);
     }
     return this.entityToData(index);
+  }
+
+  /**
+   * 返回暗盘资金显著高于明盘资金的全市场标的。
+   * 数据来自每日建立的全市场暗盘索引，按暗盘资金从高到低排列。
+   */
+  async getDiscoveryStocks(): Promise<DarkTradeData[]> {
+    const indices = await this.indexRepo.find();
+
+    return indices
+      .filter(
+        (item) =>
+          item.darkCapital != null &&
+          item.lightCapital != null &&
+          item.darkCapital > DISCOVERY_MIN_DARK_CAPITAL &&
+          item.darkCapital > item.lightCapital * 2,
+      )
+      .sort((a, b) => (b.darkCapital ?? 0) - (a.darkCapital ?? 0))
+      .map((item) => this.entityToData(item));
   }
 
   private refreshLock: Promise<void> | null = null;

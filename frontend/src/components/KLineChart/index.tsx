@@ -37,7 +37,9 @@ interface Props {
   period?: KlinePeriod;
   showLjj?: boolean; // 显示 ljj 自定义副图（综合属性堆叠柱状图），仅策略回测页使用
   showRsi?: boolean; // 显示常规 RSI 副图（RSI6 曲线），仅策略回测页使用
+  showMacd?: boolean; // 是否显示 MACD 副图，默认显示
   showDarkTrade?: boolean; // 显示暗盘/明盘资金副图（股票详情页，仅 A 股）
+  defaultZoomMultiplier?: number; // 首次加载时的默认放大倍数，1 为常规视图
   darkTradeSnapshots?: DarkTradeSnapshot[]; // 暗盘快照数据（当日分钟粒度），配合 showDarkTrade 使用
   onDateResolved?: (date: string) => void; // 上报 K 线实际交易日（YYYYMMDD），供父组件按当日拉取暗盘快照
   // 回测预览：拉取模式下将默认视口对齐到回测时间区间 [viewStartDate, viewEndDate]（YYYY-MM-DD），
@@ -184,7 +186,7 @@ function toChartTime(t: string): number | string {
   return Date.UTC(y, mo - 1, d, h, mi) / 1000;
 }
 
-export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, showDarkTrade = false, darkTradeSnapshots, onDateResolved, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
+export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, showMacd = true, showDarkTrade = false, defaultZoomMultiplier = 1, darkTradeSnapshots, onDateResolved, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
   const [period, setPeriod] = useState<KlinePeriod>(() => {
     return initialData?.period ?? controlledPeriod ?? loadPeriod();
   });
@@ -287,7 +289,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   }, []);
 
   const initCharts = useCallback(() => {
-    if (!containerRef.current || !volumeRef.current || !macdRef.current) return;
+    if (!containerRef.current || !volumeRef.current || (showMacd && !macdRef.current)) return;
     if (showRsi && !rsiRef.current) return;
     if (showLjj && !ljjRef.current) return;
     const showDT = showDarkTrade && (period === 'timeshare' || period === 'daily');
@@ -338,8 +340,11 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     const volumeChart = createChart(volumeRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
     volumeChartRef.current = volumeChart;
 
-    const macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
-    macdChartRef.current = macdChart;
+    let macdChart: IChartApi | null = null;
+    if (showMacd && macdRef.current) {
+      macdChart = createChart(macdRef.current, { ...CHART_OPTIONS, ...noTimeScale, height: 80 });
+      macdChartRef.current = macdChart;
+    }
 
     let rsiChart: IChartApi | null = null;
     if (showRsi && rsiRef.current) {
@@ -373,7 +378,8 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     }
 
     // 参与时间轴 / 十字光标联动的全部图表
-    const charts: IChartApi[] = [mainChart, volumeChart, macdChart];
+    const charts: IChartApi[] = [mainChart, volumeChart];
+    if (macdChart) charts.push(macdChart);
     if (rsiChart) charts.push(rsiChart);
     if (ljjChart) charts.push(ljjChart);
     if (darkTradeChart) charts.push(darkTradeChart);
@@ -382,8 +388,8 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     const primarySeriesRefs = new Map<IChartApi, () => ISeriesApi<SeriesType> | null>([
       [mainChart, () => mainSeriesRef.current],
       [volumeChart, () => volumeSeriesRef.current],
-      [macdChart, () => difSeriesRef.current],
     ]);
+    if (macdChart) primarySeriesRefs.set(macdChart, () => difSeriesRef.current);
     if (rsiChart) primarySeriesRefs.set(rsiChart, () => rsiSeriesRef.current);
     if (ljjChart) primarySeriesRefs.set(ljjChart, () => ljjTotalSeriesRef.current);
     if (darkTradeChart) {
@@ -542,20 +548,22 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         syncingRef.current = false;
       });
     });
-  }, [showLjj, showRsi, showDarkTrade, period, alignPriceAxisWidth]);
+  }, [showLjj, showRsi, showMacd, showDarkTrade, period, alignPriceAxisWidth]);
 
 
 
   const applyData = useCallback((bars: KlineBar[], pd: KlinePeriod, preserveViewport = false, backtestStartTime?: string | null) => {
-    if (!mainChartRef.current || !volumeChartRef.current || !macdChartRef.current) return;
+    if (!mainChartRef.current || !volumeChartRef.current) return;
 
     // 所有已激活的图表（RSI、ljj、darkTrade 为可选副图）
-    const activeCharts: IChartApi[] = [mainChartRef.current, volumeChartRef.current, macdChartRef.current];
+    const activeCharts: IChartApi[] = [mainChartRef.current, volumeChartRef.current];
+    if (macdChartRef.current) activeCharts.push(macdChartRef.current);
     if (rsiChartRef.current) activeCharts.push(rsiChartRef.current);
     if (ljjChartRef.current) activeCharts.push(ljjChartRef.current);
     if (darkTradeChartRef.current) activeCharts.push(darkTradeChartRef.current);
     const setAllRange = (range: LogicalRange) => activeCharts.forEach((c) => c.timeScale().setVisibleLogicalRange(range));
     const fitAll = () => activeCharts.forEach((c) => c.timeScale().fitContent());
+    let deferredDefaultRange: LogicalRange | null = null;
 
     // Save current viewport before clearing series so it can be restored after refresh
     let savedRange: LogicalRange | null = null;
@@ -604,12 +612,14 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       volumeChartRef.current.removeSeries(volumeSeriesRef.current);
       volumeSeriesRef.current = null;
     }
-    [difSeriesRef, deaSeriesRef, macdBarSeriesRef].forEach((ref) => {
-      if (ref.current) {
-        macdChartRef.current!.removeSeries(ref.current);
-        ref.current = null;
-      }
-    });
+    if (macdChartRef.current) {
+      [difSeriesRef, deaSeriesRef, macdBarSeriesRef].forEach((ref) => {
+        if (ref.current) {
+          macdChartRef.current!.removeSeries(ref.current);
+          ref.current = null;
+        }
+      });
+    }
     if (rsiSeriesRef.current && rsiChartRef.current) {
       rsiChartRef.current.removeSeries(rsiSeriesRef.current);
       rsiSeriesRef.current = null;
@@ -784,7 +794,9 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     }
     volumeSeriesRef.current = volSeries;
 
-    const difSeries = macdChartRef.current.addSeries(LineSeries, {
+    const macdChart = macdChartRef.current;
+    if (macdChart) {
+    const difSeries = macdChart.addSeries(LineSeries, {
       color: '#1677ff',
       lineWidth: 1,
       lastValueVisible: false,
@@ -799,7 +811,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     }
     difSeriesRef.current = difSeries;
 
-    const deaSeries = macdChartRef.current.addSeries(LineSeries, {
+    const deaSeries = macdChart.addSeries(LineSeries, {
       color: '#ff9800',
       lineWidth: 1,
       lastValueVisible: false,
@@ -814,7 +826,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
     }
     deaSeriesRef.current = deaSeries;
 
-    const macdBarSeries = macdChartRef.current.addSeries(HistogramSeries, {
+    const macdBarSeries = macdChart.addSeries(HistogramSeries, {
       priceScaleId: 'right',
       lastValueVisible: false,
       priceLineVisible: false,
@@ -839,6 +851,7 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       );
     }
     macdBarSeriesRef.current = macdBarSeries;
+    }
 
     // 常规 RSI 副图：仅 RSI6 曲线
     if (rsiChartRef.current) {
@@ -956,14 +969,26 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
         const from = startIdx >= 0 ? Math.max(0, startIdx - 5) : 0;
         setAllRange({ from: from as Logical, to: (bars.length - 1) as Logical });
       } else {
-        const defaultVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
+        const normalVisible = pd === 'daily' || pd === 'weekly' ? 100 : 120;
+        const defaultVisible = Math.max(1, Math.round(normalVisible / Math.max(1, defaultZoomMultiplier)));
         const from = Math.max(0, bars.length - defaultVisible);
-        setAllRange({ from: from as Logical, to: (bars.length - 1) as Logical });
+        const range = { from: from as Logical, to: (bars.length - 1) as Logical };
+        setAllRange(range);
+        // 价格轴和暗盘副图会在下一帧调整布局；预览图的默认放大视图在其后再应用一次，
+        // 避免被异步布局回写为全量范围。
+        if (defaultZoomMultiplier > 1) deferredDefaultRange = range;
       }
     }
 
     alignPriceAxisWidth();
-  }, [alignPriceAxisWidth]);
+    if (deferredDefaultRange) {
+      const mainChart = mainChartRef.current;
+      const range = deferredDefaultRange;
+      requestAnimationFrame(() => {
+        if (mainChartRef.current === mainChart) setAllRange(range);
+      });
+    }
+  }, [alignPriceAxisWidth, defaultZoomMultiplier]);
 
   // 暗盘副图：用当日分钟快照/历史日线快照绘制折线，横轴对齐主图
   const applyDarkTradeData = useCallback(() => {
@@ -1260,10 +1285,12 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
           <div ref={volLegendRef} className={styles.subLegend}>VOL: --</div>
           <div ref={volumeRef} className={styles.sub} />
         </div>
-        <div className={styles.subWrapper}>
-          <div ref={macdLegendRef} className={styles.subLegend}>DIF: --&nbsp;&nbsp;DEA: --&nbsp;&nbsp;MACD: --</div>
-          <div ref={macdRef} className={styles.sub} />
-        </div>
+        {showMacd && (
+          <div className={styles.subWrapper}>
+            <div ref={macdLegendRef} className={styles.subLegend}>DIF: --&nbsp;&nbsp;DEA: --&nbsp;&nbsp;MACD: --</div>
+            <div ref={macdRef} className={styles.sub} />
+          </div>
+        )}
         {showRsi && (
           <div className={styles.subWrapper}>
             <div ref={rsiLegendRef} className={styles.subLegend}>RSI6: --</div>

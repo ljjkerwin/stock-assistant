@@ -11,6 +11,7 @@ import StockDetail from './pages/StockDetail';
 import FundDetail from './pages/FundDetail';
 import StockListImport from './pages/StockListImport';
 import StockListKline from './pages/StockListKline';
+import DarkTradeDiscovery from './pages/DarkTradeDiscovery';
 import StrategyBacktest from './pages/StrategyBacktest';
 import Admin from './pages/Admin';
 import { useFavoritesStore } from './store/favoritesStore';
@@ -171,6 +172,7 @@ export default function App() {
               element={isLjj ? <StockListImport /> : <Navigate to="/stock" replace />}
             />
             <Route path="/stock-list-kline" element={<StockListKline />} />
+            <Route path="/darktrade-discovery" element={<DarkTradeDiscovery />} />
             <Route
               path="/strategy-backtest"
               element={isLjj ? <StrategyBacktest /> : <Navigate to="/stock" replace />}

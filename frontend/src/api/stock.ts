@@ -181,6 +181,12 @@ interface BacktestResult {
 }
 
 export const darktradeApi = {
+  refreshIndex: (): Promise<{ indexed: number; date: string; pages: number }> =>
+    api.post<{ indexed: number; date: string; pages: number }>('/darktrade/refresh-index').then((r) => r.data),
+
+  getDiscoveryStocks: (): Promise<DarkTradeData[]> =>
+    api.get<DarkTradeData[]>('/darktrade/discovery').then((r) => r.data),
+
   get: (code: string): Promise<DarkTradeData | null> =>
     api
       .get<DarkTradeData>(`/darktrade/${code}`)
