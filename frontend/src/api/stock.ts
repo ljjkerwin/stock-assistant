@@ -89,8 +89,7 @@ export const watchListsApi = {
 };
 
 export const stocksApi = {
-  search: (q: string) =>
-    api.get<Stock[]>('/stocks/search', { params: { q } }).then((r) => r.data),
+  search: (q: string) => api.get<Stock[]>('/stocks/search', { params: { q } }).then((r) => r.data),
 
   getInfo: (market: 'A' | 'HK', code: string): Promise<StockInfo> =>
     api.get<StockInfo>(`/stocks/${market}/${code}`).then((r) => r.data),
@@ -137,8 +136,7 @@ export const monitorApi = {
     targetPrice?: number;
     maPeriod?: string;
     klinePeriod?: string;
-  }): Promise<MonitorRule> =>
-    api.post<MonitorRule>('/monitor/rules', body).then((r) => r.data),
+  }): Promise<MonitorRule> => api.post<MonitorRule>('/monitor/rules', body).then((r) => r.data),
 
   deleteRule: (id: number): Promise<void> =>
     api.delete(`/monitor/rules/${id}`).then(() => undefined),
@@ -157,8 +155,7 @@ export const monitorApi = {
   markMessagesRead: (ids: number[]): Promise<void> =>
     api.patch('/monitor/messages', { ids }).then(() => undefined),
 
-  clearMessages: (): Promise<void> =>
-    api.delete('/monitor/messages').then(() => undefined),
+  clearMessages: (): Promise<void> => api.delete('/monitor/messages').then(() => undefined),
 };
 
 interface TradeRecord {
@@ -181,6 +178,22 @@ interface BacktestResult {
 }
 
 export const darktradeApi = {
+  refreshIndex: (): Promise<{ indexed: number; date: string; pages: number }> =>
+    api
+      .post<{ indexed: number; date: string; pages: number }>('/darktrade/refresh-index')
+      .then((r) => r.data),
+
+  getDiscoveryStocks: (
+    minDarkCapital = 20_000_000,
+    minMultiple = 2,
+    date?: string,
+  ): Promise<DarkTradeData[]> =>
+    api
+      .get<DarkTradeData[]>('/darktrade/discovery', {
+        params: { minDarkCapital, minMultiple, date },
+      })
+      .then((r) => r.data),
+
   get: (code: string): Promise<DarkTradeData | null> =>
     api
       .get<DarkTradeData>(`/darktrade/${code}`)
@@ -203,7 +216,10 @@ export const darktradeApi = {
       .then((r) => r.data)
       .catch(() => []),
 
-  getSnapshotsBatch: (codes: string[], date?: string): Promise<Record<string, DarkTradeSnapshot[]>> =>
+  getSnapshotsBatch: (
+    codes: string[],
+    date?: string,
+  ): Promise<Record<string, DarkTradeSnapshot[]>> =>
     codes.length === 0
       ? Promise.resolve({})
       : api
@@ -217,10 +233,11 @@ export const darktradeApi = {
     date: string,
   ): Promise<{ date: string; total: number; written: number }> =>
     api
-      .post<{ date: string; total: number; written: number }>(
-        '/darktrade/fetch-all-daily-snapshot',
-        { date },
-      )
+      .post<{
+        date: string;
+        total: number;
+        written: number;
+      }>('/darktrade/fetch-all-daily-snapshot', { date })
       .then((r) => r.data),
 };
 
@@ -236,7 +253,5 @@ export const strategyApi = {
     period: KlinePeriod;
     strategy: string; // 策略 id
   }): Promise<BacktestResult> =>
-    api
-      .get<BacktestResult>('/strategy/backtest', { params })
-      .then((r) => r.data),
+    api.get<BacktestResult>('/strategy/backtest', { params }).then((r) => r.data),
 };

@@ -10,8 +10,8 @@
 - 三个接口并发请求，任一失败均降级处理（估值不可用时不展示估值字段；规模/成立日期不可用时不展示对应字段）
 - 规模、成立日期通过抓取 `fundf10.eastmoney.com/jbgk_${code}.html` 并正则提取，失败时降级为 null
 - 历史净值接口返回最新在前，`FundService` 反转为时间正序供图表使用
-- Sidebar 顶端 Select 切换股票/基金模式，模式由当前 URL 路径决定（`/fund/*` → 基金模式，其余 → 股票模式）；切换时分别导航到 `/stock` 或 `/fund`；`/` 重定向到 `/stock`
-- `NavChart` 组件：Lightweight Charts 折线图，仅展示单位净值（蓝色）一条线；时间区间通过 `limit` 参数控制（1M=25/3M=70/6M=135/1Y=255/3Y=760/ALL=1000）
+- Sidebar 顶端 Select 切换股票/基金模式，模式由当前 URL 路径决定（`/fund/*` → 基金模式，其余 → 股票模式）；切换时分别导航到 `/stock` 或 `/fund`；所有已登录用户均可进入基金页；`/` 重定向到 `/stock`
+- `NavChart` 组件：Lightweight Charts 折线图，仅展示单位净值（蓝色）一条线，高 240px、最大宽 600px（小屏幕自适应容器宽度），默认展示 1 年；时间区间通过 `limit` 参数控制（1M=25/3M=70/6M=135/1Y=255/3Y=760/ALL=1000）
 - 缓存 TTL：`getFundInfo` 盘中 30s，盘外 10min；`getFundNav` 盘中 1min，盘外 1h；`getFundHoldings` 固定 1h（季报数据变化频率低）
 
 ## 持仓数据

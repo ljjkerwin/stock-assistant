@@ -16,6 +16,7 @@ import { MonitorRule } from './monitor/monitor-rule.entity';
 import { MonitorMessage } from './monitor/monitor-message.entity';
 import { DarkTradeIndex } from './darktrade/dark-trade-index.entity';
 import { DarkTradeSnapshot } from './darktrade/dark-trade-snapshot.entity';
+import { DarkTradeDailyResult } from './darktrade/dark-trade-daily-result.entity';
 import { TestModule } from './test/test.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 
@@ -27,6 +28,7 @@ const entities = [
   MonitorMessage,
   DarkTradeIndex,
   DarkTradeSnapshot,
+  DarkTradeDailyResult,
 ];
 
 function buildDataSourceOptions(): DataSourceOptions {

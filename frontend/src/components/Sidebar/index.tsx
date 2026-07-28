@@ -29,6 +29,7 @@ const { Text } = Typography;
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
   { value: 'klinegrid', label: '总览' },
+  { value: 'darktrade-discovery', label: '明暗盘挖掘' },
   { value: 'fund', label: '基金' },
   { value: 'list', label: '股票列表导入' },
   { value: 'backtest', label: '策略回测' },
@@ -69,11 +70,18 @@ export default function Sidebar() {
         ? 'fund'
         : pathname.startsWith('/stock-list-import')
           ? 'list'
-          : pathname.startsWith('/stock-list-kline')
-            ? 'klinegrid'
-            : 'stock';
+    : pathname.startsWith('/stock-list-kline')
+      ? 'klinegrid'
+      : pathname.startsWith('/darktrade-discovery')
+        ? 'darktrade-discovery'
+      : 'stock';
 
-  const boardType: BoardType | null = section === 'list' ? null : section === 'fund' ? 'fund' : 'stock';
+  const boardType: BoardType | null =
+    section === 'list' || section === 'darktrade-discovery'
+      ? null
+      : section === 'fund'
+        ? 'fund'
+        : 'stock';
   const lists = boardType === 'fund' ? fundLists : stockLists;
   const currentListId = boardType === 'fund' ? currentFundListId : currentStockListId;
   const currentList = lists.find((l) => l.id === currentListId) ?? null;
@@ -110,6 +118,8 @@ export default function Sidebar() {
       navigate('/fund');
     } else if (val === 'klinegrid') {
       navigate('/stock-list-kline');
+    } else if (val === 'darktrade-discovery') {
+      navigate('/darktrade-discovery');
     } else {
       navigate('/stock-list-import');
     }
@@ -293,7 +303,7 @@ export default function Sidebar() {
 
   const visibleOptions = SECTION_OPTIONS.filter((opt) => {
     if (username === 'ljj') return true;
-    return opt.value === 'stock' || opt.value === 'klinegrid';
+    return opt.value === 'stock' || opt.value === 'klinegrid' || opt.value === 'darktrade-discovery' || opt.value === 'fund';
   });
 
   return (
@@ -328,7 +338,7 @@ export default function Sidebar() {
         </div>
       )}
 
-      {section !== 'list' && (
+      {section !== 'list' && section !== 'darktrade-discovery' && (
         <div className={styles.search}>
           {section === 'fund' ? (
             <FundSearch size="middle" />

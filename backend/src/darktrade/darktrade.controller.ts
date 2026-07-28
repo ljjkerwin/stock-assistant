@@ -7,6 +7,7 @@ import {
   Query,
   ParseIntPipe,
   DefaultValuePipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { DarkTradeService } from './darktrade.service';
 import type { FetchAllDailySnapshotResult } from './darktrade.service';
@@ -41,6 +42,36 @@ export class DarkTradeController {
   getBatchDarkTrade(@Query('codes') codes: string, @Query('date') date?: string) {
     const codeList = codes ? codes.split(',').filter(Boolean) : [];
     return this.darkTradeService.getBatchDarkTrade(codeList, date);
+  }
+
+  @Get('discovery')
+  getDiscoveryStocks(
+    @Query('minDarkCapital') minDarkCapital?: string,
+    @Query('minMultiple') minMultiple?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.darkTradeService.getDiscoveryStocks(
+      this.parseNonNegativeNumber(minDarkCapital, 'minDarkCapital'),
+      this.parseNonNegativeNumber(minMultiple, 'minMultiple'),
+      this.parseDate(date),
+    );
+  }
+
+  private parseNonNegativeNumber(value: string | undefined, name: string): number | undefined {
+    if (value == null) return undefined;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new BadRequestException(`${name} 必须是大于或等于 0 的数字`);
+    }
+    return parsed;
+  }
+
+  private parseDate(value: string | undefined): string | undefined {
+    if (value == null) return undefined;
+    if (!/^\d{8}$/.test(value)) {
+      throw new BadRequestException('date 必须是 YYYYMMDD 格式');
+    }
+    return value;
   }
 
   @Get('snapshots-batch')

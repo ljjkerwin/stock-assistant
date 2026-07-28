@@ -18,7 +18,7 @@ interface Props {
   code: string;
   name: string;
   market?: 'A' | 'HK';
-  endDate?: string;
+  reportMarkers?: Array<{ date: string; isHolding: boolean }>;
   anchorRect: DOMRect;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -26,14 +26,16 @@ interface Props {
   isFavorited?: boolean;
 }
 
-const POPUP_WIDTH = 460;
-const CHART_HEIGHT = 220;
+const POPUP_WIDTH = 920;
+const CHART_HEIGHT = 440;
 const HEADER_HEIGHT = 34;
 const POPUP_HEIGHT = CHART_HEIGHT + HEADER_HEIGHT;
+const POPUP_GAP = 12;
+const VERTICAL_OFFSET = 20;
 
-function sixMonthsAgo(): string {
+function nineMonthsAgo(): string {
   const d = new Date();
-  d.setMonth(d.getMonth() - 6);
+  d.setMonth(d.getMonth() - 9);
   return d.toISOString().split('T')[0];
 }
 
@@ -42,25 +44,28 @@ function calcPosition(rect: DOMRect): { left: number; top: number } {
   const vh = window.innerHeight;
   const margin = 8;
 
-  let left = rect.right + 12;
-  let top = rect.top + rect.height / 2 - POPUP_HEIGHT / 2;
+  let left = rect.right + POPUP_GAP;
+  let top = rect.top + rect.height / 2 - POPUP_HEIGHT - VERTICAL_OFFSET;
 
+  // 沿用左右避让；浮窗整体上移半个自身高度，避免遮住鼠标。
   if (left + POPUP_WIDTH > vw - margin) {
-    left = rect.left - POPUP_WIDTH - 12;
+    left = rect.left - POPUP_WIDTH - POPUP_GAP;
   }
-  if (left < margin) left = margin;
-  if (top < margin) top = margin;
-  if (top + POPUP_HEIGHT > vh - margin) {
-    top = vh - POPUP_HEIGHT - margin;
-  }
-  return { left, top };
+  // 顶部空间不足时改放在 hover 行下方。
+  if (top < margin) top = rect.bottom + POPUP_GAP;
+  const maxLeft = Math.max(margin, vw - POPUP_WIDTH - margin);
+  const maxTop = Math.max(margin, vh - POPUP_HEIGHT - margin);
+  return {
+    left: Math.min(Math.max(left, margin), maxLeft),
+    top: Math.min(Math.max(top, margin), maxTop),
+  };
 }
 
 export default function HoldingKlinePopup({
   code,
   name,
   market = 'A',
-  endDate,
+  reportMarkers = [],
   anchorRect,
   onMouseEnter,
   onMouseLeave,
@@ -93,7 +98,7 @@ export default function HoldingKlinePopup({
     });
     chartRef.current = chart;
 
-    const cutoff = sixMonthsAgo();
+    const cutoff = nineMonthsAgo();
 
     klineApi
       .get(market, code, 'daily')
@@ -124,20 +129,30 @@ export default function HoldingKlinePopup({
           } as CandlestickData)),
         );
 
-        // Mark the K-line bar nearest to and no later than the holding report endDate
-        if (endDate) {
-          const markerDate = dates.filter((d) => d <= endDate).at(-1);
-          if (markerDate) {
-            createSeriesMarkers(candleSeries, [
-              {
-                time: markerDate,
-                position: 'aboveBar',
-                shape: 'arrowDown',
-                color: '#FF6B35',
-                text: '持仓日',
-              },
-            ]);
-          }
+        // 标出最近三期持仓公告对应的截止时间；非交易日回退到前一交易日。
+        // 当期未持有该股时，以灰色标记，避免误认为该股当期已在持仓中。
+        const markersByDate = new Map<string, boolean>();
+        reportMarkers.forEach(({ date, isHolding }) => {
+          markersByDate.set(date, markersByDate.get(date) || isHolding);
+        });
+        const markers = [...markersByDate.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .slice(-3)
+          .map(([reportDate, isHolding]) => {
+            const markerDate = dates.filter((d) => d <= reportDate).at(-1);
+            return markerDate
+              ? {
+                  time: markerDate,
+                  position: 'aboveBar' as const,
+                  shape: 'arrowDown' as const,
+                  color: isHolding ? '#ef5350' : '#bfbfbf',
+                  text: reportDate,
+                }
+              : null;
+          })
+          .filter((marker): marker is NonNullable<typeof marker> => marker !== null);
+        if (markers.length > 0) {
+          createSeriesMarkers(candleSeries, markers);
         }
 
         const ma5 = chart.addSeries(LineSeries, {
@@ -176,7 +191,7 @@ export default function HoldingKlinePopup({
       chart.remove();
       chartRef.current = null;
     };
-  }, [code, market, endDate]);
+  }, [code, market, reportMarkers]);
 
   return createPortal(
     <div
@@ -188,7 +203,7 @@ export default function HoldingKlinePopup({
       <div className={styles.header}>
         <span className={styles.title}>{name}</span>
         <span className={styles.metaGroup}>
-          <span className={styles.meta}>{code} · 近6个月日K</span>
+          <span className={styles.meta}>{code} · 近9个月日K</span>
           <Tooltip title="在新标签页打开详情">
             <a
               href={`/stock/${market}/${code}`}

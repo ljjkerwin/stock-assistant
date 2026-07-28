@@ -5,6 +5,7 @@ import { Subject } from 'rxjs';
 import { DarkTradeService } from './darktrade.service';
 import { DarkTradeIndex } from './dark-trade-index.entity';
 import { DarkTradeSnapshot } from './dark-trade-snapshot.entity';
+import { DarkTradeDailyResult } from './dark-trade-daily-result.entity';
 import { Favorite } from '../favorites/favorite.entity';
 import { SchedulerService } from '../scheduler/scheduler.service';
 
@@ -23,6 +24,10 @@ describe('DarkTradeService', () => {
   let snapshotRepo: {
     find: jest.Mock;
     createQueryBuilder: jest.Mock;
+  };
+  let dailyResultRepo: {
+    find: jest.Mock;
+    upsert: jest.Mock;
   };
   let favoriteRepo: {
     find: jest.Mock;
@@ -72,6 +77,11 @@ describe('DarkTradeService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(qbMock),
     };
 
+    dailyResultRepo = {
+      find: jest.fn(),
+      upsert: jest.fn(),
+    };
+
     favoriteRepo = {
       find: jest.fn(),
     };
@@ -91,6 +101,10 @@ describe('DarkTradeService', () => {
         {
           provide: getRepositoryToken(DarkTradeSnapshot),
           useValue: snapshotRepo,
+        },
+        {
+          provide: getRepositoryToken(DarkTradeDailyResult),
+          useValue: dailyResultRepo,
         },
         {
           provide: getRepositoryToken(Favorite),
@@ -245,6 +259,90 @@ describe('DarkTradeService', () => {
       );
 
       jest.useRealTimers();
+    });
+  });
+
+  describe('getDiscoveryStocks', () => {
+    it('returns only stocks whose dark capital clears both discovery thresholds', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        {
+          code: 'A',
+          name: '符合但较小',
+          darkCapital: 30_000_000,
+          lightCapital: 10_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: 'B',
+          name: '符合且较大',
+          darkCapital: 60_000_000,
+          lightCapital: 20_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: 'C',
+          name: '暗盘不足',
+          darkCapital: 20_000_000,
+          lightCapital: 1_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: 'D',
+          name: '倍率不足',
+          darkCapital: 30_000_000,
+          lightCapital: 15_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: 'E',
+          name: '缺少明盘',
+          darkCapital: 30_000_000,
+          lightCapital: null,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: 'F',
+          name: '负明盘绝对值倍率不足',
+          darkCapital: 30_000_000,
+          lightCapital: -20_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+      ]);
+
+      const result = await service.getDiscoveryStocks();
+
+      expect(result.map((item) => item.code)).toEqual(['B', 'A']);
+    });
+
+    it('applies caller-supplied discovery thresholds', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        {
+          code: 'A',
+          name: '倍率符合但金额不足',
+          darkCapital: 30_000_000,
+          lightCapital: 10_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: 'B',
+          name: '符合',
+          darkCapital: 60_000_000,
+          lightCapital: 20_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+      ]);
+
+      const result = await service.getDiscoveryStocks(50_000_000, 2.5);
+
+      expect(result.map((item) => item.code)).toEqual(['B']);
     });
   });
 });

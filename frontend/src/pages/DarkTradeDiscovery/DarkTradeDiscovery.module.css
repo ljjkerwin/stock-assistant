@@ -1,0 +1,113 @@
+.page {
+  height: 100%;
+  overflow: auto;
+  padding: 20px;
+  background: #f5f5f5;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.title {
+  margin: 0 0 4px !important;
+}
+
+.stockLink {
+  height: auto;
+  padding: 0;
+  font-weight: 600;
+}
+
+.code {
+  margin-left: 8px;
+  font-weight: normal;
+}
+
+.darkCapital,
+.up {
+  color: #ef5350;
+}
+
+.down {
+  color: #26a69a;
+}
+
+.timesharePopup {
+  position: fixed;
+  z-index: 9999;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+}
+
+.popupHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.popupMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: normal;
+  color: #999;
+}
+
+.popupMeta a {
+  color: #999;
+}
+
+.popupMeta a:hover {
+  color: #1677ff;
+}
+
+.popupCharts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 10px 12px 12px;
+}
+
+.pricePanel,
+.dailyPanel {
+  min-width: 0;
+}
+
+.dailyPanel {
+  padding-left: 12px;
+  border-left: 1px solid #f0f0f0;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 10px;
+  }
+
+  .header {
+    align-items: flex-start;
+    padding: 14px;
+  }
+
+  .popupCharts {
+    grid-template-columns: 1fr;
+  }
+}

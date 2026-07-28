@@ -13,6 +13,7 @@ import { FUND_PERIOD_LABELS, FUND_PERIOD_LIMITS } from '../../types';
 import styles from './NavChart.module.css';
 
 const ANNUAL_RF_RATE = 0.025;
+const NAV_CHART_HEIGHT = 240;
 
 function calcSharpe(points: FundNavPoint[]): number | null {
   const returns = points
@@ -76,7 +77,7 @@ const CHART_OPTIONS = {
 };
 
 export default function NavChart({ code }: Props) {
-  const [period, setPeriod] = useState<FundNavPeriod>('3M');
+  const [period, setPeriod] = useState<FundNavPeriod>('1Y');
   const [loading, setLoading] = useState(false);
   const [sharpe, setSharpe] = useState<number | null>(null);
   const [periodReturn, setPeriodReturn] = useState<number | null>(null);
@@ -93,7 +94,7 @@ export default function NavChart({ code }: Props) {
     chartRef.current?.remove();
     chartRef.current = null;
 
-    const chart = createChart(containerRef.current, { ...CHART_OPTIONS, height: 300 });
+    const chart = createChart(containerRef.current, { ...CHART_OPTIONS, height: NAV_CHART_HEIGHT });
     chartRef.current = chart;
 
     chart.subscribeCrosshairMove((param) => {

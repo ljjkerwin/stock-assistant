@@ -1,26 +1,21 @@
-import { Entity, PrimaryGeneratedColumn, Column, Index, UpdateDateColumn, Unique } from 'typeorm';
+import { Column, Entity, Index, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 
-@Entity('dark_trade_snapshot')
-@Unique(['code', 'captureMinute'])
-@Index(['tradeDate', 'code', 'captureMinute'])
-export class DarkTradeSnapshot {
+/** 每只股票每天的最新明暗盘结果，供挖掘页直接筛选。 */
+@Entity('dark_trade_daily_result')
+@Unique(['tradeDate', 'code'])
+@Index(['tradeDate', 'darkCapital'])
+export class DarkTradeDailyResult {
   @PrimaryGeneratedColumn()
   id: number;
+
+  @Column({ name: 'trade_date' })
+  tradeDate: string;
 
   @Column()
   code: string;
 
-  /** YYYYMMDD — 用于按日期区间过滤 */
-  @Column({ name: 'trade_date' })
-  tradeDate: string;
-
-  /** YYYYMMDDHHMM（北京时间）— 分钟级去重唯一键 */
   @Column({ name: 'capture_minute' })
   captureMinute: string;
-
-  /** 是否由全市场索引重建产生；用于保证挖掘页使用同一全市场时点的数据。 */
-  @Column({ name: 'is_full_market', default: false })
-  isFullMarket: boolean;
 
   @Column({ name: 'dark_capital', type: 'double', nullable: true })
   darkCapital: number | null;

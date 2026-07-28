@@ -10,6 +10,7 @@ import { In, Repository } from 'typeorm';
 import axios from 'axios';
 import { DarkTradeIndex } from './dark-trade-index.entity';
 import { DarkTradeSnapshot } from './dark-trade-snapshot.entity';
+import { DarkTradeDailyResult } from './dark-trade-daily-result.entity';
 import { Favorite } from '../favorites/favorite.entity';
 import { Subscription } from 'rxjs';
 import { SchedulerService } from '../scheduler/scheduler.service';
@@ -26,7 +27,7 @@ const HEADERS = {
 
 // field "3": market (1=沪, 0=深); "4": code; "6": 暗盘资金(元); "7": 明盘资金(元);
 // "8": 主力净流入含暗盘(元); "11": 暗盘活跃度(小数); "13": 最新价×1000;
-// "14": 涨幅(小数); "16": 名称; "17": 行业; "18": 概念
+// "14": 涨幅（小数，如 0.0188 表示 1.88%）; "16": 名称; "17": 行业; "18": 概念
 interface RawItem {
   3: number;
   4: string;
@@ -76,6 +77,9 @@ export interface FetchAllDailySnapshotResult {
   written: number;
 }
 
+export const DISCOVERY_DEFAULT_MIN_DARK_CAPITAL = 20_000_000;
+export const DISCOVERY_DEFAULT_MIN_MULTIPLE = 2;
+
 function todayDate(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -122,6 +126,8 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
     private readonly indexRepo: Repository<DarkTradeIndex>,
     @InjectRepository(DarkTradeSnapshot)
     private readonly snapshotRepo: Repository<DarkTradeSnapshot>,
+    @InjectRepository(DarkTradeDailyResult)
+    private readonly dailyResultRepo: Repository<DarkTradeDailyResult>,
     @InjectRepository(Favorite)
     private readonly favoriteRepo: Repository<Favorite>,
     private readonly schedulerService: SchedulerService,
@@ -277,6 +283,8 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       await this.indexRepo.insert(entities.slice(i, i + CHUNK));
     }
 
+    await this.writeFullMarketSnapshot(entities, targetDate);
+
     this.logger.log(`暗盘索引建立完成: ${mapping.size} 只股票`);
     this.lastRefreshTime = Date.now();
     return { indexed: mapping.size, date: targetDate, pages: totalPages };
@@ -288,6 +296,151 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException(`股票 ${code} 不在暗盘索引中，请先调用 refresh-index`);
     }
     return this.entityToData(index);
+  }
+
+  /**
+   * 返回暗盘资金显著高于明盘资金的全市场标的。
+   * 每只股票使用指定日期最后一条全市场快照，按暗盘资金从高到低排列。
+   */
+  async getDiscoveryStocks(
+    minDarkCapital = DISCOVERY_DEFAULT_MIN_DARK_CAPITAL,
+    minMultiple = DISCOVERY_DEFAULT_MIN_MULTIPLE,
+    date = todayDate(),
+  ): Promise<DarkTradeData[]> {
+    let results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
+    // 兼容上线前已有的分钟/日终快照：首次访问某日时回填结果表，之后查询不再扫描快照表。
+    if (results.length === 0) {
+      const snapshots = await this.getLatestSnapshotsForDate(date);
+      await this.upsertDailyResults(snapshots);
+      results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
+    }
+    // 兼容升级前已建立但尚未写入快照的当日索引：先补一份全市场快照，再统一从快照读取。
+    if (results.length === 0 && date === todayDate()) {
+      const entries = await this.indexRepo.find({ where: { refreshDate: date } });
+      await this.writeFullMarketSnapshot(entries, date);
+      results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
+    }
+
+    return results
+      .filter(
+        (item) =>
+          item.darkCapital != null &&
+          item.lightCapital != null &&
+          item.darkCapital > minDarkCapital &&
+          item.darkCapital > Math.abs(item.lightCapital) * minMultiple,
+      )
+      .sort((a, b) => (b.darkCapital ?? 0) - (a.darkCapital ?? 0))
+      .map((item) => this.dailyResultToData(item));
+  }
+
+  private async upsertDailyResults(
+    snapshots: Array<
+      Pick<
+        DarkTradeSnapshot,
+        | 'tradeDate'
+        | 'code'
+        | 'captureMinute'
+        | 'darkCapital'
+        | 'lightCapital'
+        | 'name'
+        | 'latestPrice'
+        | 'changePct'
+        | 'netInflow'
+        | 'darkActivity'
+        | 'sector'
+        | 'concept'
+      >
+    >,
+  ): Promise<void> {
+    if (snapshots.length === 0) return;
+    await this.dailyResultRepo.upsert(
+      snapshots.map((snapshot) => ({
+        tradeDate: snapshot.tradeDate,
+        code: snapshot.code,
+        captureMinute: snapshot.captureMinute,
+        darkCapital: snapshot.darkCapital,
+        lightCapital: snapshot.lightCapital,
+        name: snapshot.name,
+        latestPrice: snapshot.latestPrice,
+        changePct: snapshot.changePct,
+        netInflow: snapshot.netInflow,
+        darkActivity: snapshot.darkActivity,
+        sector: snapshot.sector,
+        concept: snapshot.concept,
+      })),
+      ['tradeDate', 'code'],
+    );
+  }
+
+  /**
+   * 由数据库按股票代码取指定日期的最大 captureMinute。
+   * 不能把一天内所有分钟快照读入内存，否则多用户积累后会造成大查询和高内存占用。
+   */
+  private getLatestSnapshotsForDate(date: string): Promise<DarkTradeSnapshot[]> {
+    return this.snapshotRepo
+      .createQueryBuilder('snapshot')
+      .where('snapshot.trade_date = :date', { date })
+      .andWhere(
+        `snapshot.capture_minute = (
+          SELECT MAX(latest_snapshot.capture_minute)
+          FROM dark_trade_snapshot latest_snapshot
+          WHERE latest_snapshot.code = snapshot.code
+            AND latest_snapshot.trade_date = :date
+        )`,
+        { date },
+      )
+      .getMany();
+  }
+
+  private async writeFullMarketSnapshot(
+    entries: Partial<DarkTradeIndex>[],
+    date: string,
+  ): Promise<void> {
+    const captureMinute =
+      date === todayDate() && nowBeijingMinutes() < 15 * 60
+        ? captureMinuteForSnapshot(date)
+        : `${date}1500`;
+    const snapshots = entries
+      .filter((entry) => entry.darkCapital != null || entry.lightCapital != null)
+      .map((entry) => ({
+        code: entry.code!,
+        tradeDate: date,
+        captureMinute,
+        darkCapital: entry.darkCapital ?? null,
+        lightCapital: entry.lightCapital ?? null,
+        name: entry.name ?? null,
+        latestPrice: entry.latestPrice ?? null,
+        changePct: entry.changePct ?? null,
+        netInflow: entry.netInflow ?? null,
+        darkActivity: entry.darkActivity ?? null,
+        sector: entry.sector ?? null,
+        concept: entry.concept ?? null,
+      }));
+    if (snapshots.length === 0) return;
+
+    await this.snapshotRepo
+      .createQueryBuilder()
+      .insert()
+      .into(DarkTradeSnapshot)
+      .values(snapshots)
+      .orUpdate(
+        [
+          'dark_capital',
+          'light_capital',
+          'name',
+          'latest_price',
+          'change_pct',
+          'net_inflow',
+          'dark_activity',
+          'sector',
+          'concept',
+          'trade_date',
+        ],
+        ['code', 'capture_minute'],
+      )
+      .updateEntity(false)
+      .execute();
+    await this.upsertDailyResults(snapshots);
   }
 
   private refreshLock: Promise<void> | null = null;
@@ -443,6 +596,13 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
           captureMinute: minute,
           darkCapital: d.darkCapital,
           lightCapital: d.lightCapital,
+          name: d.name,
+          latestPrice: d.latestPrice,
+          changePct: d.changePct,
+          netInflow: d.netInflow,
+          darkActivity: d.darkActivity,
+          sector: d.sector,
+          concept: d.concept,
         }));
       if (snapshotEntities.length > 0) {
         await this.snapshotRepo
@@ -450,9 +610,24 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
           .insert()
           .into(DarkTradeSnapshot)
           .values(snapshotEntities)
-          .orUpdate(['dark_capital', 'light_capital', 'trade_date'], ['code', 'capture_minute'])
+          .orUpdate(
+            [
+              'dark_capital',
+              'light_capital',
+              'name',
+              'latest_price',
+              'change_pct',
+              'net_inflow',
+              'dark_activity',
+              'sector',
+              'concept',
+              'trade_date',
+            ],
+            ['code', 'capture_minute'],
+          )
           .updateEntity(false)
           .execute();
+        await this.upsertDailyResults(snapshotEntities);
       }
     }
 
@@ -583,6 +758,13 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
         captureMinute,
         darkCapital: e.darkCapital,
         lightCapital: e.lightCapital,
+        name: e.name,
+        latestPrice: e.latestPrice,
+        changePct: e.changePct,
+        netInflow: e.netInflow,
+        darkActivity: e.darkActivity,
+        sector: e.sector,
+        concept: e.concept,
       }));
 
     const CHUNK = 500;
@@ -594,9 +776,24 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
         .insert()
         .into(DarkTradeSnapshot)
         .values(chunk)
-        .orUpdate(['dark_capital', 'light_capital', 'trade_date'], ['code', 'capture_minute'])
+        .orUpdate(
+          [
+            'dark_capital',
+            'light_capital',
+            'name',
+            'latest_price',
+            'change_pct',
+            'net_inflow',
+            'dark_activity',
+            'sector',
+            'concept',
+            'trade_date',
+          ],
+          ['code', 'capture_minute'],
+        )
         .updateEntity(false)
         .execute();
+      await this.upsertDailyResults(chunk);
       written += chunk.length;
       this.logger.log(`[全市场快照] 已写入 ${written}/${snapshotEntities.length}`);
     }
@@ -625,6 +822,38 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       sector: entity.sector ?? '',
       concept: entity.concept ?? '',
       date: entity.refreshDate,
+    };
+  }
+
+  private snapshotToData(snapshot: DarkTradeSnapshot): DarkTradeData {
+    return {
+      code: snapshot.code,
+      name: snapshot.name ?? '',
+      latestPrice: snapshot.latestPrice,
+      changePct: snapshot.changePct,
+      darkCapital: snapshot.darkCapital,
+      lightCapital: snapshot.lightCapital,
+      netInflow: snapshot.netInflow,
+      darkActivity: snapshot.darkActivity,
+      sector: snapshot.sector ?? '',
+      concept: snapshot.concept ?? '',
+      date: snapshot.tradeDate,
+    };
+  }
+
+  private dailyResultToData(result: DarkTradeDailyResult): DarkTradeData {
+    return {
+      code: result.code,
+      name: result.name ?? '',
+      latestPrice: result.latestPrice,
+      changePct: result.changePct,
+      darkCapital: result.darkCapital,
+      lightCapital: result.lightCapital,
+      netInflow: result.netInflow,
+      darkActivity: result.darkActivity,
+      sector: result.sector ?? '',
+      concept: result.concept ?? '',
+      date: result.tradeDate,
     };
   }
 }
