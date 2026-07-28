@@ -61,9 +61,16 @@ export default function StockListKline() {
   const [darkSnapshotMap, setDarkSnapshotMap] = useState<Record<string, DarkTradeSnapshot[]>>({});
   const [stockInfoMap, setStockInfoMap] = useState<Record<string, StockInfo>>({});
   const [klineDate, setKlineDate] = useState<string | null>(null);
+  const [isPageActive, setIsPageActive] = useState(() => document.visibilityState === 'visible');
 
   const cardRefs = useRef<Map<number, CardHandle>>(new Map());
   const syncRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const syncPageActivity = () => setIsPageActive(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', syncPageActivity);
+    return () => document.removeEventListener('visibilitychange', syncPageActivity);
+  }, []);
 
   const handleRangeChange = useCallback((sourceId: number, range: LogicalRange) => {
     if (syncRafRef.current !== null) cancelAnimationFrame(syncRafRef.current);
@@ -229,6 +236,7 @@ export default function StockListKline() {
                 showVolume={subCharts.includes('volume')}
                 showMacd={subCharts.includes('macd')}
                 showRsi={subCharts.includes('rsi')}
+                isPageActive={isPageActive}
                 showDarkTrade={showDarkTrade && stock.market === 'A' && (period === 'timeshare' || period === 'daily')}
                 darkTradeData={(() => {
                   const snaps = darkSnapshotMap[stock.code] || [];

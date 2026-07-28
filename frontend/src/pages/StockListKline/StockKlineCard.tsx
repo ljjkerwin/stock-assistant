@@ -31,6 +31,7 @@ interface Props {
   showVolume: boolean;
   showMacd: boolean;
   showRsi: boolean;
+  isPageActive: boolean;
   showDarkTrade?: boolean;
   darkTradeData?: DarkTradeSnapshot | null;
   darkTradeSnapshots?: DarkTradeSnapshot[];
@@ -126,20 +127,8 @@ function buildTimeshareSeriesData<T extends { time: string }, R>(
   return result;
 }
 
-function isInTradingHours(market: 'A' | 'HK'): boolean {
-  const now = new Date();
-  const utc8 = new Date(now.getTime() + 8 * 3600 * 1000);
-  const h = utc8.getUTCHours();
-  const m = utc8.getUTCMinutes();
-  const day = utc8.getUTCDay();
-  if (day === 0 || day === 6) return false;
-  const t = h * 60 + m;
-  if (market === 'A') return (t >= 570 && t < 690) || (t >= 780 && t < 900);
-  return (t >= 570 && t < 720) || (t >= 780 && t < 960);
-}
-
 const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
-  { code, market, name, period, overlay, showVolume, showMacd, showRsi, showDarkTrade, darkTradeData, darkTradeSnapshots, stockInfo, onRangeChange, onDateResolved },
+  { code, market, name, period, overlay, showVolume, showMacd, showRsi, isPageActive, showDarkTrade, darkTradeData, darkTradeSnapshots, stockInfo, onRangeChange, onDateResolved },
   ref,
 ) {
   const [loading, setLoading] = useState(true);
@@ -404,11 +393,11 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     return () => { cancelled = true; };
   }, [code, market, period, showDarkTrade]);
 
-  // Effect 3: 交易时段内 30 秒轮询刷新（只在数据实际变化时触发重绘）
+  // Effect 3: 仅在总览页处于激活状态时，每分钟刷新一次（只在数据实际变化时触发重绘）
   useEffect(() => {
-    if (period === 'timeshare') return;
+    if (!isPageActive) return;
+
     const timer = setInterval(() => {
-      if (!isInTradingHours(market)) return;
       klineApi
         .get(market, code, period)
         .then((res) => {
@@ -427,9 +416,9 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
           });
         })
         .catch(() => { });
-    }, 30000);
+    }, 60000);
     return () => clearInterval(timer);
-  }, [code, market, period]);
+  }, [code, isPageActive, market, period]);
 
   // Effect 2: 渲染图表（bars/overlay/副图开关变化时重绘，不重新拉取数据）
   useEffect(() => {

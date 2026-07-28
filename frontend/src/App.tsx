@@ -160,11 +160,11 @@ export default function App() {
             <Route path="/stock/:market/:code" element={<StockDetail />} />
             <Route
               path="/fund"
-              element={isLjj ? <Home /> : <Navigate to="/stock" replace />}
+              element={<Home />}
             />
             <Route
               path="/fund/:code"
-              element={isLjj ? <FundDetail /> : <Navigate to="/stock" replace />}
+              element={<FundDetail />}
             />
             <Route
               path="/stock-list-import"

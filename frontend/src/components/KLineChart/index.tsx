@@ -184,20 +184,6 @@ function toChartTime(t: string): number | string {
   return Date.UTC(y, mo - 1, d, h, mi) / 1000;
 }
 
-function isInTradingHours(market: 'A' | 'HK'): boolean {
-  const now = new Date();
-  const utc8 = new Date(now.getTime() + 8 * 3600 * 1000);
-  const h = utc8.getUTCHours();
-  const m = utc8.getUTCMinutes();
-  const day = utc8.getUTCDay();
-  if (day === 0 || day === 6) return false;
-  const t = h * 60 + m;
-  if (market === 'A') {
-    return (t >= 570 && t < 690) || (t >= 780 && t < 900);
-  }
-  return (t >= 570 && t < 720) || (t >= 780 && t < 960);
-}
-
 export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, showDarkTrade = false, darkTradeSnapshots, onDateResolved, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
   const [period, setPeriod] = useState<KlinePeriod>(() => {
     return initialData?.period ?? controlledPeriod ?? loadPeriod();
@@ -248,7 +234,6 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   const bollMidSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bollLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const alignWidthRafRef = useRef<number | null>(null);
   const syncingRef = useRef(false);
   const zoomStorageKeyRef = useRef<string | undefined>(undefined);
@@ -1230,27 +1215,13 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
 
     if (initialData) {
       applyData(initialData.data, period, false, initialData.backtestStartTime ?? undefined);
-      // Don't auto-refresh for initial data
-      if (timerRef.current) clearInterval(timerRef.current);
     } else {
       void loadData(market, code, period);
-
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = setInterval(() => {
-        if (isInTradingHours(market)) {
-          void loadData(market, code, period, true);
-        }
-      }, 30000);
     }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
   }, [market, code, period, loadData, initialData, applyData]);
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
       if (alignWidthRafRef.current !== null) {
         cancelAnimationFrame(alignWidthRafRef.current);
         alignWidthRafRef.current = null;

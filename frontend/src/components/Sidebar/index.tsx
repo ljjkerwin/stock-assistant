@@ -293,7 +293,7 @@ export default function Sidebar() {
 
   const visibleOptions = SECTION_OPTIONS.filter((opt) => {
     if (username === 'ljj') return true;
-    return opt.value === 'stock' || opt.value === 'klinegrid';
+    return opt.value === 'stock' || opt.value === 'klinegrid' || opt.value === 'fund';
   });
 
   return (
