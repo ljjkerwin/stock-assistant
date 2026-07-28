@@ -10,6 +10,7 @@ import styles from './DarkTradeDiscovery.module.css';
 interface Props {
   code: string;
   name: string;
+  date: string;
   anchorRect: DOMRect;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -38,6 +39,7 @@ function position(rect: DOMRect) {
 export default function DarkTradeTimesharePopup({
   code,
   name,
+  date,
   anchorRect,
   onMouseEnter,
   onMouseLeave,
@@ -99,6 +101,7 @@ export default function DarkTradeTimesharePopup({
             showMacd={false}
             showDarkTrade
             defaultZoomMultiplier={1.5}
+            highlightDate={date}
           />
         </section>
       </div>

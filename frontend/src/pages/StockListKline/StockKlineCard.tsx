@@ -82,6 +82,16 @@ function formatCapital(v: number): string {
   return v.toFixed(0);
 }
 
+function isAShareTradingHours(): boolean {
+  const now = new Date();
+  const utc8 = new Date(now.getTime() + 8 * 3_600_000);
+  const day = utc8.getUTCDay();
+  if (day === 0 || day === 6) return false;
+
+  const minutes = utc8.getUTCHours() * 60 + utc8.getUTCMinutes();
+  return (minutes >= 570 && minutes < 690) || (minutes >= 780 && minutes < 900);
+}
+
 // 生成 09:30–15:00 全天 241 槽位数据（WhitespaceData 占位），供暗盘副图横坐标对齐主图
 function buildTimeshare241(
   dataMap: Map<string, number>,
@@ -398,6 +408,9 @@ const StockKlineCard = forwardRef<CardHandle, Props>(function StockKlineCard(
     if (!isPageActive) return;
 
     const timer = setInterval(() => {
+      // A 股收盘后不再刷新 K 线；港股不受 A 股收盘时间限制。
+      if (market === 'A' && !isAShareTradingHours()) return;
+
       klineApi
         .get(market, code, period)
         .then((res) => {

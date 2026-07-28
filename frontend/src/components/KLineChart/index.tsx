@@ -42,6 +42,7 @@ interface Props {
   defaultZoomMultiplier?: number; // 首次加载时的默认放大倍数，1 为常规视图
   darkTradeSnapshots?: DarkTradeSnapshot[]; // 暗盘快照数据（当日分钟粒度），配合 showDarkTrade 使用
   onDateResolved?: (date: string) => void; // 上报 K 线实际交易日（YYYYMMDD），供父组件按当日拉取暗盘快照
+  highlightDate?: string; // 在非分时主图中标记指定交易日（YYYY-MM-DD）
   // 回测预览：拉取模式下将默认视口对齐到回测时间区间 [viewStartDate, viewEndDate]（YYYY-MM-DD），
   // 使点击「开始回测」后视口不跳变；仅在无 initialData 的拉取模式下生效
   viewStartDate?: string;
@@ -186,13 +187,14 @@ function toChartTime(t: string): number | string {
   return Date.UTC(y, mo - 1, d, h, mi) / 1000;
 }
 
-export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, showMacd = true, showDarkTrade = false, defaultZoomMultiplier = 1, darkTradeSnapshots, onDateResolved, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
+export default function KLineChart({ market, code, initialData, zoomStorageKey, showPeriodTabs = true, showLjj = false, showRsi = false, showMacd = true, showDarkTrade = false, defaultZoomMultiplier = 1, darkTradeSnapshots, onDateResolved, highlightDate, period: controlledPeriod, viewStartDate, viewEndDate }: Props) {
   const [period, setPeriod] = useState<KlinePeriod>(() => {
     return initialData?.period ?? controlledPeriod ?? loadPeriod();
   });
   const [loading, setLoading] = useState(false);
   const [overlay, setOverlay] = useState<MainOverlay>(loadOverlay);
   const [localDailySnapshots, setLocalDailySnapshots] = useState<DarkTradeSnapshot[]>([]);
+  const highlightDateRef = useRef(highlightDate);
 
   useEffect(() => {
     if (showPeriodTabs) {
@@ -760,6 +762,19 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
       }
     }
 
+    const highlightedBar = !isTimeshare && highlightDateRef.current
+      ? bars.find((bar) => bar.time.slice(0, 10) === highlightDateRef.current)
+      : undefined;
+    if (highlightedBar) {
+      markers.push({
+        time: toChartTime(highlightedBar.time) as Time,
+        position: 'aboveBar' as const,
+        color: '#1677ff',
+        shape: 'circle' as const,
+        text: '当日',
+      });
+    }
+
     // markers 必须按时间升序
     markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
 
@@ -1184,6 +1199,13 @@ export default function KLineChart({ market, code, initialData, zoomStorageKey, 
   useEffect(() => {
     zoomStorageKeyRef.current = zoomStorageKey;
   }, [zoomStorageKey]);
+
+  useEffect(() => {
+    highlightDateRef.current = highlightDate;
+    if (barsRef.current.length > 0 && periodRef.current !== 'timeshare') {
+      applyData(barsRef.current, periodRef.current, true);
+    }
+  }, [highlightDate, applyData]);
 
   // 回测预览：时间区间变化时更新 ref，并在拉取模式下就地重新取景（不重新拉取数据）
   useEffect(() => {
