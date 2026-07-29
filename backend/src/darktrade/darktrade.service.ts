@@ -653,14 +653,21 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       if (r.captureMinute.slice(8) < '0930') continue;
       byDay.set(r.tradeDate, r);
     }
-    return Array.from(byDay.values())
-      .filter((r) => r.captureMinute.endsWith('1500'))
-      .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
-      .map((r) => ({
-        time: `${r.tradeDate.slice(0, 4)}-${r.tradeDate.slice(4, 6)}-${r.tradeDate.slice(6, 8)}`,
-        darkCapital: r.darkCapital,
-        lightCapital: r.lightCapital,
-      }));
+    const currentDate = todayDate();
+    const beforeClose = nowBeijingMinutes() < 15 * 60;
+    return (
+      Array.from(byDay.values())
+        // 历史日期只使用收盘快照；当日尚未收盘时，以最新盘中快照补作当日数据。
+        .filter(
+          (r) => r.captureMinute.endsWith('1500') || (r.tradeDate === currentDate && beforeClose),
+        )
+        .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
+        .map((r) => ({
+          time: `${r.tradeDate.slice(0, 4)}-${r.tradeDate.slice(4, 6)}-${r.tradeDate.slice(6, 8)}`,
+          darkCapital: r.darkCapital,
+          lightCapital: r.lightCapital,
+        }))
+    );
   }
 
   /** 批量快照（StockListKline 用）：分钟粒度，返回 code→记录[]；date=YYYYMMDD 时只取当天 */

@@ -4,14 +4,15 @@ import {
   DatePicker,
   Empty,
   InputNumber,
+  message,
   Popconfirm,
   Space,
   Table,
-  Tag,
   Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { CloudSyncOutlined } from '@ant-design/icons';
+import { CloudSyncOutlined, DownloadOutlined } from '@ant-design/icons';
+import html2canvas from 'html2canvas';
 import { useNavigate } from 'react-router-dom';
 import dayjs, { type Dayjs } from 'dayjs';
 import { darktradeApi } from '../../api/stock';
@@ -22,6 +23,8 @@ import styles from './DarkTradeDiscovery.module.css';
 const { Text, Title } = Typography;
 const DEFAULT_MIN_DARK_CAPITAL_WAN = 2_000;
 const DEFAULT_MIN_MULTIPLE = 2;
+const EXPORT_PAGE_SIZE = 15;
+const EXPORT_IMAGE_COUNT = 4;
 
 function formatCapital(value: number | null) {
   if (value == null) return '--';
@@ -35,11 +38,21 @@ function formatPercent(value: number | null) {
   return `${percent > 0 ? '+' : ''}${percent.toFixed(2)}%`;
 }
 
+function formatDateForFilename(date: Dayjs) {
+  return date.format('YYYYMMDD');
+}
+
+function nextFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
 export default function DarkTradeDiscovery() {
   const navigate = useNavigate();
   const [data, setData] = useState<DarkTradeData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshingIndex, setRefreshingIndex] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportPage, setExportPage] = useState<number | null>(null);
   const [minDarkCapitalWan, setMinDarkCapitalWan] = useState(DEFAULT_MIN_DARK_CAPITAL_WAN);
   const [minMultiple, setMinMultiple] = useState(DEFAULT_MIN_MULTIPLE);
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs());
@@ -47,6 +60,7 @@ export default function DarkTradeDiscovery() {
     null,
   );
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async (darkCapitalWan: number, multiple: number, date: Dayjs) => {
     setLoading(true);
@@ -101,10 +115,51 @@ export default function DarkTradeDiscovery() {
     if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
   };
 
+  const exportTopRecords = async () => {
+    const exportableCount = Math.min(data.length, EXPORT_PAGE_SIZE * EXPORT_IMAGE_COUNT);
+    if (!exportableCount) {
+      message.warning('当前没有可导出的记录');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const totalImages = Math.ceil(exportableCount / EXPORT_PAGE_SIZE);
+      for (let page = 0; page < totalImages; page += 1) {
+        setExportPage(page);
+        await nextFrame();
+        await nextFrame();
+        if (!exportRef.current) throw new Error('导出区域未就绪');
+
+        const canvas = await html2canvas(exportRef.current, {
+          logging: false,
+          scale: 2,
+          useCORS: true,
+        });
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error('图片生成失败');
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `明暗盘挖掘_${formatDateForFilename(selectedDate)}_${page + 1}.png`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+      message.success(`已导出 ${totalImages} 张图片`);
+    } catch {
+      message.error('图片导出失败，请重试');
+    } finally {
+      setExportPage(null);
+      setExporting(false);
+    }
+  };
+
   const columns: ColumnsType<DarkTradeData> = [
     {
-      title: '股票',
+      title: '名称',
       key: 'stock',
+      width: '12em',
       render: (_, record) => (
         <Button
           type="link"
@@ -121,25 +176,10 @@ export default function DarkTradeDiscovery() {
       ),
     },
     {
-      title: '最新价',
-      dataIndex: 'latestPrice',
-      align: 'right',
-      render: (value: number | null) => value?.toFixed(2) ?? '--',
-    },
-    {
-      title: '涨跌幅',
-      dataIndex: 'changePct',
-      align: 'right',
-      render: (value: number | null) => (
-        <span className={value != null && value < 0 ? styles.down : styles.up}>
-          {formatPercent(value)}
-        </span>
-      ),
-    },
-    {
       title: '暗盘资金',
       dataIndex: 'darkCapital',
       align: 'right',
+      width: '8em',
       render: (value: number | null) => (
         <strong className={styles.darkCapital}>{formatCapital(value)}</strong>
       ),
@@ -148,23 +188,32 @@ export default function DarkTradeDiscovery() {
       title: '明盘资金',
       dataIndex: 'lightCapital',
       align: 'right',
+      width: '8em',
       render: formatCapital,
     },
     {
-      title: '暗/|明|倍数',
-      key: 'multiple',
+      title: '涨幅',
+      dataIndex: 'changePct',
       align: 'right',
-      render: (_, record) => {
-        if (record.darkCapital == null || record.lightCapital == null || record.lightCapital === 0)
-          return '--';
-        return `${(record.darkCapital / Math.abs(record.lightCapital)).toFixed(2)} 倍`;
-      },
+      width: '8em',
+      render: (value: number | null) => (
+        <span className={value != null && value < 0 ? styles.down : styles.up}>
+          {formatPercent(value)}
+        </span>
+      ),
     },
     {
-      title: '行业',
-      dataIndex: 'sector',
-      render: (value: string) => (value ? <Tag>{value}</Tag> : '--'),
+      title: '最新',
+      dataIndex: 'latestPrice',
+      align: 'right',
+      width: '8em',
+      render: (value: number | null) => value?.toFixed(2) ?? '--',
     },
+    // {
+    //   title: '行业',
+    //   dataIndex: 'sector',
+    //   render: (value: string) => (value ? <Tag>{value}</Tag> : '--'),
+    // },
   ];
 
   return (
@@ -213,6 +262,14 @@ export default function DarkTradeDiscovery() {
           </Space>
         </div>
         <Space>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => void exportTopRecords()}
+            loading={exporting}
+            disabled={loading || !data.length}
+          >
+            导出前 60 条图片
+          </Button>
           <Popconfirm
             title="刷新全市场明暗盘数据？"
             description="将抓取全市场数据，预计需要 5–10 秒。"
@@ -236,13 +293,27 @@ export default function DarkTradeDiscovery() {
         dataSource={data}
         loading={loading}
         pagination={{
-          pageSize: 50,
+          pageSize: 100,
           showSizeChanger: false,
           showTotal: (total) => `共 ${total} 只`,
         }}
         locale={{ emptyText: <Empty description="当前暗盘索引中没有符合条件的股票" /> }}
-        scroll={{ x: 760 }}
+        style={{ width: 'fit-content' }}
       />
+      {exportPage != null && (
+        <div className={styles.exportViewport} aria-hidden="true">
+          <div ref={exportRef} className={styles.exportSheet}>
+            <Table<DarkTradeData>
+              rowKey="code"
+              columns={columns}
+              dataSource={data.slice(exportPage * EXPORT_PAGE_SIZE, (exportPage + 1) * EXPORT_PAGE_SIZE)}
+              pagination={false}
+              size="middle"
+              style={{ width: 'fit-content' }}
+            />
+          </div>
+        </div>
+      )}
       {hovered && (
         <DarkTradeTimesharePopup
           code={hovered.code}

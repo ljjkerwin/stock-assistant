@@ -262,6 +262,55 @@ describe('DarkTradeService', () => {
     });
   });
 
+  describe('getSnapshots', () => {
+    it("uses the latest intraday snapshot as today's daily value before close", async () => {
+      const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const yesterdayStr = new Date(Date.now() - 86_400_000)
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, '');
+      getManyMock.mockResolvedValue([
+        {
+          code: '603580',
+          tradeDate: yesterdayStr,
+          captureMinute: `${yesterdayStr}1500`,
+          darkCapital: 100,
+          lightCapital: 200,
+        },
+        {
+          code: '603580',
+          tradeDate: todayStr,
+          captureMinute: `${todayStr}1015`,
+          darkCapital: 300,
+          lightCapital: 400,
+        },
+      ]);
+
+      // 北京时间 10:30（UTC 02:30），当天尚未收盘。
+      const mockDate = new Date();
+      mockDate.setUTCHours(2, 30, 0, 0);
+      jest.useFakeTimers();
+      jest.setSystemTime(mockDate);
+
+      const result = await service.getSnapshots('603580', 1000);
+
+      expect(result).toEqual([
+        {
+          time: `${yesterdayStr.slice(0, 4)}-${yesterdayStr.slice(4, 6)}-${yesterdayStr.slice(6, 8)}`,
+          darkCapital: 100,
+          lightCapital: 200,
+        },
+        {
+          time: `${todayStr.slice(0, 4)}-${todayStr.slice(4, 6)}-${todayStr.slice(6, 8)}`,
+          darkCapital: 300,
+          lightCapital: 400,
+        },
+      ]);
+
+      jest.useRealTimers();
+    });
+  });
+
   describe('getDiscoveryStocks', () => {
     it('returns only stocks whose dark capital clears both discovery thresholds', async () => {
       dailyResultRepo.find.mockResolvedValue([

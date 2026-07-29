@@ -40,6 +40,21 @@
   color: #26a69a;
 }
 
+.exportViewport {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  z-index: -1;
+  width: max-content;
+  pointer-events: none;
+}
+
+.exportSheet {
+  width: max-content;
+  padding: 0px;
+  background: #f5f5f5;
+}
+
 .timesharePopup {
   position: fixed;
   z-index: 9999;
