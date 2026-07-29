@@ -27,15 +27,18 @@ interface LlmSearchHistoryItem {
   names: string[];
   results: DarkTradeData[];
   notFoundNames: string[];
+  summarySuffix: string;
 }
 
 interface RecentSearchResult {
   data: DarkTradeData;
   queryText: string;
+  summarySuffix: string;
 }
 
-const MAX_RECENT_SEARCH_RESULTS = 5;
+const MAX_RECENT_SEARCH_RESULTS = 3;
 const MAX_LLM_SEARCH_HISTORY = 3;
+const CAPITAL_SUMMARY_SUFFIXES = ['', ' ～～', '[吧唧R][吧唧R]', '[吃瓜R]'];
 
 function formatCapital(value: number | null) {
   if (value == null) return '--';
@@ -54,19 +57,28 @@ function formatCapitalSummary(data: DarkTradeData) {
   return `${data.displayName ?? data.name}，暗${formatCapital(data.darkCapital)}，明${formatCapital(data.lightCapital)}`;
 }
 
+function getAdminDefaultDate() {
+  const now = dayjs();
+  return now.hour() < 6 ? now.subtract(1, 'day') : now;
+}
+
+function getRandomCapitalSummarySuffix() {
+  return CAPITAL_SUMMARY_SUFFIXES[Math.floor(Math.random() * CAPITAL_SUMMARY_SUFFIXES.length)];
+}
+
 export default function Admin() {
   const navigate = useNavigate();
-  const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs());
+  const [selectedDate, setSelectedDate] = useState<Dayjs>(getAdminDefaultDate);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<FetchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [searchDate, setSearchDate] = useState<Dayjs>(dayjs());
+  const [searchDate, setSearchDate] = useState<Dayjs>(getAdminDefaultDate);
   const [stockName, setStockName] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [recentSearchResults, setRecentSearchResults] = useState<RecentSearchResult[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [llmText, setLlmText] = useState('');
-  const [llmSearchDate, setLlmSearchDate] = useState<Dayjs>(dayjs());
+  const [llmSearchDate, setLlmSearchDate] = useState<Dayjs>(getAdminDefaultDate);
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [llmSearchHistory, setLlmSearchHistory] = useState<LlmSearchHistoryItem[]>([]);
@@ -98,7 +110,7 @@ export default function Admin() {
       const data = await darktradeApi.getDailyResultByName(name, searchDate.format('YYYYMMDD'));
       if (data) {
         setRecentSearchResults((current) => [
-          { data, queryText: name },
+          { data, queryText: name, summarySuffix: getRandomCapitalSummarySuffix() },
           ...current.filter(
             (item) => item.data.code !== data.code || item.data.date !== data.date,
           ),
@@ -113,8 +125,8 @@ export default function Admin() {
     }
   };
 
-  const handleCopyCapitalSummary = async (data: DarkTradeData) => {
-    const summary = formatCapitalSummary(data);
+  const handleCopyCapitalSummary = async (data: DarkTradeData, suffix = '') => {
+    const summary = `${formatCapitalSummary(data)}${suffix}`;
     try {
       await navigator.clipboard.writeText(summary);
       message.success('资金文案已复制');
@@ -137,6 +149,7 @@ export default function Admin() {
           names: data.names,
           results: data.results,
           notFoundNames: data.notFoundNames,
+          summarySuffix: getRandomCapitalSummarySuffix(),
         };
         return [
           item,
@@ -303,7 +316,7 @@ export default function Admin() {
 
           {recentSearchResults.length > 0 && !searchLoading && (
             <div className={styles.searchResults}>
-              {recentSearchResults.map(({ data: searchResult, queryText }) => (
+              {recentSearchResults.map(({ data: searchResult, queryText, summarySuffix }) => (
                 <div
                   key={`${searchResult.date}:${searchResult.code}`}
                   className={`${styles.result} ${styles.llmHistoryItem}`}
@@ -351,10 +364,10 @@ export default function Admin() {
                   <button
                     type="button"
                     className={`${styles.result} ${styles.resultSuccess} ${styles.llmSummary}`}
-                    onClick={() => void handleCopyCapitalSummary(searchResult)}
+                    onClick={() => void handleCopyCapitalSummary(searchResult, summarySuffix)}
                     title="点击复制资金文案"
                   >
-                    {formatCapitalSummary(searchResult)}
+                    {formatCapitalSummary(searchResult)}{summarySuffix}
                   </button>
                 </div>
               ))}
@@ -480,13 +493,16 @@ export default function Admin() {
                         className={`${styles.result} ${styles.resultSuccess} ${styles.llmSummary}`}
                         onClick={() =>
                           void navigator.clipboard
-                            .writeText(history.results.map(formatCapitalSummary).join('；'))
+                            .writeText(
+                              `${history.results.map(formatCapitalSummary).join('；')}${history.summarySuffix}`,
+                            )
                             .then(() => message.success('资金文案已复制'))
                             .catch(() => message.error('复制失败，请手动复制'))
                         }
                         title="点击复制全部资金文案"
                       >
                         {history.results.map(formatCapitalSummary).join('；')}
+                        {history.summarySuffix}
                       </button>
                     </>
                   ) : (

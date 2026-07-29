@@ -6,7 +6,7 @@
 
 通用枚举：
 
-- `market`：`A`（A股 + 场内ETF）/ `HK`（港股）
+- `market`：`A`（A股〔含科创板〕+ 场内ETF）/ `HK`（港股）
 - `period`：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
 
 **鉴权**：除 `POST /api/auth/login` 外，**所有 `/api/*` 接口都需要登录令牌**。令牌通过请求头 `Authorization: Bearer <token>` 传递；SSE（`EventSource` 无法自定义请求头）改用 query 参数 `?token=<token>`。缺失/无效/过期令牌一律返回 `401`。前端 axios 拦截器自动附带令牌，仅在收到 401 时清除本地令牌并退回登录页；502 等后端暂不可用错误会保留令牌，服务恢复后可自动恢复会话。
@@ -46,7 +46,7 @@
 
 | 方法 | 路径                               | 说明                                                                                                         |
 | ---- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| GET  | `/api/stocks/search?q=`            | 按代码或名称搜索（A股 + 港股）                                                                               |
+| GET  | `/api/stocks/search?q=`            | 按代码或名称搜索（A股〔含科创板〕+ 港股）                                                                   |
 | GET  | `/api/stocks/:market/:code`        | 获取股票基本信息，返回 `StockInfo` 结构                                                                      |
 | GET  | `/api/stocks/batch?symbols=`       | 批量查询多只股票的基本详情，`symbols` 为逗号分隔的 `market:code` 列表，返回 `Record<market:code, StockInfo>` |
 | GET  | `/api/kline/:market/:code?period=` | 获取 K 线数据                                                                                                |

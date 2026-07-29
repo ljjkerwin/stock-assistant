@@ -80,7 +80,7 @@ export class StocksService {
       if (market === '港股') {
         list.push({ code, name, market: 'HK' });
       } else if (
-        ['沪A', '深A', '沪市', '深市', 'A股', '上交所', '深交所', '基金'].some((m) =>
+        ['沪A', '深A', '沪市', '深市', 'A股', '科创板', '上交所', '深交所', '基金'].some((m) =>
           String(market).includes(m),
         )
       ) {

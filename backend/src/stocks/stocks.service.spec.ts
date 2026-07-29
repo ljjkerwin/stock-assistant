@@ -51,6 +51,26 @@ describe('StocksService', () => {
     jest.clearAllMocks();
   });
 
+  describe('search', () => {
+    it('should include STAR Market results as A-shares', async () => {
+      mockedAxios.get.mockResolvedValueOnce({
+        data: {
+          QuotationCodeTable: {
+            Data: [
+              { Code: '688146', Name: '中船特气', SecurityTypeName: '科创板' },
+              { Code: '00700', Name: '腾讯控股', SecurityTypeName: '港股' },
+            ],
+          },
+        },
+      });
+
+      await expect(service.search('688146')).resolves.toEqual([
+        { code: '688146', name: '中船特气', market: 'A' },
+        { code: '00700', name: '腾讯控股', market: 'HK' },
+      ]);
+    });
+  });
+
   describe('getInfo (A-Share)', () => {
     it('should successfully get A-share info from Tencent (primary)', async () => {
       const tencentResponse = makeGbkBuffer(
