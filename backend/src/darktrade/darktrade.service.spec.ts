@@ -27,7 +27,7 @@ describe('DarkTradeService', () => {
   };
   let dailyResultRepo: {
     find: jest.Mock;
-    upsert: jest.Mock;
+    createQueryBuilder: jest.Mock;
   };
   let favoriteRepo: {
     find: jest.Mock;
@@ -79,7 +79,7 @@ describe('DarkTradeService', () => {
 
     dailyResultRepo = {
       find: jest.fn(),
-      upsert: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue(qbMock),
     };
 
     favoriteRepo = {
@@ -311,6 +311,25 @@ describe('DarkTradeService', () => {
     });
   });
 
+  describe('fetchAllDailySnapshot', () => {
+    it('reuses refreshIndex snapshot write instead of writing the same records twice', async () => {
+      const refreshIndex = jest.spyOn(service, 'refreshIndex').mockResolvedValue({
+        indexed: 5319,
+        date: '20260729',
+        pages: 178,
+      });
+
+      await expect(service.fetchAllDailySnapshot('20260729')).resolves.toEqual({
+        date: '20260729',
+        total: 5319,
+        written: 5319,
+      });
+      expect(refreshIndex).toHaveBeenCalledWith('20260729');
+      expect(snapshotRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(dailyResultRepo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getDiscoveryStocks', () => {
     it('returns only stocks whose dark capital clears both discovery thresholds', async () => {
       dailyResultRepo.find.mockResolvedValue([
@@ -416,16 +435,15 @@ describe('DarkTradeService', () => {
         },
       ]);
 
-      await expect(service.getDailyResultByName('  贵州茅台  ', '20260728')).resolves.toMatchObject(
-        {
-          code: '600519',
-          name: '贵州茅台',
-          darkCapital: 12_300_000,
-          lightCapital: -34_500_000,
-          date: '20260728',
-          displayName: '贵州mt',
-        },
-      );
+      const result = await service.getDailyResultByName('  贵州茅台  ', '20260728');
+      expect(result).toMatchObject({
+        code: '600519',
+        name: '贵州茅台',
+        darkCapital: 12_300_000,
+        lightCapital: -34_500_000,
+        date: '20260728',
+      });
+      expect(result?.displayName).toMatch(/^(贵州mt|贵zmt)$/);
       expect(dailyResultRepo.find).toHaveBeenCalledWith({ where: { tradeDate: '20260728' } });
     });
 
@@ -448,14 +466,38 @@ describe('DarkTradeService', () => {
       });
     });
 
-    it('formats the result name as two Chinese characters plus pinyin initials', async () => {
+    it('prefers an exact-length pinyin-initial match over a partial one', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        { code: '000682', name: '东方电子', tradeDate: '20260728', captureMinute: '202607281500' },
+        { code: '002407', name: '多氟多', tradeDate: '20260728', captureMinute: '202607281500' },
+      ]);
+
+      await expect(service.getDailyResultByName('dfd', '20260728')).resolves.toMatchObject({
+        code: '002407',
+        name: '多氟多',
+      });
+    });
+
+    it('prefers a Chinese name prefix over a later partial match', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        { code: '603192', name: '药明康德', tradeDate: '20260728', captureMinute: '202607281500' },
+        { code: '603987', name: '康德莱', tradeDate: '20260728', captureMinute: '202607281500' },
+      ]);
+
+      await expect(service.getDailyResultByName('康德', '20260728')).resolves.toMatchObject({
+        code: '603987',
+        name: '康德莱',
+      });
+    });
+
+    it('formats the result name with either one or two Chinese characters plus pinyin initials', async () => {
       dailyResultRepo.find.mockResolvedValue([
         { code: '600027', name: '华电辽宁', tradeDate: '20260728', captureMinute: '202607281500' },
       ]);
 
-      await expect(service.getDailyResultByName('华电ln', '20260728')).resolves.toMatchObject({
-        displayName: '华电ln',
-      });
+      const result = await service.getDailyResultByName('华电ln', '20260728');
+
+      expect(result?.displayName).toMatch(/^(华电ln|华dln)$/);
     });
 
     it('rejects intraday data when the 15:00 closing result is unavailable', async () => {

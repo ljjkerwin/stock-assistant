@@ -182,7 +182,36 @@
 }
 
 .capitalResult {
+  margin-top: 0;
   padding-block: 14px;
+}
+
+.resultHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dailyKlineButton {
+  color: #7dd3fc;
+  flex: 0 0 auto;
+}
+
+.dailyKlineButton:hover {
+  color: #38bdf8 !important;
+  background: rgba(56, 189, 248, 0.12) !important;
+}
+
+.dailyKlinePopover {
+  width: 470px;
+}
+
+.searchResults {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
 }
 
 .capitalValue {

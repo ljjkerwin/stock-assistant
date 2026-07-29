@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { DatePicker, Button, Input, Spin } from 'antd';
+import { DatePicker, Button, Input, Popover, Spin } from 'antd';
 import {
   DatabaseOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  LineChartOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
+import KLineChart from '../../components/KLineChart';
 import { darktradeApi } from '../../api/stock';
 import type { DarkTradeData } from '../../types';
 import styles from './Admin.module.css';
@@ -17,12 +19,19 @@ interface FetchResult {
   written: number;
 }
 
+const MAX_RECENT_SEARCH_RESULTS = 5;
+
 function formatCapital(value: number | null) {
   if (value == null) return '--';
   const divisor = Math.abs(value) >= 10_000_000 ? 100_000_000 : 10_000;
   const suffix = divisor === 100_000_000 ? 'y' : 'w';
   const digits = suffix === 'y' ? 2 : 0;
-  return `${Number((value / divisor).toFixed(digits))}${suffix}`;
+  const formatted = Number((value / divisor).toFixed(digits));
+  return `${value > 0 ? '+' : ''}${formatted}${suffix}`;
+}
+
+function formatDate(date: string) {
+  return `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
 }
 
 export default function Admin() {
@@ -33,7 +42,7 @@ export default function Admin() {
   const [searchDate, setSearchDate] = useState<Dayjs>(dayjs());
   const [stockName, setStockName] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchResult, setSearchResult] = useState<DarkTradeData | null>(null);
+  const [recentSearchResults, setRecentSearchResults] = useState<DarkTradeData[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const handleFetch = async () => {
@@ -58,12 +67,14 @@ export default function Admin() {
     const name = stockName.trim();
     if (!name || searchLoading) return;
     setSearchLoading(true);
-    setSearchResult(null);
     setSearchError(null);
     try {
       const data = await darktradeApi.getDailyResultByName(name, searchDate.format('YYYYMMDD'));
       if (data) {
-        setSearchResult(data);
+        setRecentSearchResults((current) => [
+          data,
+          ...current.filter((item) => item.code !== data.code || item.date !== data.date),
+        ].slice(0, MAX_RECENT_SEARCH_RESULTS));
       } else {
         setSearchError('未找到该日期的资金数据，请确认股票名称或先采集该日期数据');
       }
@@ -211,16 +222,55 @@ export default function Admin() {
             </Button>
           </div>
 
-          {searchResult && !searchLoading && (
-            <div className={`${styles.result} ${styles.resultSuccess} ${styles.capitalResult}`}>
-              <p className={`${styles.resultTitle} ${styles.resultTitleSuccess}`}>
-                <CheckCircleOutlined style={{ marginRight: 6 }} />
-                {searchResult.name}（{searchResult.code}） · {searchDate.format('YYYY-MM-DD')}
-              </p>
-              <p className={styles.capitalValue}>
-                {searchResult.displayName ?? searchResult.name}，暗{formatCapital(searchResult.darkCapital)}，明
-                {formatCapital(searchResult.lightCapital)}
-              </p>
+          {recentSearchResults.length > 0 && !searchLoading && (
+            <div className={styles.searchResults}>
+              {recentSearchResults.map((searchResult) => (
+                <div
+                  key={`${searchResult.date}:${searchResult.code}`}
+                  className={`${styles.result} ${styles.resultSuccess} ${styles.capitalResult}`}
+                >
+                  <div className={styles.resultHeader}>
+                    <p className={`${styles.resultTitle} ${styles.resultTitleSuccess}`}>
+                      <CheckCircleOutlined style={{ marginRight: 6 }} />
+                      {searchResult.name}（{searchResult.code}） · {formatDate(searchResult.date)}
+                    </p>
+                    <Popover
+                      trigger="hover"
+                      placement="leftTop"
+                      mouseEnterDelay={0.15}
+                      destroyOnHidden
+                      title={`${searchResult.name}（${searchResult.code}）· 日线`}
+                      content={
+                        <div className={styles.dailyKlinePopover}>
+                          <KLineChart
+                            market="A"
+                            code={searchResult.code}
+                            period="daily"
+                            showPeriodTabs={false}
+                            showMacd={false}
+                            showDarkTrade
+                            defaultZoomMultiplier={1.5}
+                            highlightDate={searchResult.date}
+                          />
+                        </div>
+                      }
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        className={styles.dailyKlineButton}
+                        aria-label={`查看${searchResult.name}日线 K 线图`}
+                      >
+                        <LineChartOutlined />
+                      </Button>
+                    </Popover>
+                  </div>
+                  <p className={styles.capitalValue}>
+                    {searchResult.displayName ?? searchResult.name}，暗
+                    {formatCapital(searchResult.darkCapital)}，明{formatCapital(searchResult.lightCapital)}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
 

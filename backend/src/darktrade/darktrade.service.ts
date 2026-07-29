@@ -55,13 +55,34 @@ function matchesStockName(name: string, query: string): boolean {
   return true;
 }
 
+/**
+ * 多候选查询的排序：完整名称、中文名称前缀、完整拼音首字母、其他部分匹配。
+ * 例如 `dfd` 优先“多氟多”；`康德` 优先“康德莱”而非“药明康德”。
+ */
+function stockNameMatchPriority(name: string, query: string): number {
+  const normalizedName = name.trim().toLocaleLowerCase();
+  const normalizedQuery = query.trim().replace(/\s+/g, '').toLocaleLowerCase();
+  if (normalizedName === normalizedQuery) return 3;
+  if (/[一-鿿]/.test(normalizedQuery) && normalizedName.startsWith(normalizedQuery)) {
+    return 2;
+  }
+  if (!/^[a-z]+$/.test(normalizedQuery)) return 0;
+
+  const initials = pinyin(name, { type: 'all' })
+    .map((item) => (item.isZh ? item.first : item.origin))
+    .join('')
+    .toLocaleLowerCase();
+  return initials === normalizedQuery ? 1 : 0;
+}
+
 function formatStockDisplayName(name: string): string {
+  const retainedChineseCount = Math.random() < 0.5 ? 1 : 2;
   let chineseCount = 0;
   return pinyin(name, { type: 'all' })
     .map((item) => {
       if (!item.isZh) return item.origin;
       chineseCount += 1;
-      return chineseCount <= 2 ? item.origin : item.first;
+      return chineseCount <= retainedChineseCount ? item.origin : item.first;
     })
     .join('');
 }
@@ -386,7 +407,13 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       await this.upsertDailyResults(await this.getLatestSnapshotsForDate(date));
       results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
     }
-    const result = results.find((item) => item.name && matchesStockName(item.name, normalizedName));
+    const result = results
+      .filter((item) => item.name && matchesStockName(item.name, normalizedName))
+      .sort(
+        (a, b) =>
+          stockNameMatchPriority(b.name ?? '', normalizedName) -
+          stockNameMatchPriority(a.name ?? '', normalizedName),
+      )[0];
     if (!result) return null;
     if (!result.captureMinute.endsWith('1500')) {
       throw new BadRequestException(`${date} 尚无 15:00 收盘暗盘资金，请在收盘后查询`);
@@ -415,23 +442,43 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
     >,
   ): Promise<void> {
     if (snapshots.length === 0) return;
-    await this.dailyResultRepo.upsert(
-      snapshots.map((snapshot) => ({
-        tradeDate: snapshot.tradeDate,
-        code: snapshot.code,
-        captureMinute: snapshot.captureMinute,
-        darkCapital: snapshot.darkCapital,
-        lightCapital: snapshot.lightCapital,
-        name: snapshot.name,
-        latestPrice: snapshot.latestPrice,
-        changePct: snapshot.changePct,
-        netInflow: snapshot.netInflow,
-        darkActivity: snapshot.darkActivity,
-        sector: snapshot.sector,
-        concept: snapshot.concept,
-      })),
-      ['tradeDate', 'code'],
-    );
+    await this.dailyResultRepo
+      .createQueryBuilder()
+      .insert()
+      .into(DarkTradeDailyResult)
+      .values(
+        snapshots.map((snapshot) => ({
+          tradeDate: snapshot.tradeDate,
+          code: snapshot.code,
+          captureMinute: snapshot.captureMinute,
+          darkCapital: snapshot.darkCapital,
+          lightCapital: snapshot.lightCapital,
+          name: snapshot.name,
+          latestPrice: snapshot.latestPrice,
+          changePct: snapshot.changePct,
+          netInflow: snapshot.netInflow,
+          darkActivity: snapshot.darkActivity,
+          sector: snapshot.sector,
+          concept: snapshot.concept,
+        })),
+      )
+      .orUpdate(
+        [
+          'capture_minute',
+          'dark_capital',
+          'light_capital',
+          'name',
+          'latest_price',
+          'change_pct',
+          'net_inflow',
+          'dark_activity',
+          'sector',
+          'concept',
+        ],
+        ['trade_date', 'code'],
+      )
+      .updateEntity(false)
+      .execute();
   }
 
   /**
@@ -802,73 +849,16 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 抓取指定日期全市场（约 5300 只）的明暗盘收盘数据并写入快照表。
-   * 步骤：
-   *   1. refreshIndex(date) — 爬取所有页（约 177 页），建全量索引
-   *   2. 读取该日期全量 index 记录，批量写 captureMinute=${date}1500 快照（幂等）
+   * refreshIndex 会在建立全量索引后同步写入快照，因此这里不能重复写入，
+   * 否则同一请求会对数千条记录执行第二次无意义的 upsert。
    */
   async fetchAllDailySnapshot(date: string): Promise<FetchAllDailySnapshotResult> {
     this.logger.log(`[全市场快照] 开始抓取 ${date} 全量明暗盘数据...`);
 
-    // 1. 重建该日期索引（全量爬取）
+    // refreshIndex 内部会调用 writeFullMarketSnapshot，完成索引与快照归档。
     const { indexed } = await this.refreshIndex(date);
-
-    // 2. 读取本次建立的全量 index（以 refreshDate 过滤，防止读到其他日期残留数据）
-    const allEntries = await this.indexRepo.find({ where: { refreshDate: date } });
-    this.logger.log(
-      `[全市场快照] 索引完成，共 ${allEntries.length} 只股票，开始写入 ${date}1500 快照...`,
-    );
-
-    const captureMinute = `${date}1500`;
-    const snapshotEntities = allEntries
-      .filter((e) => e.darkCapital != null || e.lightCapital != null)
-      .map((e) => ({
-        code: e.code,
-        tradeDate: date,
-        captureMinute,
-        darkCapital: e.darkCapital,
-        lightCapital: e.lightCapital,
-        name: e.name,
-        latestPrice: e.latestPrice,
-        changePct: e.changePct,
-        netInflow: e.netInflow,
-        darkActivity: e.darkActivity,
-        sector: e.sector,
-        concept: e.concept,
-      }));
-
-    const CHUNK = 500;
-    let written = 0;
-    for (let i = 0; i < snapshotEntities.length; i += CHUNK) {
-      const chunk = snapshotEntities.slice(i, i + CHUNK);
-      await this.snapshotRepo
-        .createQueryBuilder()
-        .insert()
-        .into(DarkTradeSnapshot)
-        .values(chunk)
-        .orUpdate(
-          [
-            'dark_capital',
-            'light_capital',
-            'name',
-            'latest_price',
-            'change_pct',
-            'net_inflow',
-            'dark_activity',
-            'sector',
-            'concept',
-            'trade_date',
-          ],
-          ['code', 'capture_minute'],
-        )
-        .updateEntity(false)
-        .execute();
-      await this.upsertDailyResults(chunk);
-      written += chunk.length;
-      this.logger.log(`[全市场快照] 已写入 ${written}/${snapshotEntities.length}`);
-    }
-
-    this.logger.log(`[全市场快照] 完成：date=${date}, indexed=${indexed}, written=${written}`);
-    return { date, total: indexed, written };
+    this.logger.log(`[全市场快照] 完成：date=${date}, indexed=${indexed}, written=${indexed}`);
+    return { date, total: indexed, written: indexed };
   }
 
   async getIndexStatus(): Promise<{ count: number; date: string | null; updatedAt: Date | null }> {
