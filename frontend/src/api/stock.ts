@@ -194,6 +194,11 @@ export const darktradeApi = {
       })
       .then((r) => r.data),
 
+  getDailyResultByName: (name: string, date: string): Promise<DarkTradeData | null> =>
+    api
+      .get<DarkTradeData | null>('/darktrade/daily-result', { params: { name, date } })
+      .then((r) => r.data),
+
   get: (code: string): Promise<DarkTradeData | null> =>
     api
       .get<DarkTradeData>(`/darktrade/${code}`)

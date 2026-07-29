@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -8,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import axios from 'axios';
+import { match as matchPinyin, pinyin } from 'pinyin-pro';
 import { DarkTradeIndex } from './dark-trade-index.entity';
 import { DarkTradeSnapshot } from './dark-trade-snapshot.entity';
 import { DarkTradeDailyResult } from './dark-trade-daily-result.entity';
@@ -24,6 +26,45 @@ const HEADERS = {
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36',
   Referer: 'https://data.eastmoney.com/',
 };
+
+function matchesStockName(name: string, query: string): boolean {
+  const normalizedName = name.trim();
+  const normalizedQuery = query.trim().replace(/\s+/g, '');
+  if (!normalizedQuery) return false;
+  if (normalizedName.toLocaleLowerCase().includes(normalizedQuery.toLocaleLowerCase())) return true;
+
+  const parts = normalizedQuery.match(/[\u4e00-\u9fff]+|[a-z]+/gi);
+  if (!parts || parts.join('') !== normalizedQuery) return false;
+
+  let offset = 0;
+  for (const part of parts) {
+    if (/^[\u4e00-\u9fff]+$/.test(part)) {
+      const index = normalizedName.indexOf(part, offset);
+      if (index === -1) return false;
+      offset = index + part.length;
+      continue;
+    }
+    const matchedIndexes = matchPinyin(normalizedName.slice(offset), part, {
+      precision: 'first',
+      continuous: true,
+      insensitive: true,
+    });
+    if (!matchedIndexes?.length) return false;
+    offset += matchedIndexes[matchedIndexes.length - 1] + 1;
+  }
+  return true;
+}
+
+function formatStockDisplayName(name: string): string {
+  let chineseCount = 0;
+  return pinyin(name, { type: 'all' })
+    .map((item) => {
+      if (!item.isZh) return item.origin;
+      chineseCount += 1;
+      return chineseCount <= 2 ? item.origin : item.first;
+    })
+    .join('');
+}
 
 // field "3": market (1=沪, 0=深); "4": code; "6": 暗盘资金(元); "7": 明盘资金(元);
 // "8": 主力净流入含暗盘(元); "11": 暗盘活跃度(小数); "13": 最新价×1000;
@@ -331,6 +372,27 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       )
       .sort((a, b) => (b.darkCapital ?? 0) - (a.darkCapital ?? 0))
       .map((item) => this.dailyResultToData(item));
+  }
+
+  /** 查询指定交易日、指定股票名称的日终明暗盘资金。 */
+  async getDailyResultByName(
+    name: string,
+    date = todayDate(),
+  ): Promise<(DarkTradeData & { displayName: string }) | null> {
+    const normalizedName = name.trim();
+    let results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
+    // 与挖掘页保持一致：兼容结果表上线前已归档的快照数据。
+    if (results.length === 0) {
+      await this.upsertDailyResults(await this.getLatestSnapshotsForDate(date));
+      results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
+    }
+    const result = results.find((item) => item.name && matchesStockName(item.name, normalizedName));
+    if (!result) return null;
+    if (!result.captureMinute.endsWith('1500')) {
+      throw new BadRequestException(`${date} 尚无 15:00 收盘暗盘资金，请在收盘后查询`);
+    }
+    const data = this.dailyResultToData(result);
+    return { ...data, displayName: formatStockDisplayName(data.name) };
   }
 
   private async upsertDailyResults(

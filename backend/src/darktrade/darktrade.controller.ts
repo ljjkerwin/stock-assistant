@@ -57,6 +57,15 @@ export class DarkTradeController {
     );
   }
 
+  @Get('daily-result')
+  getDailyResultByName(@Query('name') name: string | undefined, @Query('date') date?: string) {
+    const normalizedName = name?.trim();
+    if (!normalizedName) {
+      throw new BadRequestException('name 不能为空');
+    }
+    return this.darkTradeService.getDailyResultByName(normalizedName, this.parseDate(date));
+  }
+
   private parseNonNegativeNumber(value: string | undefined, name: string): number | undefined {
     if (value == null) return undefined;
     const parsed = Number(value);

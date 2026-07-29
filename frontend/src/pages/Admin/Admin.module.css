@@ -69,6 +69,11 @@
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
 }
 
+.searchIcon {
+  background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
+}
+
 .cardTitle {
   font-size: 15px;
   font-weight: 600;
@@ -165,4 +170,25 @@
   color: #5a6480;
   font-size: 13px;
   margin-top: 16px;
+}
+
+.searchButton {
+  background: linear-gradient(135deg, #0f766e, #0d9488);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  height: 36px;
+  padding-inline: 20px;
+}
+
+.capitalResult {
+  padding-block: 14px;
+}
+
+.capitalValue {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }

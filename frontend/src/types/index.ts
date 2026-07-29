@@ -210,6 +210,8 @@ export interface WatchList {
 export interface DarkTradeData {
   code: string;
   name: string;
+  /** 仅按盘资金查询接口返回：前两个汉字 + 后续汉字拼音首字母。 */
+  displayName?: string;
   latestPrice: number | null;
   changePct: number | null;
   darkCapital: number | null;

@@ -1,8 +1,14 @@
 import { useState } from 'react';
-import { DatePicker, Button, Spin } from 'antd';
-import { DatabaseOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { DatePicker, Button, Input, Spin } from 'antd';
+import {
+  DatabaseOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { darktradeApi } from '../../api/stock';
+import type { DarkTradeData } from '../../types';
 import styles from './Admin.module.css';
 
 interface FetchResult {
@@ -11,11 +17,24 @@ interface FetchResult {
   written: number;
 }
 
+function formatCapital(value: number | null) {
+  if (value == null) return '--';
+  const divisor = Math.abs(value) >= 10_000_000 ? 100_000_000 : 10_000;
+  const suffix = divisor === 100_000_000 ? 'y' : 'w';
+  const digits = suffix === 'y' ? 2 : 0;
+  return `${Number((value / divisor).toFixed(digits))}${suffix}`;
+}
+
 export default function Admin() {
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs());
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<FetchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchDate, setSearchDate] = useState<Dayjs>(dayjs());
+  const [stockName, setStockName] = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchResult, setSearchResult] = useState<DarkTradeData | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const handleFetch = async () => {
     if (!selectedDate || loading) return;
@@ -32,6 +51,26 @@ export default function Admin() {
       setError(msg);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSearch = async () => {
+    const name = stockName.trim();
+    if (!name || searchLoading) return;
+    setSearchLoading(true);
+    setSearchResult(null);
+    setSearchError(null);
+    try {
+      const data = await darktradeApi.getDailyResultByName(name, searchDate.format('YYYYMMDD'));
+      if (data) {
+        setSearchResult(data);
+      } else {
+        setSearchError('未找到该日期的资金数据，请确认股票名称或先采集该日期数据');
+      }
+    } catch (e: unknown) {
+      setSearchError(e instanceof Error ? e.message : '查询失败，请稍后重试');
+    } finally {
+      setSearchLoading(false);
     }
   };
 
@@ -129,6 +168,65 @@ export default function Admin() {
                 采集失败
               </p>
               <p className={styles.errorMsg}>{error}</p>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <div className={`${styles.cardIcon} ${styles.searchIcon}`}>
+              <SearchOutlined style={{ color: '#fff' }} />
+            </div>
+            <div>
+              <p className={styles.cardTitle}>收盘暗盘资金查询</p>
+              <p className={styles.cardDesc}>按日期和个股名称查询 15:00 收盘时的暗盘、明盘资金</p>
+            </div>
+          </div>
+
+          <div className={styles.controls}>
+            <DatePicker
+              value={searchDate}
+              onChange={(date) => date && setSearchDate(date)}
+              format="YYYY-MM-DD"
+              allowClear={false}
+              disabledDate={(d) => d.isAfter(dayjs(), 'day')}
+              style={{ width: 160 }}
+            />
+            <Input
+              value={stockName}
+              onChange={(event) => setStockName(event.target.value)}
+              onPressEnter={() => void handleSearch()}
+              placeholder="名称/拼音首字母，例如：华电ln、zjxc"
+              style={{ width: 240 }}
+            />
+            <Button
+              type="primary"
+              icon={<SearchOutlined />}
+              loading={searchLoading}
+              disabled={!stockName.trim()}
+              onClick={() => void handleSearch()}
+              className={styles.searchButton}
+            >
+              搜索
+            </Button>
+          </div>
+
+          {searchResult && !searchLoading && (
+            <div className={`${styles.result} ${styles.resultSuccess} ${styles.capitalResult}`}>
+              <p className={`${styles.resultTitle} ${styles.resultTitleSuccess}`}>
+                <CheckCircleOutlined style={{ marginRight: 6 }} />
+                {searchResult.name}（{searchResult.code}） · {searchDate.format('YYYY-MM-DD')}
+              </p>
+              <p className={styles.capitalValue}>
+                {searchResult.displayName ?? searchResult.name}，暗{formatCapital(searchResult.darkCapital)}，明
+                {formatCapital(searchResult.lightCapital)}
+              </p>
+            </div>
+          )}
+
+          {searchError && !searchLoading && (
+            <div className={`${styles.result} ${styles.resultError}`}>
+              <p className={styles.errorMsg}>{searchError}</p>
             </div>
           )}
         </div>

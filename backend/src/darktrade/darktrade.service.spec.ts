@@ -394,4 +394,78 @@ describe('DarkTradeService', () => {
       expect(result.map((item) => item.code)).toEqual(['B']);
     });
   });
+
+  describe('getDailyResultByName', () => {
+    it('returns the matching stock daily result for the requested date', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        {
+          code: '600519',
+          name: '贵州茅台',
+          darkCapital: 12_300_000,
+          lightCapital: -34_500_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: '000858',
+          name: '五粮液',
+          darkCapital: 9_000_000,
+          lightCapital: 1_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+      ]);
+
+      await expect(service.getDailyResultByName('  贵州茅台  ', '20260728')).resolves.toMatchObject(
+        {
+          code: '600519',
+          name: '贵州茅台',
+          darkCapital: 12_300_000,
+          lightCapital: -34_500_000,
+          date: '20260728',
+          displayName: '贵州mt',
+        },
+      );
+      expect(dailyResultRepo.find).toHaveBeenCalledWith({ where: { tradeDate: '20260728' } });
+    });
+
+    it('returns null when the named stock has no archived result', async () => {
+      dailyResultRepo.find.mockResolvedValue([{ code: '600519', name: '贵州茅台' }]);
+
+      await expect(service.getDailyResultByName('五粮液', '20260728')).resolves.toBeNull();
+    });
+
+    it.each([
+      ['zjxc', '中际旭创'],
+      ['华电ln', '华电辽宁'],
+    ])('supports pinyin initials and mixed input %s', async (query, name) => {
+      dailyResultRepo.find.mockResolvedValue([
+        { code: '300308', name, tradeDate: '20260728', captureMinute: '202607281500' },
+      ]);
+
+      await expect(service.getDailyResultByName(query, '20260728')).resolves.toMatchObject({
+        name,
+      });
+    });
+
+    it('formats the result name as two Chinese characters plus pinyin initials', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        { code: '600027', name: '华电辽宁', tradeDate: '20260728', captureMinute: '202607281500' },
+      ]);
+
+      await expect(service.getDailyResultByName('华电ln', '20260728')).resolves.toMatchObject({
+        displayName: '华电ln',
+      });
+    });
+
+    it('rejects intraday data when the 15:00 closing result is unavailable', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        { code: '600027', name: '华电辽宁', tradeDate: '20260728', captureMinute: '202607281430' },
+      ]);
+
+      await expect(service.getDailyResultByName('华电ln', '20260728')).rejects.toThrow(
+        '20260728 尚无 15:00 收盘暗盘资金，请在收盘后查询',
+      );
+    });
+  });
 });
