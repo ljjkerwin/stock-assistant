@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { authApi, type AuthUser } from '../api/stock';
-import { getToken, setToken, clearToken, AUTH_LOGOUT_EVENT } from '../api/token';
+import {
+  getStoredAuthUser,
+  getToken,
+  setStoredAuthUser,
+  setToken,
+  clearToken,
+  AUTH_LOGOUT_EVENT,
+} from '../api/token';
 
 interface AuthStore {
   user: AuthUser | null;
@@ -12,6 +19,12 @@ interface AuthStore {
   init: () => Promise<void>;
 }
 
+export function isUnauthorizedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('response' in error)) return false;
+  const response = (error as { response?: { status?: unknown } }).response;
+  return response?.status === 401;
+}
+
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   initialized: false,
@@ -19,6 +32,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   login: async (username, password) => {
     const { token, user } = await authApi.login(username, password);
     setToken(token);
+    setStoredAuthUser(user);
     set({ user, initialized: true });
   },
 
@@ -35,9 +49,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       const user = await authApi.me();
       set({ user, initialized: true });
-    } catch {
-      clearToken();
-      set({ user: null, initialized: true });
+    } catch (error: unknown) {
+      // 仅 401 代表令牌已失效。502/网络错误通常是开发服务或数据库暂时不可用，
+      // 此时保留会话，避免后端恢复后还需要重新登录。
+      if (isUnauthorizedError(error)) {
+        clearToken();
+        set({ user: null, initialized: true });
+        return;
+      }
+      set({ user: getStoredAuthUser(), initialized: true });
     }
   },
 }));

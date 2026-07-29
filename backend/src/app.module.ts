@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSourceOptions } from 'typeorm';
+import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { FavoritesModule } from './favorites/favorites.module';
 import { StocksModule } from './stocks/stocks.module';
 import { KlineModule } from './kline/kline.module';
@@ -31,7 +30,7 @@ const entities = [
   DarkTradeDailyResult,
 ];
 
-function buildDataSourceOptions(): DataSourceOptions {
+function buildDataSourceOptions(): TypeOrmModuleOptions {
   const { MYSQL_HOST, MYSQL_USERNAME, MYSQL_PASSWORD, MYSQL_DATABASE } = process.env;
   if (MYSQL_HOST && MYSQL_USERNAME && MYSQL_PASSWORD) {
     return {
@@ -42,6 +41,11 @@ function buildDataSourceOptions(): DataSourceOptions {
       password: MYSQL_PASSWORD,
       database: MYSQL_DATABASE,
       charset: 'utf8mb4',
+      connectTimeout: 10_000,
+      acquireTimeout: 10_000,
+      retryAttempts: 20,
+      retryDelay: 3_000,
+      verboseRetryLog: true,
       entities,
       synchronize: true,
     };

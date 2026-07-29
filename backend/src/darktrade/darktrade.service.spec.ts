@@ -455,7 +455,7 @@ describe('DarkTradeService', () => {
 
     it.each([
       ['zjxc', '中际旭创'],
-      ['华电ln', '华电辽宁'],
+      ['华电ln', '华电辽能'],
     ])('supports pinyin initials and mixed input %s', async (query, name) => {
       dailyResultRepo.find.mockResolvedValue([
         { code: '300308', name, tradeDate: '20260728', captureMinute: '202607281500' },
@@ -492,7 +492,7 @@ describe('DarkTradeService', () => {
 
     it('formats the result name with either one or two Chinese characters plus pinyin initials', async () => {
       dailyResultRepo.find.mockResolvedValue([
-        { code: '600027', name: '华电辽宁', tradeDate: '20260728', captureMinute: '202607281500' },
+        { code: '600027', name: '华电辽能', tradeDate: '20260728', captureMinute: '202607281500' },
       ]);
 
       const result = await service.getDailyResultByName('华电ln', '20260728');
@@ -502,7 +502,7 @@ describe('DarkTradeService', () => {
 
     it('rejects intraday data when the 15:00 closing result is unavailable', async () => {
       dailyResultRepo.find.mockResolvedValue([
-        { code: '600027', name: '华电辽宁', tradeDate: '20260728', captureMinute: '202607281430' },
+        { code: '600027', name: '华电辽能', tradeDate: '20260728', captureMinute: '202607281430' },
       ]);
 
       await expect(service.getDailyResultByName('华电ln', '20260728')).rejects.toThrow(

@@ -74,6 +74,11 @@
   box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
 }
 
+.llmIcon {
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+}
+
 .cardTitle {
   font-size: 15px;
   font-weight: 600;
@@ -207,6 +212,25 @@
   width: 470px;
 }
 
+.dailyKlinePopoverTitle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e2e8f0;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.dailyKlinePopoverTitle:hover {
+  color: #38bdf8;
+}
+
+.dailyKlinePopoverTitle:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
 .searchResults {
   display: flex;
   flex-direction: column;
@@ -215,9 +239,128 @@
 }
 
 .capitalValue {
+  display: block;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
   margin: 0;
   color: #e2e8f0;
   font-size: 22px;
   font-weight: 700;
+  font-family: inherit;
   font-variant-numeric: tabular-nums;
+  cursor: copy;
+  text-align: left;
+}
+
+.capitalValue:hover {
+  color: #7dd3fc;
+}
+
+.capitalValue:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.llmControls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.llmInput {
+  max-width: 680px;
+}
+
+.llmDatePicker {
+  flex: 0 0 160px;
+}
+
+.llmHistory {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.llmHistoryItem {
+  margin-top: 0;
+}
+
+.llmHistoryTitle {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.llmEmptyResult {
+  margin-top: 12px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.llmButton {
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  height: 36px;
+}
+
+.llmMeta {
+  margin-top: 14px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.llmStockList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.llmStockItem {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 10px;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.06);
+  color: #dbeafe;
+  font-size: 13px;
+}
+
+.llmSummary {
+  display: block;
+  width: 100%;
+  color: #e2e8f0;
+  cursor: copy;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.7;
+  text-align: left;
+}
+
+.llmSummary:hover {
+  border-color: rgba(125, 211, 252, 0.5);
+  color: #7dd3fc;
+}
+
+@media (max-width: 640px) {
+  .llmControls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .llmInput {
+    max-width: none;
+  }
 }

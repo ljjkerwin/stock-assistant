@@ -1,5 +1,11 @@
 /** 登录令牌的本地存取，集中一处以避免 api 层与 store 层互相 import 形成环。 */
 const TOKEN_KEY = 'auth:token';
+const AUTH_USER_KEY = 'auth:user';
+
+export interface StoredAuthUser {
+  id: number;
+  username: string;
+}
 
 export function getToken(): string | null {
   try {
@@ -17,9 +23,30 @@ export function setToken(token: string): void {
   }
 }
 
+export function getStoredAuthUser(): StoredAuthUser | null {
+  try {
+    const raw = localStorage.getItem(AUTH_USER_KEY);
+    if (!raw) return null;
+    const user = JSON.parse(raw) as Partial<StoredAuthUser>;
+    if (typeof user.id !== 'number' || typeof user.username !== 'string') return null;
+    return { id: user.id, username: user.username };
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredAuthUser(user: StoredAuthUser): void {
+  try {
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  } catch {
+    /* 忽略隐私模式等存储失败 */
+  }
+}
+
 export function clearToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
   } catch {
     /* 忽略 */
   }

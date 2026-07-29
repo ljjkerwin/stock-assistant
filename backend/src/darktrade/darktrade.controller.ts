@@ -10,6 +10,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { DarkTradeService } from './darktrade.service';
+import { DarkTradeTextQueryService } from './darktrade-text-query.service';
 import type { FetchAllDailySnapshotResult } from './darktrade.service';
 
 interface RefreshIndexBody {
@@ -20,7 +21,10 @@ interface RefreshIndexBody {
 
 @Controller('api/darktrade')
 export class DarkTradeController {
-  constructor(private readonly darkTradeService: DarkTradeService) {}
+  constructor(
+    private readonly darkTradeService: DarkTradeService,
+    private readonly darkTradeTextQueryService: DarkTradeTextQueryService,
+  ) {}
 
   @Get('index-status')
   getIndexStatus() {
@@ -64,6 +68,11 @@ export class DarkTradeController {
       throw new BadRequestException('name 不能为空');
     }
     return this.darkTradeService.getDailyResultByName(normalizedName, this.parseDate(date));
+  }
+
+  @Post('daily-result-from-text')
+  getDailyResultsFromText(@Body() body: { text?: string; date?: string }) {
+    return this.darkTradeTextQueryService.query(body.text ?? '', this.parseDate(body.date));
   }
 
   private parseNonNegativeNumber(value: string | undefined, name: string): number | undefined {

@@ -9,7 +9,7 @@
 - `market`：`A`（A股 + 场内ETF）/ `HK`（港股）
 - `period`：`timeshare` `1min` `5min` `15min` `30min` `60min` `daily` `weekly`
 
-**鉴权**：除 `POST /api/auth/login` 外，**所有 `/api/*` 接口都需要登录令牌**。令牌通过请求头 `Authorization: Bearer <token>` 传递；SSE（`EventSource` 无法自定义请求头）改用 query 参数 `?token=<token>`。缺失/无效/过期令牌一律返回 `401`。前端 axios 拦截器自动附带令牌，收到 401 时清除本地令牌并退回登录页。
+**鉴权**：除 `POST /api/auth/login` 外，**所有 `/api/*` 接口都需要登录令牌**。令牌通过请求头 `Authorization: Bearer <token>` 传递；SSE（`EventSource` 无法自定义请求头）改用 query 参数 `?token=<token>`。缺失/无效/过期令牌一律返回 `401`。前端 axios 拦截器自动附带令牌，仅在收到 401 时清除本地令牌并退回登录页；502 等后端暂不可用错误会保留令牌，服务恢复后可自动恢复会话。
 
 ---
 
@@ -103,6 +103,7 @@
 | GET  | `/api/darktrade/index-status`                                 | 查询暗盘索引状态 `{ count, date, updatedAt }`                                                                                                                                                                                                                                                                                                                                                            |
 | GET  | `/api/darktrade/discovery?minDarkCapital=&minMultiple=&date=` | 明暗盘挖掘列表：直接查询指定日期（`date` 为 `YYYYMMDD`，省略时默认当天）的 `dark_trade_daily_result` 每日结果表；每只股票仅一条最新快照记录。再筛出 `darkCapital > minDarkCapital` 且 `darkCapital > abs(lightCapital) × minMultiple` 的标的，按暗盘资金降序返回 `DarkTradeData[]`。两个资金参数均为非负数，可省略，默认分别为 `20,000,000` 和 `2`。历史日期的结果表为空时，接口会从既有快照一次性回填。 |
 | GET  | `/api/darktrade/daily-result?name=&date=`                    | 按股票名称和日期查询一条已归档的**15:00 收盘**明暗盘资金，`name` 必填，支持完整/部分中文、拼音首字母及混合输入（如 `华电ln`、`zjxc`）；多候选时依次优先完整名称、中文名称前缀（如 `康德` 优先“康德莱”而非“药明康德”）、完整拼音首字母（如 `dfd` 优先“多氟多”而非“东方电子”）和其他部分匹配。`date` 为可选 `YYYYMMDD`（默认当天）。返回 `DarkTradeData`（额外含 `displayName`：随机保留前 1 或 2 个汉字，后续汉字转为拼音首字母）或 `null`。若命中股票当天仅有盘中资金、没有 15:00 快照，返回 400 错误；若该日每日结果表尚未建立，会从已有快照一次性回填。 |
+| POST | `/api/darktrade/daily-result-from-text`                      | 收盘暗盘资金 LLM 查询。body 为 `{ text, date? }`；后端通过硅基流动的 `Qwen/Qwen3.5-4B` 从一句话提取最多 12 个股票/场内 ETF 名称，再复用日终查询返回 `{ names, results, notFoundNames }`。在后端配置 `SILICONFLOW_API_KEY`，密钥不下发前端。 |
 | POST | `/api/darktrade/refresh-index`                                | 抓取所有页暗盘数据并建立 code→(page,index) 映射（body 可选 `{ date?, sortFlag?, desc? }`，默认按股票名称 Unicode 降序 sortFlag=4）                                                                                                                                                                                                                                                                       |
 | POST | `/api/darktrade/fetch-all-daily-snapshot`                     | 抓取指定日期全市场（约 5300 只）明暗盘收盘数据写入快照表，body `{ date: YYYYMMDD }`，返回 `{ date, total, written }`；内部调用 `refresh-index`，其在重建索引后同步写入一次快照（幂等，不重复写入）。供管理页手动补录历史日线副图数据                                                                                                                                                                     |
 | GET  | `/api/darktrade/batch?codes=&date=`                           | 【已废弃，前端已改用 snapshots-batch】批量查询多只股票的暗盘资金数据                                                                                                                                                                                                                                                                                                                                     |
