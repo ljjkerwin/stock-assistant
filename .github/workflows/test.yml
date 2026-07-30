@@ -6,6 +6,11 @@ on:
       - main
   workflow_dispatch:
 
+# 同一 PR 的旧提交无需继续测试；不同 PR 可以并行。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: 单元测试

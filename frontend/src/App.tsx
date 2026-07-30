@@ -1,21 +1,22 @@
-import { useEffect, useState, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useRef } from 'react';
 import { ConfigProvider, Spin, Button } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { MenuOutlined } from '@ant-design/icons';
 import { useAuthStore } from './store/authStore';
-import Login from './pages/Login';
 import Sidebar from './components/Sidebar';
-import Home from './pages/Home';
-import StockDetail from './pages/StockDetail';
-import FundDetail from './pages/FundDetail';
-import StockListImport from './pages/StockListImport';
-import StockListKline from './pages/StockListKline';
-import DarkTradeDiscovery from './pages/DarkTradeDiscovery';
-import StrategyBacktest from './pages/StrategyBacktest';
-import Admin from './pages/Admin';
 import { useFavoritesStore } from './store/favoritesStore';
 import styles from './App.module.css';
+
+const Login = lazy(() => import('./pages/Login'));
+const Home = lazy(() => import('./pages/Home'));
+const StockDetail = lazy(() => import('./pages/StockDetail'));
+const FundDetail = lazy(() => import('./pages/FundDetail'));
+const StockListImport = lazy(() => import('./pages/StockListImport'));
+const StockListKline = lazy(() => import('./pages/StockListKline'));
+const DarkTradeDiscovery = lazy(() => import('./pages/DarkTradeDiscovery'));
+const StrategyBacktest = lazy(() => import('./pages/StrategyBacktest'));
+const Admin = lazy(() => import('./pages/Admin'));
 
 export default function App() {
   const user = useAuthStore((s) => s.user);
@@ -123,7 +124,9 @@ export default function App() {
   if (!user) {
     return (
       <ConfigProvider locale={zhCN}>
-        <Login />
+        <Suspense fallback={<PageLoading />}>
+          <Login />
+        </Suspense>
       </ConfigProvider>
     );
   }
@@ -155,7 +158,8 @@ export default function App() {
           <Sidebar />
         </aside>
         <main className={styles.content}>
-          <Routes>
+          <Suspense fallback={<PageLoading />}>
+            <Routes>
             <Route path="/" element={<Navigate to="/stock-list-kline" replace />} />
             <Route path="/stock" element={<Home />} />
             <Route path="/stock/:market/:code" element={<StockDetail />} />
@@ -185,9 +189,18 @@ export default function App() {
               path="/admin"
               element={isLjj ? <Admin /> : <Navigate to="/stock" replace />}
             />
-          </Routes>
+            </Routes>
+          </Suspense>
         </main>
       </div>
     </ConfigProvider>
+  );
+}
+
+function PageLoading() {
+  return (
+    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Spin size="large" />
+    </div>
   );
 }

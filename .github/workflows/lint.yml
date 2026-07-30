@@ -17,6 +17,11 @@ on:
       - 'pnpm-workspace.yaml'
   workflow_dispatch:
 
+# 同一 PR 的旧提交无需继续检查；不同 PR 可以并行。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: 语法与类型检查
