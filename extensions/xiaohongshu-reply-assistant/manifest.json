@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "小红书暗盘回复助手",
-  "description": "在小红书通知页回复框中生成可编辑的收盘明暗盘资金文案。",
+  "description": "在小红书通知页和帖子页回复框中生成可编辑的收盘明暗盘资金文案。",
   "version": "0.1.0",
   "icons": {
     "16": "icons/icon-16.png",
@@ -32,7 +32,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.xiaohongshu.com/notification*"],
+      "matches": [
+        "https://www.xiaohongshu.com/notification*",
+        "https://www.xiaohongshu.com/explore/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

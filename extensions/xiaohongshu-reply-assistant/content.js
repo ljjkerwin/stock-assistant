@@ -1,8 +1,23 @@
 const TOOLBAR_ATTRIBUTE = 'data-darktrade-reply-toolbar';
-const REPLY_INPUT_SELECTOR = '[contenteditable="true"], textarea';
+const REPLY_INPUT_CONFIGS = [
+  { selector: 'textarea.comment-input', toolbarZIndex: 1, toolbarPosition: 'below' },
+  {
+    selector: '#content-textarea.content-input[contenteditable="true"]',
+    toolbarZIndex: 21,
+    toolbarPosition: 'left',
+    commentTextSelector: '.engage-bar .reply-content .content',
+    toolbarContainerSelector: '.engage-bar.active',
+  },
+];
+const REPLY_INPUT_SELECTOR = REPLY_INPUT_CONFIGS.map(({ selector }) => selector).join(', ');
 
-function isNotificationPage() {
-  return location.pathname === '/notification' || location.pathname === '/notification/';
+function isSupportedPage() {
+  return (
+    location.pathname === '/notification' ||
+    location.pathname === '/notification/' ||
+    location.pathname === '/explore' ||
+    location.pathname.startsWith('/explore/')
+  );
 }
 
 function getDateValue() {
@@ -22,13 +37,15 @@ function formatCapital(value) {
   return `${value > 0 ? '+' : ''}${formatted}${suffix}`;
 }
 
-function formatReply(results) {
-  return results
+function formatReply(results, summarySuffix = '') {
+  return (
+    results
     .map(
       (result) =>
         `${result.displayName || result.name}，暗${formatCapital(result.darkCapital)}，明${formatCapital(result.lightCapital)}`,
     )
-    .join('；');
+    .join('；') + summarySuffix
+  );
 }
 
 function normalizeText(node) {
@@ -36,6 +53,11 @@ function normalizeText(node) {
 }
 
 function getCommentText(input) {
+  const config = REPLY_INPUT_CONFIGS.find(({ selector }) => input.matches(selector));
+  if (config?.commentTextSelector) {
+    return normalizeText(document.querySelector(config.commentTextSelector));
+  }
+
   const boundary =
     // 小红书通知项当前以 .container 作为整条消息的根节点；回复框在其中的 .actions 内。
     input.closest('.container') ||
@@ -69,68 +91,62 @@ function replaceInputText(input, text) {
   );
 }
 
-function createToolbar(input) {
+function createToolbar(input, config) {
   const host = document.createElement('div');
   host.setAttribute(TOOLBAR_ATTRIBUTE, '');
   host.darkTradeReplyInput = input;
+  host.darkTradeReplyToolbarPosition = config.toolbarPosition;
+  host.style.zIndex = String(config.toolbarZIndex);
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
     <style>
       :host { display: block; position: fixed; z-index: 1; }
-      .bar { display: flex; align-items: center; gap: 8px; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
-      button { border: 0; border-radius: 16px; background: #ff2442; color: #fff; cursor: pointer; font: inherit; font-weight: 600; padding: 7px 12px; }
+      .bar { display: flex; align-items: flex-start; gap: 8px; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+      .query-control { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+      button { border: 0; border-radius: 16px; background: #ff2442; color: #fff; cursor: pointer; font: inherit; font-weight: 600; padding: 7px 12px; white-space: nowrap; }
       button:hover { background: #e51f3b; }
       button:disabled { cursor: wait; opacity: .65; }
-      input { box-sizing: border-box; border: 1px solid #e5e5e5; border-radius: 8px; color: #555; font: inherit; padding: 6px 8px; width: 120px; }
-      .status { color: #999; min-height: 18px; }
-      .error { color: #d93025; }
+      input { box-sizing: border-box; border: 1px solid #e5e5e5; border-radius: 7px; color: #555; font-size: 12px; padding: 4px 6px; width: 106px; }
     </style>
     <div class="bar">
-      <button type="button">✨ 查找明暗盘数据</button>
-      <input aria-label="收盘日期" type="date" value="${getDateValue()}">
-      <span class="status"></span>
+      <div class="query-control">
+        <button type="button">查询明暗盘数据</button>
+        <input aria-label="收盘日期" type="date" value="${getDateValue()}">
+      </div>
     </div>
   `;
 
   const button = shadow.querySelector('button');
   const dateInput = shadow.querySelector('input');
-  const status = shadow.querySelector('.status');
-  button.addEventListener('click', () => {
+  const stopToolbarEvent = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  button.addEventListener('pointerdown', stopToolbarEvent);
+  button.addEventListener('mousedown', stopToolbarEvent);
+  button.addEventListener('click', (event) => {
+    stopToolbarEvent(event);
     const text = getCommentText(input);
     if (!text) {
-      status.textContent = '未读取到该条评论';
-      status.className = 'status error';
       return;
     }
     button.disabled = true;
-    status.textContent = '正在识别并查询…';
-    status.className = 'status';
     chrome.runtime.sendMessage(
       { type: 'query-darktrade', payload: { text, date: dateInput.value.replaceAll('-', '') } },
       (response) => {
         button.disabled = false;
         if (chrome.runtime.lastError) {
-          status.textContent = '插件通信失败，请刷新页面重试';
-          status.className = 'status error';
           return;
         }
         if (!response?.ok) {
-          status.textContent = response?.error || '查询失败';
-          status.className = 'status error';
           return;
         }
-        const reply = formatReply(response.data.results || []);
-        if (!reply) {
-          const missing = response.data.notFoundNames?.length
-            ? `未找到：${response.data.notFoundNames.join('、')}`
-            : '未识别到可查询的股票或 ETF';
-          status.textContent = missing;
-          status.className = 'status error';
+        const results = response.data.results || [];
+        if (results.length === 0) {
           return;
         }
+        const reply = formatReply(results, response.data.summarySuffix || '');
         replaceInputText(input, reply);
-        status.textContent = '已填入草稿，请确认后手动发送';
-        status.className = 'status';
       },
     );
   });
@@ -139,20 +155,37 @@ function createToolbar(input) {
 
 function positionToolbar(host, input) {
   const rect = input.getBoundingClientRect();
+  if (host.darkTradeReplyToolbarPosition === 'left') {
+    // 帖子弹窗工具栏挂在 .engage-bar.active 内，使用其包含块向左展开，
+    // 避免用 left 计算后与回复输入框重叠。
+    host.style.position = 'absolute';
+    host.style.right = '100%';
+    host.style.left = '';
+    host.style.top = '0';
+    return;
+  }
+  host.style.position = 'fixed';
+  host.style.right = '';
   host.style.left = `${Math.max(8, rect.left)}px`;
   host.style.top = `${rect.bottom + 6}px`;
 }
 
 function injectToolbar(input) {
-  if (!(input instanceof HTMLElement) || !input.matches(REPLY_INPUT_SELECTOR)) return;
+  if (!(input instanceof HTMLElement)) return;
+  const config = REPLY_INPUT_CONFIGS.find(({ selector }) => input.matches(selector));
+  if (!config) return;
   const existingToolbar = input.darkTradeReplyToolbar;
   if (existingToolbar?.isConnected) {
     positionToolbar(existingToolbar, input);
     return;
   }
-  const toolbar = createToolbar(input);
+  const toolbarContainer = config.toolbarContainerSelector
+    ? input.closest(config.toolbarContainerSelector)
+    : document.body;
+  if (!toolbarContainer) return;
+  const toolbar = createToolbar(input, config);
   input.darkTradeReplyToolbar = toolbar;
-  document.body.append(toolbar);
+  toolbarContainer.append(toolbar);
   positionToolbar(toolbar, input);
 }
 
@@ -171,7 +204,7 @@ function repositionToolbars() {
   });
 }
 
-if (isNotificationPage()) {
+if (isSupportedPage()) {
   document.addEventListener('focusin', (event) => injectToolbar(event.target), true);
   window.addEventListener('scroll', repositionToolbars, true);
   window.addEventListener('resize', repositionToolbars);

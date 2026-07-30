@@ -6,11 +6,13 @@ import {
 } from '@nestjs/common';
 import axios from 'axios';
 import { DarkTradeService, type DarkTradeData } from './darktrade.service';
+import { getRandomCapitalSummarySuffix } from './capital-summary-suffixes';
 
 export interface DarkTradeTextQueryResult {
   names: string[];
   results: Array<DarkTradeData & { displayName: string }>;
   notFoundNames: string[];
+  summarySuffix: string;
 }
 
 interface LlmResponse {
@@ -51,6 +53,9 @@ const STOCK_NAME_EXTRACTION_PROMPT = `
 输入：巨人呢
 输出：{"names":["巨人"]}
 
+输入：盈 fw.扬子 xc.金zd
+输出：{"names":["盈fw","扬子xc","金zd"]}
+
 【输出格式】
 只返回 JSON，不要解释：{"names":["名称1","名称2"]}
 `;
@@ -83,6 +88,7 @@ export class DarkTradeTextQueryService {
       names,
       results,
       notFoundNames: settled.filter((item) => !item.data).map((item) => item.name),
+      summarySuffix: getRandomCapitalSummarySuffix(),
     };
   }
 

@@ -40,8 +40,6 @@ interface RecentSearchResult {
 
 const MAX_RECENT_SEARCH_RESULTS = 3;
 const MAX_LLM_SEARCH_HISTORY = 3;
-const CAPITAL_SUMMARY_SUFFIXES = ['', ' ～～', '[吧唧R][吧唧R]', '[吃瓜R]'];
-
 function formatCapital(value: number | null) {
   if (value == null) return '--';
   const divisor = Math.abs(value) >= 10_000_000 ? 100_000_000 : 10_000;
@@ -62,10 +60,6 @@ function formatCapitalSummary(data: DarkTradeData) {
 function getAdminDefaultDate() {
   const now = dayjs();
   return now.hour() < 6 ? now.subtract(1, 'day') : now;
-}
-
-function getRandomCapitalSummarySuffix() {
-  return CAPITAL_SUMMARY_SUFFIXES[Math.floor(Math.random() * CAPITAL_SUMMARY_SUFFIXES.length)];
 }
 
 export default function Admin() {
@@ -151,7 +145,7 @@ export default function Admin() {
       if (data) {
         setRecentSearchResults((current) =>
           [
-            { data, queryText: name, summarySuffix: getRandomCapitalSummarySuffix() },
+            { data, queryText: name, summarySuffix: data.summarySuffix },
             ...current.filter(
               (item) => item.data.code !== data.code || item.data.date !== data.date,
             ),
@@ -194,7 +188,7 @@ export default function Admin() {
           names: data.names,
           results: data.results,
           notFoundNames: data.notFoundNames,
-          summarySuffix: getRandomCapitalSummarySuffix(),
+          summarySuffix: data.summarySuffix,
         };
         return [
           item,

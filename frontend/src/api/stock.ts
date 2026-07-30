@@ -214,7 +214,10 @@ export const darktradeApi = {
       })
       .then((r) => r.data),
 
-  getDailyResultByName: (name: string, date: string): Promise<DarkTradeData | null> =>
+  getDailyResultByName: (
+    name: string,
+    date: string,
+  ): Promise<(DarkTradeData & { summarySuffix: string }) | null> =>
     api
       .get<DarkTradeData | null>('/darktrade/daily-result', { params: { name, date } })
       .then((r) => r.data),
@@ -222,8 +225,12 @@ export const darktradeApi = {
   getDailyResultsFromText: (
     text: string,
     date: string,
-  ): Promise<{ names: string[]; results: DarkTradeData[]; notFoundNames: string[] }> =>
-    api.post('/darktrade/daily-result-from-text', { text, date }).then((r) => r.data),
+  ): Promise<{
+    names: string[];
+    results: DarkTradeData[];
+    notFoundNames: string[];
+    summarySuffix: string;
+  }> => api.post('/darktrade/daily-result-from-text', { text, date }).then((r) => r.data),
 
   get: (code: string): Promise<DarkTradeData | null> =>
     api

@@ -14,6 +14,11 @@ describe('DarkTradeTextQueryService', () => {
   beforeEach(() => {
     process.env.SILICONFLOW_API_KEY = 'test-key';
     jest.clearAllMocks();
+    jest.spyOn(Math, 'random').mockReturnValue(0.7);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(() => {
@@ -35,6 +40,7 @@ describe('DarkTradeTextQueryService', () => {
       names: ['贵州茅台', '宁德时代'],
       results: [maotai],
       notFoundNames: ['宁德时代'],
+      summarySuffix: '[吃瓜R]',
     });
     expect(getDailyResultByName).toHaveBeenNthCalledWith(1, '贵州茅台', '20260729');
     expect(getDailyResultByName).toHaveBeenNthCalledWith(2, '宁德时代', '20260729');
