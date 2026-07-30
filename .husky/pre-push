@@ -34,14 +34,34 @@ do
     CHANGED_FILES=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
   fi
 
-  # Check if backend files are modified
+  # Check if frontend or backend files are modified
+  FRONTEND_CHANGED=false
   BACKEND_CHANGED=false
   for FILE in $CHANGED_FILES; do
+    if [[ $FILE == frontend/* ]]; then
+      FRONTEND_CHANGED=true
+    fi
     if [[ $FILE == backend/* ]]; then
       BACKEND_CHANGED=true
-      break
     fi
   done
+
+  # Run the complete frontend type check if frontend files have changed.
+  if [ "$FRONTEND_CHANGED" = true ]; then
+    echo "==========================================="
+    echo "🎨 正在运行前端 TypeScript 类型检查..."
+    echo "==========================================="
+    cd frontend
+
+    if ! pnpm type-check; then
+      echo "❌ 前端 TypeScript 类型检查失败！推送已终止。"
+      exit 1
+    fi
+
+    cd ..
+    echo "✅ 前端 TypeScript 类型检查通过！"
+    echo ""
+  fi
 
   # Run backend tests if backend files have changed
   if [ "$BACKEND_CHANGED" = true ]; then
@@ -59,7 +79,7 @@ do
     echo "✅ 后端单元测试通过！"
     echo ""
   else
-    echo "ℹ️ 未检测到 backend/ 目录下的代码变更，跳过单元测试。"
+    echo "ℹ️ 未检测到 backend/ 目录下的代码变更，跳过后端单元测试。"
   fi
 done
 

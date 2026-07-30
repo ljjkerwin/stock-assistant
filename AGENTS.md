@@ -180,7 +180,7 @@ pnpm dev
 - 外部 API（东方财富）调用须在测试中 mock，不发真实请求
 - CI 自动测试：已配置 GitHub Actions 单元测试与语法检查工作流，在提交 PR 到 `main` 分支时会自动运行对应的后端测试与前后端语法检查。
 - 本地提交检查：配置了 Git pre-commit 钩子（`.git/hooks/pre-commit`），在本地执行 `git commit` 时，若检测到 `frontend` 或 `backend` 目录下有变更，会自动触发对应模块的语法检查。其中，ESLint 检查仅针对本次改动的文件以提高提交效率，而 TypeScript 类型检查仍对整个项目执行以确保类型安全。
-- 本地推送检查：配置了 Git pre-push 钩子（`.git/hooks/pre-push`），在本地执行 `git push` 时，若检测到本次推送包含 `backend` 目录下的变更，会自动触发后端单元测试，避免将错误代码推送。
+- 本地推送检查：配置了 Git pre-push 钩子（`.git/hooks/pre-push`），在本地执行 `git push` 时，若检测到本次推送包含 `frontend` 目录下的变更，会运行完整的前端 TypeScript 类型检查；若包含 `backend` 目录下的变更，会运行后端单元测试，避免将错误代码推送。
 
 ---
 
