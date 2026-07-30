@@ -48,6 +48,9 @@ const STOCK_NAME_EXTRACTION_PROMPT = `
 输入：dfd嘞
 输出：{"names":["dfd"]}
 
+输入：巨人呢
+输出：{"names":["巨人"]}
+
 【输出格式】
 只返回 JSON，不要解释：{"names":["名称1","名称2"]}
 `;

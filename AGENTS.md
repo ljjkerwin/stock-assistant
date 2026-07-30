@@ -18,17 +18,18 @@ AI 编码代理的协作指南，帮助快速理解本项目并高效完成任�
 
 ## 文档地图
 
-| 文档 | 内容 | 何时读/改 |
-|------|------|-----------|
-| **AGENTS.md**（本文） | 项目概览、目录结构、启动、规范、任务索引 | 新增模块 / 改整体架构 |
-| [docs/api.md](docs/api.md) | 全部 HTTP/SSE 接口一览（按模块分节） | 新增/改接口、字段、枚举 |
-| [docs/strategies.md](docs/strategies.md) | 策略回测模块：分层架构、各策略设计、指标计算、回测页与副图、**新增策略模板** | 新增/改策略或回测逻辑 |
-| [docs/modules/kline.md](docs/modules/kline.md) | 后端 `KlineService` 数据源选型/路由 + 缓存层 TTL | 改数据源、周期、缓存 |
-| [docs/modules/monitor.md](docs/modules/monitor.md) | 监控规则、轮询、SSE、邮件通知 | 改监控/通知 |
-| [docs/modules/fund.md](docs/modules/fund.md) | 基金净值/估值/持仓数据源与解析 | 改基金模块 |
-| [docs/modules/darktrade.md](docs/modules/darktrade.md) | 暗盘资金抓取、索引、GBK 解码、字段映射 | 改暗盘模块 |
-| [docs/modules/frontend.md](docs/modules/frontend.md) | `KLineChart` 约定、列表页、Zustand 状态管理 | 改前端图表/页面/store |
-| [PRD.md](PRD.md) / [TECH_DESIGN.md](TECH_DESIGN.md) | 产品需求 / 技术设计 | 见文档同步规范 |
+| 文档                                                                           | 内容                                                                         | 何时读/改               |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | ----------------------- |
+| **AGENTS.md**（本文）                                                          | 项目概览、目录结构、启动、规范、任务索引                                     | 新增模块 / 改整体架构   |
+| [docs/api.md](docs/api.md)                                                     | 全部 HTTP/SSE 接口一览（按模块分节）                                         | 新增/改接口、字段、枚举 |
+| [docs/strategies.md](docs/strategies.md)                                       | 策略回测模块：分层架构、各策略设计、指标计算、回测页与副图、**新增策略模板** | 新增/改策略或回测逻辑   |
+| [docs/modules/kline.md](docs/modules/kline.md)                                 | 后端 `KlineService` 数据源选型/路由 + 缓存层 TTL                             | 改数据源、周期、缓存    |
+| [docs/modules/monitor.md](docs/modules/monitor.md)                             | 监控规则、轮询、SSE、邮件通知                                                | 改监控/通知             |
+| [docs/modules/fund.md](docs/modules/fund.md)                                   | 基金净值/估值/持仓数据源与解析                                               | 改基金模块              |
+| [docs/modules/darktrade.md](docs/modules/darktrade.md)                         | 暗盘资金抓取、索引、GBK 解码、字段映射                                       | 改暗盘模块              |
+| [docs/modules/xiaohongshu-extension.md](docs/modules/xiaohongshu-extension.md) | 小红书通知页回复扩展、鉴权和安装                                             | 改浏览器扩展            |
+| [docs/modules/frontend.md](docs/modules/frontend.md)                           | `KLineChart` 约定、列表页、Zustand 状态管理                                  | 改前端图表/页面/store   |
+| [PRD.md](PRD.md) / [TECH_DESIGN.md](TECH_DESIGN.md)                            | 产品需求 / 技术设计                                                          | 见文档同步规范          |
 
 ---
 
@@ -186,11 +187,13 @@ pnpm dev
 ## 代码规范
 
 ### 配置文件位置
+
 - `.prettierrc` — 根目录，前后端共用
 - `frontend/.eslintrc.cjs` — 前端专用（React + TypeScript 规则）
 - `backend/.eslintrc.js` — 后端专用（NestJS + TypeScript 规则，由 NestJS CLI 自动生成）
 
 ### 操作要求
+
 - 禁止使用superpowers相关skill介入本项目的开发
 - 完成任何代码改动后，在对应目录运行 `pnpm lint`，确保无报错再收工
 - 不要手动调整格式（缩进、引号、分号等），交给 Prettier 统一处理

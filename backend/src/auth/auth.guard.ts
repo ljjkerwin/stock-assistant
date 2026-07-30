@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthService } from './auth.service';
+import { PluginTokenService } from './plugin-token.service';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import type { AuthUser } from './current-user.decorator';
 
@@ -15,10 +16,11 @@ interface AuthRequest {
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly authService: AuthService,
+    private readonly pluginTokenService: PluginTokenService,
     private readonly reflector: Reflector,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -28,6 +30,15 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthRequest>();
     const token = this.extractToken(request);
     if (!token) throw new UnauthorizedException('未登录');
+    const route = context.switchToHttp().getRequest<{ method?: string; path?: string }>();
+    if (
+      token.startsWith('xhs_') &&
+      route.method === 'POST' &&
+      route.path === '/api/darktrade/daily-result-from-text'
+    ) {
+      await this.pluginTokenService.verifyForDarkTradeQuery(token);
+      return true;
+    }
     request.user = this.authService.verifyToken(token);
     return true;
   }

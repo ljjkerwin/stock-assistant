@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小红书暗盘回复助手设置</title>
+    <style>
+      body {
+        color: #222;
+        font:
+          14px/1.5 -apple-system,
+          BlinkMacSystemFont,
+          'PingFang SC',
+          sans-serif;
+        margin: 0;
+        min-width: 340px;
+        padding: 20px;
+        width: 360px;
+      }
+      h1 {
+        font-size: 22px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-top: 20px;
+      }
+      input,
+      select {
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        display: block;
+        font: inherit;
+        margin-top: 6px;
+        padding: 9px;
+        width: 100%;
+      }
+      p {
+        color: #666;
+        margin: 5px 0;
+      }
+      button {
+        background: #ff2442;
+        border: 0;
+        border-radius: 8px;
+        color: white;
+        cursor: pointer;
+        font: inherit;
+        margin-top: 24px;
+        padding: 9px 18px;
+      }
+      #status {
+        color: #16803c;
+        margin-left: 10px;
+      }
+      #apiBaseUrl {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>小红书暗盘回复助手</h1>
+    <label for="environment">服务环境</label>
+    <select id="environment">
+      <option value="production">生产环境（https://stock.vdata.top）</option>
+      <option value="development">开发环境（http://localhost:3100）</option>
+    </select>
+    <p id="apiBaseUrl">https://stock.vdata.top/api</p>
+    <label for="token">插件访问令牌</label>
+    <input
+      id="token"
+      type="password"
+      autocomplete="off"
+      placeholder="粘贴管理中心创建的 xhs_ 开头令牌"
+    />
+    <p>令牌仅保存在此浏览器本地存储中，不会发送给小红书。</p>
+    <button id="save" type="button">保存设置</button><span id="status" role="status"></span>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ import { StrategyModule } from './strategy/strategy.module';
 import { DarkTradeModule } from './darktrade/darktrade.module';
 import { AuthModule } from './auth/auth.module';
 import { User } from './auth/user.entity';
+import { PluginAccessToken } from './auth/plugin-access-token.entity';
 import { Favorite } from './favorites/favorite.entity';
 import { WatchList } from './favorites/watch-list.entity';
 import { MonitorRule } from './monitor/monitor-rule.entity';
@@ -21,6 +22,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
 
 const entities = [
   User,
+  PluginAccessToken,
   Favorite,
   WatchList,
   MonitorRule,

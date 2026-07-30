@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DatePicker, Button, Input, Popover, Spin, message } from 'antd';
 import {
@@ -8,10 +8,12 @@ import {
   LineChartOutlined,
   SearchOutlined,
   RobotOutlined,
+  KeyOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import KLineChart from '../../components/KLineChart';
-import { darktradeApi } from '../../api/stock';
+import { authApi, darktradeApi, type PluginAccessToken } from '../../api/stock';
 import type { DarkTradeData } from '../../types';
 import styles from './Admin.module.css';
 
@@ -82,6 +84,44 @@ export default function Admin() {
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
   const [llmSearchHistory, setLlmSearchHistory] = useState<LlmSearchHistoryItem[]>([]);
+  const [pluginTokens, setPluginTokens] = useState<PluginAccessToken[]>([]);
+  const [pluginTokenName, setPluginTokenName] = useState('小红书回复助手');
+  const [pluginTokenDays, setPluginTokenDays] = useState(180);
+  const [createdPluginToken, setCreatedPluginToken] = useState<string | null>(null);
+  const [pluginTokenLoading, setPluginTokenLoading] = useState(false);
+
+  const loadPluginTokens = () =>
+    authApi
+      .listPluginTokens()
+      .then(setPluginTokens)
+      .catch(() => message.error('加载插件令牌失败'));
+  useEffect(() => {
+    void loadPluginTokens();
+  }, []);
+
+  const handleCreatePluginToken = async () => {
+    if (!pluginTokenName.trim() || pluginTokenLoading) return;
+    setPluginTokenLoading(true);
+    try {
+      const result = await authApi.createPluginToken(pluginTokenName, pluginTokenDays);
+      setCreatedPluginToken(result.token);
+      await loadPluginTokens();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '创建令牌失败');
+    } finally {
+      setPluginTokenLoading(false);
+    }
+  };
+
+  const handleRevokePluginToken = async (id: number) => {
+    try {
+      await authApi.revokePluginToken(id);
+      await loadPluginTokens();
+      message.success('令牌已撤销');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '撤销失败');
+    }
+  };
 
   const handleFetch = async () => {
     if (!selectedDate || loading) return;
@@ -109,12 +149,14 @@ export default function Admin() {
     try {
       const data = await darktradeApi.getDailyResultByName(name, searchDate.format('YYYYMMDD'));
       if (data) {
-        setRecentSearchResults((current) => [
-          { data, queryText: name, summarySuffix: getRandomCapitalSummarySuffix() },
-          ...current.filter(
-            (item) => item.data.code !== data.code || item.data.date !== data.date,
-          ),
-        ].slice(0, MAX_RECENT_SEARCH_RESULTS));
+        setRecentSearchResults((current) =>
+          [
+            { data, queryText: name, summarySuffix: getRandomCapitalSummarySuffix() },
+            ...current.filter(
+              (item) => item.data.code !== data.code || item.data.date !== data.date,
+            ),
+          ].slice(0, MAX_RECENT_SEARCH_RESULTS),
+        );
       } else {
         setSearchError('未找到该日期的资金数据，请确认股票名称或先采集该日期数据');
       }
@@ -141,7 +183,10 @@ export default function Admin() {
     setLlmLoading(true);
     setLlmError(null);
     try {
-      const data = await darktradeApi.getDailyResultsFromText(text, llmSearchDate.format('YYYYMMDD'));
+      const data = await darktradeApi.getDailyResultsFromText(
+        text,
+        llmSearchDate.format('YYYYMMDD'),
+      );
       setLlmSearchHistory((current) => {
         const item: LlmSearchHistoryItem = {
           text,
@@ -154,8 +199,7 @@ export default function Admin() {
         return [
           item,
           ...current.filter(
-            (history) =>
-              history.text !== text || !history.date.isSame(llmSearchDate, 'day'),
+            (history) => history.text !== text || !history.date.isSame(llmSearchDate, 'day'),
           ),
         ].slice(0, MAX_LLM_SEARCH_HISTORY);
       });
@@ -186,6 +230,92 @@ export default function Admin() {
 
       <div className={styles.grid}>
         {/* 模块一：全市场明暗盘日终数据采集 */}
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <div className={`${styles.cardIcon} ${styles.tokenIcon}`}>
+              <KeyOutlined style={{ color: '#fff' }} />
+            </div>
+            <div>
+              <p className={styles.cardTitle}>浏览器插件访问令牌</p>
+              <p className={styles.cardDesc}>
+                仅允许小红书插件检索明暗盘数据；每个令牌每分钟最多 60 次。
+              </p>
+            </div>
+          </div>
+          <div className={styles.controls}>
+            <Input
+              value={pluginTokenName}
+              onChange={(event) => setPluginTokenName(event.target.value)}
+              placeholder="令牌名称"
+              style={{ width: 220 }}
+            />
+            <Input
+              type="number"
+              min={1}
+              max={365}
+              value={pluginTokenDays}
+              onChange={(event) => setPluginTokenDays(Number(event.target.value))}
+              addonAfter="天"
+              style={{ width: 130 }}
+            />
+            <Button
+              type="primary"
+              icon={<KeyOutlined />}
+              loading={pluginTokenLoading}
+              disabled={!pluginTokenName.trim()}
+              onClick={() => void handleCreatePluginToken()}
+            >
+              新建令牌
+            </Button>
+          </div>
+          {createdPluginToken && (
+            <div className={`${styles.result} ${styles.resultSuccess}`}>
+              <p className={`${styles.resultTitle} ${styles.resultTitleSuccess}`}>
+                请立即复制：此令牌只显示一次
+              </p>
+              <button
+                type="button"
+                className={styles.tokenValue}
+                onClick={() =>
+                  void navigator.clipboard
+                    .writeText(createdPluginToken)
+                    .then(() => message.success('令牌已复制'))
+                    .catch(() => message.error('复制失败'))
+                }
+              >
+                {createdPluginToken}
+              </button>
+            </div>
+          )}
+          {pluginTokens.length > 0 && (
+            <div className={styles.tokenList}>
+              {pluginTokens.map((token) => (
+                <div className={styles.tokenRow} key={token.id}>
+                  <span>
+                    <strong>{token.name}</strong>
+                    <small>
+                      创建：{dayjs(token.createdAt).format('YYYY-MM-DD')} · 到期：
+                      {token.expiresAt ? dayjs(token.expiresAt).format('YYYY-MM-DD') : '永久'} ·
+                      最后使用：
+                      {token.lastUsedAt
+                        ? dayjs(token.lastUsedAt).format('YYYY-MM-DD HH:mm')
+                        : '从未'}
+                    </small>
+                  </span>
+                  <Button
+                    danger
+                    type="text"
+                    icon={<DeleteOutlined />}
+                    onClick={() => void handleRevokePluginToken(token.id)}
+                  >
+                    撤销
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className={styles.card}>
           <div className={styles.cardHeader}>
             <div className={styles.cardIcon}>
@@ -231,9 +361,7 @@ export default function Admin() {
           {loading && (
             <div className={styles.loadingState}>
               <Spin size="small" />
-              <span>
-                正在抓取 {selectedDate.format('YYYY-MM-DD')} 全市场数据，约需 5–10 秒...
-              </span>
+              <span>正在抓取 {selectedDate.format('YYYY-MM-DD')} 全市场数据，约需 5–10 秒...</span>
             </div>
           )}
 
@@ -367,7 +495,8 @@ export default function Admin() {
                     onClick={() => void handleCopyCapitalSummary(searchResult, summarySuffix)}
                     title="点击复制资金文案"
                   >
-                    {formatCapitalSummary(searchResult)}{summarySuffix}
+                    {formatCapitalSummary(searchResult)}
+                    {summarySuffix}
                   </button>
                 </div>
               ))}

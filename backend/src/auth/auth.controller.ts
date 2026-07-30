@@ -1,5 +1,15 @@
-import { Body, Controller, Get, Post, BadRequestException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  BadRequestException,
+} from '@nestjs/common';
 import { AuthService, SmtpConfigDto } from './auth.service';
+import { PluginTokenService } from './plugin-token.service';
 import { Public } from './public.decorator';
 import { CurrentUser } from './current-user.decorator';
 import type { AuthUser } from './current-user.decorator';
@@ -7,7 +17,10 @@ import * as nodemailer from 'nodemailer';
 
 @Controller('api/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly pluginTokenService: PluginTokenService,
+  ) {}
 
   @Public()
   @Post('login')
@@ -18,6 +31,24 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthUser) {
     return user;
+  }
+
+  @Get('plugin-tokens')
+  listPluginTokens(@CurrentUser() user: AuthUser) {
+    return this.pluginTokenService.list(user.id);
+  }
+
+  @Post('plugin-tokens')
+  createPluginToken(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { name?: string; expiresInDays?: number },
+  ) {
+    return this.pluginTokenService.create(user.id, body.name ?? '', body.expiresInDays ?? 180);
+  }
+
+  @Delete('plugin-tokens/:id')
+  revokePluginToken(@CurrentUser() user: AuthUser, @Param('id', ParseIntPipe) id: number) {
+    return this.pluginTokenService.revoke(user.id, id);
   }
 
   @Get('smtp')

@@ -29,11 +29,11 @@ const { Text } = Typography;
 const SECTION_OPTIONS = [
   { value: 'stock', label: '股票' },
   { value: 'klinegrid', label: '总览' },
-  { value: 'darktrade-discovery', label: '明暗盘挖掘' },
   { value: 'fund', label: '基金' },
   { value: 'list', label: '股票列表导入' },
   { value: 'backtest', label: '策略回测' },
-  { value: 'admin', label: '管理' },
+  { value: 'darktrade-discovery', label: '明暗盘挖掘' },
+  { value: 'admin', label: '管理中心' },
 ];
 
 export default function Sidebar() {
@@ -70,11 +70,11 @@ export default function Sidebar() {
         ? 'fund'
         : pathname.startsWith('/stock-list-import')
           ? 'list'
-    : pathname.startsWith('/stock-list-kline')
-      ? 'klinegrid'
-      : pathname.startsWith('/darktrade-discovery')
-        ? 'darktrade-discovery'
-      : 'stock';
+          : pathname.startsWith('/stock-list-kline')
+            ? 'klinegrid'
+            : pathname.startsWith('/darktrade-discovery')
+              ? 'darktrade-discovery'
+              : 'stock';
 
   const boardType: BoardType | null =
     section === 'list' || section === 'darktrade-discovery'

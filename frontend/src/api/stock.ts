@@ -55,6 +55,15 @@ export interface SmtpConfig {
   smtpTo: string;
 }
 
+export interface PluginAccessToken {
+  id: number;
+  name: string;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
 export const authApi = {
   login: (username: string, password: string): Promise<{ token: string; user: AuthUser }> =>
     api
@@ -66,6 +75,17 @@ export const authApi = {
     api.post<{ success: boolean }>('/auth/smtp', config).then((r) => r.data),
   testSmtp: (config: SmtpConfig): Promise<{ success: boolean }> =>
     api.post<{ success: boolean }>('/auth/smtp/test', config).then((r) => r.data),
+  listPluginTokens: (): Promise<PluginAccessToken[]> =>
+    api.get<PluginAccessToken[]>('/auth/plugin-tokens').then((r) => r.data),
+  createPluginToken: (name: string, expiresInDays: number) =>
+    api
+      .post<{ id: number; name: string; token: string; expiresAt: string }>('/auth/plugin-tokens', {
+        name,
+        expiresInDays,
+      })
+      .then((r) => r.data),
+  revokePluginToken: (id: number): Promise<{ success: boolean }> =>
+    api.delete<{ success: boolean }>(`/auth/plugin-tokens/${id}`).then((r) => r.data),
 };
 
 export const favoritesApi = {
