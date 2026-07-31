@@ -7,12 +7,14 @@ import {
 import axios from 'axios';
 import { DarkTradeService, type DarkTradeData } from './darktrade.service';
 import { getRandomCapitalSummarySuffix } from './capital-summary-suffixes';
+import { formatCapitalSummaries } from './capital-summary';
 
 export interface DarkTradeTextQueryResult {
   names: string[];
   results: Array<DarkTradeData & { displayName: string }>;
   notFoundNames: string[];
   summarySuffix: string;
+  summary: string;
 }
 
 interface LlmResponse {
@@ -92,11 +94,13 @@ export class DarkTradeTextQueryService {
         settled.flatMap((item) => (item.data ? [[item.data.code, item.data] as const] : [])),
       ).values(),
     ];
+    const summarySuffix = getRandomCapitalSummarySuffix();
     return {
       names,
       results,
       notFoundNames: settled.filter((item) => !item.data).map((item) => item.name),
-      summarySuffix: getRandomCapitalSummarySuffix(),
+      summarySuffix,
+      summary: formatCapitalSummaries(results, summarySuffix),
     };
   }
 

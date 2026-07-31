@@ -29,32 +29,20 @@ interface LlmSearchHistoryItem {
   names: string[];
   results: DarkTradeData[];
   notFoundNames: string[];
-  summarySuffix: string;
+  summary: string;
 }
 
 interface RecentSearchResult {
   data: DarkTradeData;
   queryText: string;
-  summarySuffix: string;
+  summary: string;
 }
 
 const MAX_RECENT_SEARCH_RESULTS = 3;
 const MAX_LLM_SEARCH_HISTORY = 3;
-function formatCapital(value: number | null) {
-  if (value == null) return '--';
-  const divisor = Math.abs(value) >= 10_000_000 ? 100_000_000 : 10_000;
-  const suffix = divisor === 100_000_000 ? 'y' : 'w';
-  const digits = suffix === 'y' ? 2 : 0;
-  const formatted = Number((value / divisor).toFixed(digits));
-  return `${value > 0 ? '+' : ''}${formatted}${suffix}`;
-}
 
 function formatDate(date: string) {
   return `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
-}
-
-function formatCapitalSummary(data: DarkTradeData) {
-  return `${data.displayName ?? data.name}，暗${formatCapital(data.darkCapital)}，明${formatCapital(data.lightCapital)}`;
 }
 
 function getAdminDefaultDate() {
@@ -145,7 +133,7 @@ export default function Admin() {
       if (data) {
         setRecentSearchResults((current) =>
           [
-            { data, queryText: name, summarySuffix: data.summarySuffix },
+            { data, queryText: name, summary: data.summary },
             ...current.filter(
               (item) => item.data.code !== data.code || item.data.date !== data.date,
             ),
@@ -161,8 +149,7 @@ export default function Admin() {
     }
   };
 
-  const handleCopyCapitalSummary = async (data: DarkTradeData, suffix = '') => {
-    const summary = `${formatCapitalSummary(data)}${suffix}`;
+  const handleCopyCapitalSummary = async (summary: string) => {
     try {
       await navigator.clipboard.writeText(summary);
       message.success('资金文案已复制');
@@ -188,7 +175,7 @@ export default function Admin() {
           names: data.names,
           results: data.results,
           notFoundNames: data.notFoundNames,
-          summarySuffix: data.summarySuffix,
+          summary: data.summary,
         };
         return [
           item,
@@ -438,7 +425,7 @@ export default function Admin() {
 
           {recentSearchResults.length > 0 && !searchLoading && (
             <div className={styles.searchResults}>
-              {recentSearchResults.map(({ data: searchResult, queryText, summarySuffix }) => (
+              {recentSearchResults.map(({ data: searchResult, queryText, summary }) => (
                 <div
                   key={`${searchResult.date}:${searchResult.code}`}
                   className={`${styles.result} ${styles.llmHistoryItem}`}
@@ -486,11 +473,10 @@ export default function Admin() {
                   <button
                     type="button"
                     className={`${styles.result} ${styles.resultSuccess} ${styles.llmSummary}`}
-                    onClick={() => void handleCopyCapitalSummary(searchResult, summarySuffix)}
+                    onClick={() => void handleCopyCapitalSummary(summary)}
                     title="点击复制资金文案"
                   >
-                    {formatCapitalSummary(searchResult)}
-                    {summarySuffix}
+                    {summary}
                   </button>
                 </div>
               ))}
@@ -617,15 +603,14 @@ export default function Admin() {
                         onClick={() =>
                           void navigator.clipboard
                             .writeText(
-                              `${history.results.map(formatCapitalSummary).join('；')}${history.summarySuffix}`,
+                              history.summary,
                             )
                             .then(() => message.success('资金文案已复制'))
                             .catch(() => message.error('复制失败，请手动复制'))
                         }
                         title="点击复制全部资金文案"
                       >
-                        {history.results.map(formatCapitalSummary).join('；')}
-                        {history.summarySuffix}
+                        {history.summary}
                       </button>
                     </>
                   ) : (

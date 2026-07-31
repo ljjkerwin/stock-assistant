@@ -28,26 +28,6 @@ function getDateValue() {
   return `${year}-${month}-${day}`;
 }
 
-function formatCapital(value) {
-  if (value == null) return '--';
-  const divisor = Math.abs(value) >= 10000000 ? 100000000 : 10000;
-  const suffix = divisor === 100000000 ? 'y' : 'w';
-  const digits = suffix === 'y' ? 2 : 0;
-  const formatted = Number((value / divisor).toFixed(digits));
-  return `${value > 0 ? '+' : ''}${formatted}${suffix}`;
-}
-
-function formatReply(results, summarySuffix = '') {
-  return (
-    results
-    .map(
-      (result) =>
-        `${result.displayName || result.name}，暗${formatCapital(result.darkCapital)}，明${formatCapital(result.lightCapital)}`,
-    )
-    .join('；') + summarySuffix
-  );
-}
-
 function normalizeText(node) {
   return (node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 500);
 }
@@ -141,12 +121,10 @@ function createToolbar(input, config) {
         if (!response?.ok) {
           return;
         }
-        const results = response.data.results || [];
-        if (results.length === 0) {
+        if (!(response.data.results || []).length || !response.data.summary) {
           return;
         }
-        const reply = formatReply(results, response.data.summarySuffix || '');
-        replaceInputText(input, reply);
+        replaceInputText(input, response.data.summary);
       },
     );
   });

@@ -13,6 +13,7 @@ import { DarkTradeService } from './darktrade.service';
 import { DarkTradeTextQueryService } from './darktrade-text-query.service';
 import type { FetchAllDailySnapshotResult } from './darktrade.service';
 import { getRandomCapitalSummarySuffix } from './capital-summary-suffixes';
+import { formatCapitalSummaries } from './capital-summary';
 
 interface RefreshIndexBody {
   date?: string;
@@ -77,7 +78,9 @@ export class DarkTradeController {
       normalizedName,
       this.parseDate(date),
     );
-    return result && { ...result, summarySuffix: getRandomCapitalSummarySuffix() };
+    if (!result) return null;
+    const summarySuffix = getRandomCapitalSummarySuffix();
+    return { ...result, summarySuffix, summary: formatCapitalSummaries([result], summarySuffix) };
   }
 
   @Post('daily-result-from-text')

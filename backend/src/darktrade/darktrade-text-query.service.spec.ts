@@ -36,12 +36,14 @@ describe('DarkTradeTextQueryService', () => {
     const maotai = { code: '600519', name: '贵州茅台', displayName: '贵州mt' };
     getDailyResultByName.mockResolvedValueOnce(maotai).mockResolvedValueOnce(null);
 
-    await expect(service.query('看看贵州茅台和宁德时代', '20260729')).resolves.toEqual({
+    const result = await service.query('看看贵州茅台和宁德时代', '20260729');
+
+    expect(result).toMatchObject({
       names: ['贵州茅台', '宁德时代'],
       results: [maotai],
       notFoundNames: ['宁德时代'],
-      summarySuffix: '[吃瓜R]',
     });
+    expect(result.summary).toBe(`贵州mt，暗--，明--${result.summarySuffix}`);
     expect(getDailyResultByName).toHaveBeenNthCalledWith(1, '贵州茅台', '20260729');
     expect(getDailyResultByName).toHaveBeenNthCalledWith(2, '宁德时代', '20260729');
   });
