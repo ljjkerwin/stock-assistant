@@ -6,6 +6,7 @@ import {
   InputNumber,
   message,
   Popconfirm,
+  Select,
   Space,
   Table,
   Typography,
@@ -21,8 +22,9 @@ import DarkTradeTimesharePopup from './DarkTradeTimesharePopup';
 import styles from './DarkTradeDiscovery.module.css';
 
 const { Text, Title } = Typography;
-const DEFAULT_MIN_DARK_CAPITAL_WAN = 2_000;
+const DEFAULT_MIN_DARK_CAPITAL_WAN = 3_000;
 const DEFAULT_MIN_MULTIPLE = 2;
+type CapitalDirection = 'inflow' | 'outflow';
 const EXPORT_PAGE_SIZE = 15;
 const EXPORT_IMAGE_COUNT = 4;
 
@@ -55,6 +57,7 @@ export default function DarkTradeDiscovery() {
   const [exportPage, setExportPage] = useState<number | null>(null);
   const [minDarkCapitalWan, setMinDarkCapitalWan] = useState(DEFAULT_MIN_DARK_CAPITAL_WAN);
   const [minMultiple, setMinMultiple] = useState(DEFAULT_MIN_MULTIPLE);
+  const [capitalDirection, setCapitalDirection] = useState<CapitalDirection>('inflow');
   const [selectedDate, setSelectedDate] = useState<Dayjs>(dayjs());
   const [hovered, setHovered] = useState<{ code: string; name: string; rect: DOMRect } | null>(
     null,
@@ -62,7 +65,12 @@ export default function DarkTradeDiscovery() {
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async (darkCapitalWan: number, multiple: number, date: Dayjs) => {
+  const load = useCallback(async (
+    darkCapitalWan: number,
+    multiple: number,
+    date: Dayjs,
+    direction: CapitalDirection,
+  ) => {
     setLoading(true);
     try {
       setData(
@@ -70,6 +78,7 @@ export default function DarkTradeDiscovery() {
           darkCapitalWan * 10_000,
           multiple,
           date.format('YYYYMMDD'),
+          direction,
         ),
       );
     } finally {
@@ -81,14 +90,14 @@ export default function DarkTradeDiscovery() {
     setRefreshingIndex(true);
     try {
       await darktradeApi.refreshIndex();
-      await load(minDarkCapitalWan, minMultiple, selectedDate);
+      await load(minDarkCapitalWan, minMultiple, selectedDate, capitalDirection);
     } finally {
       setRefreshingIndex(false);
     }
   };
 
   useEffect(() => {
-    void load(DEFAULT_MIN_DARK_CAPITAL_WAN, DEFAULT_MIN_MULTIPLE, dayjs());
+    void load(DEFAULT_MIN_DARK_CAPITAL_WAN, DEFAULT_MIN_MULTIPLE, dayjs(), 'inflow');
   }, [load]);
 
   useEffect(
@@ -181,7 +190,9 @@ export default function DarkTradeDiscovery() {
       align: 'right',
       width: '8em',
       render: (value: number | null) => (
-        <strong className={styles.darkCapital}>{formatCapital(value)}</strong>
+        <strong className={value != null && value < 0 ? styles.down : styles.darkCapital}>
+          {formatCapital(value)}
+        </strong>
       ),
     },
     {
@@ -234,7 +245,18 @@ export default function DarkTradeDiscovery() {
                 if (date) setSelectedDate(date);
               }}
             />
-            <Text type="secondary">筛选暗盘资金超过</Text>
+            <Select<CapitalDirection>
+              value={capitalDirection}
+              onChange={(direction) => {
+                setCapitalDirection(direction);
+                void load(minDarkCapitalWan, minMultiple, selectedDate, direction);
+              }}
+              options={[
+                { value: 'inflow', label: '暗盘资金流入超过' },
+                { value: 'outflow', label: '暗盘资金流出超过' },
+              ]}
+              style={{ width: 160 }}
+            />
             <InputNumber
               min={0}
               precision={0}
@@ -254,7 +276,7 @@ export default function DarkTradeDiscovery() {
             />
             <Button
               type="primary"
-              onClick={() => void load(minDarkCapitalWan, minMultiple, selectedDate)}
+              onClick={() => void load(minDarkCapitalWan, minMultiple, selectedDate, capitalDirection)}
               loading={loading}
             >
               应用筛选

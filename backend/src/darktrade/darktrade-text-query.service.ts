@@ -28,7 +28,7 @@ const STOCK_NAME_EXTRACTION_PROMPT = `
 用户文本来自小红书股票咨询回复。
 
 【提取规则】
-1. 股名通常会被隐晦地写成中文、拼音首字母或二者混合。
+1. 股名通常会被隐晦地写成中文、拼音首字母或二者混合。六位股票代码由系统直接识别，不需要放进输出。
 2. 必须原样保留文本中的股名写法，不要擅自还原成正式全称。
 3. 去掉“求看”“可以看下吗”“谢谢”“嘞”等语气词和无关词。
 4. 不要补充文本中不存在的标的。
@@ -71,7 +71,11 @@ export class DarkTradeTextQueryService {
     const normalizedText = text.trim();
     if (!normalizedText) throw new BadRequestException('text 不能为空');
 
-    const names = await this.extractStockNames(normalizedText);
+    const codes = this.extractStockCodes(normalizedText);
+    const extractedNames = this.isCodeOnlyText(normalizedText)
+      ? []
+      : await this.extractStockNames(normalizedText);
+    const names = [...new Set([...codes, ...extractedNames])].slice(0, 12);
     this.logger.log(`LLM 提取个股（date=${date ?? '今日'}）：${names.join('、') || '无'}`);
     const settled = await Promise.all(
       names.map(async (name) => {
@@ -83,7 +87,11 @@ export class DarkTradeTextQueryService {
         }
       }),
     );
-    const results = settled.flatMap((item) => (item.data ? [item.data] : []));
+    const results = [
+      ...new Map(
+        settled.flatMap((item) => (item.data ? [[item.data.code, item.data] as const] : [])),
+      ).values(),
+    ];
     return {
       names,
       results,
@@ -127,6 +135,14 @@ export class DarkTradeTextQueryService {
       if (error instanceof BadRequestException) throw error;
       throw new ServiceUnavailableException('模型提取失败，请检查模型服务配置后重试');
     }
+  }
+
+  private extractStockCodes(text: string): string[] {
+    return [...new Set(text.match(/(?<!\d)\d{6}(?!\d)/g) ?? [])];
+  }
+
+  private isCodeOnlyText(text: string): boolean {
+    return /^(?:\s|\d|[,，、;；/])+$/.test(text);
   }
 
   private parseNames(content: string | undefined): string[] {

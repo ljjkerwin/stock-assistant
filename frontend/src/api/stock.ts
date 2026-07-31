@@ -204,13 +204,14 @@ export const darktradeApi = {
       .then((r) => r.data),
 
   getDiscoveryStocks: (
-    minDarkCapital = 20_000_000,
+    minDarkCapital = 30_000_000,
     minMultiple = 2,
     date?: string,
+    capitalDirection: 'inflow' | 'outflow' = 'inflow',
   ): Promise<DarkTradeData[]> =>
     api
       .get<DarkTradeData[]>('/darktrade/discovery', {
-        params: { minDarkCapital, minMultiple, date },
+        params: { minDarkCapital, minMultiple, date, capitalDirection },
       })
       .then((r) => r.data),
 

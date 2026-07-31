@@ -385,7 +385,7 @@ describe('DarkTradeService', () => {
 
       const result = await service.getDiscoveryStocks();
 
-      expect(result.map((item) => item.code)).toEqual(['B', 'A']);
+      expect(result.map((item) => item.code)).toEqual(['B']);
     });
 
     it('applies caller-supplied discovery thresholds', async () => {
@@ -411,6 +411,31 @@ describe('DarkTradeService', () => {
       const result = await service.getDiscoveryStocks(50_000_000, 2.5);
 
       expect(result.map((item) => item.code)).toEqual(['B']);
+    });
+
+    it('supports filtering for dark capital outflow above the threshold', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        {
+          code: 'A',
+          name: '流出超过阈值',
+          darkCapital: -20_000_000,
+          lightCapital: 5_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+        {
+          code: 'B',
+          name: '流出更大',
+          darkCapital: -30_000_000,
+          lightCapital: 5_000_000,
+          tradeDate: '20260728',
+          captureMinute: '202607281500',
+        },
+      ]);
+
+      const result = await service.getDiscoveryStocks(15_000_000, 2, '20260728', 'outflow');
+
+      expect(result.map((item) => item.code)).toEqual(['B', 'A']);
     });
   });
 
@@ -498,6 +523,17 @@ describe('DarkTradeService', () => {
       const result = await service.getDailyResultByName('华电ln', '20260728');
 
       expect(result?.displayName).toMatch(/^(华电ln|华dln)$/);
+    });
+
+    it('finds a closing result by its six-digit stock code', async () => {
+      dailyResultRepo.find.mockResolvedValue([
+        { code: '002922', name: '伊戈尔', tradeDate: '20260728', captureMinute: '202607281500' },
+      ]);
+
+      await expect(service.getDailyResultByName('002922', '20260728')).resolves.toMatchObject({
+        code: '002922',
+        name: '伊戈尔',
+      });
     });
 
     it('rejects intraday data when the 15:00 closing result is unavailable', async () => {

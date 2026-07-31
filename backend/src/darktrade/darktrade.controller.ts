@@ -54,11 +54,13 @@ export class DarkTradeController {
     @Query('minDarkCapital') minDarkCapital?: string,
     @Query('minMultiple') minMultiple?: string,
     @Query('date') date?: string,
+    @Query('capitalDirection') capitalDirection?: string,
   ) {
     return this.darkTradeService.getDiscoveryStocks(
       this.parseNonNegativeNumber(minDarkCapital, 'minDarkCapital'),
       this.parseNonNegativeNumber(minMultiple, 'minMultiple'),
       this.parseDate(date),
+      this.parseCapitalDirection(capitalDirection),
     );
   }
 
@@ -96,6 +98,14 @@ export class DarkTradeController {
     if (value == null) return undefined;
     if (!/^\d{8}$/.test(value)) {
       throw new BadRequestException('date 必须是 YYYYMMDD 格式');
+    }
+    return value;
+  }
+
+  private parseCapitalDirection(value: string | undefined): 'inflow' | 'outflow' | undefined {
+    if (value == null) return undefined;
+    if (value !== 'inflow' && value !== 'outflow') {
+      throw new BadRequestException('capitalDirection 必须是 inflow 或 outflow');
     }
     return value;
   }

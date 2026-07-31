@@ -45,4 +45,32 @@ describe('DarkTradeTextQueryService', () => {
     expect(getDailyResultByName).toHaveBeenNthCalledWith(1, '贵州茅台', '20260729');
     expect(getDailyResultByName).toHaveBeenNthCalledWith(2, '宁德时代', '20260729');
   });
+
+  it('extracts six-digit stock codes from the original text before querying model candidates', async () => {
+    mockedAxios.post.mockResolvedValue({
+      data: { choices: [{ message: { content: '{"names":["伊戈尔"]}' } }] },
+    });
+    const yig = { code: '002922', name: '伊戈尔', displayName: '伊ge' };
+    getDailyResultByName.mockResolvedValueOnce(yig).mockResolvedValueOnce(yig);
+
+    await expect(service.query('002922 和伊戈尔', '20260729')).resolves.toMatchObject({
+      names: ['002922', '伊戈尔'],
+      results: [yig],
+      notFoundNames: [],
+    });
+    expect(getDailyResultByName).toHaveBeenNthCalledWith(1, '002922', '20260729');
+  });
+
+  it('queries a code-only input without requiring the LLM service', async () => {
+    const yig = { code: '002922', name: '伊戈尔', displayName: '伊ge' };
+    getDailyResultByName.mockResolvedValue(yig);
+
+    await expect(service.query('002922', '20260729')).resolves.toMatchObject({
+      names: ['002922'],
+      results: [yig],
+      notFoundNames: [],
+    });
+    expect(mockedAxios.post.mock.calls).toHaveLength(0);
+    expect(getDailyResultByName).toHaveBeenCalledWith('002922', '20260729');
+  });
 });

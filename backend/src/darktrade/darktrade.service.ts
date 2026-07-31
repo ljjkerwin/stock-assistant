@@ -139,8 +139,9 @@ export interface FetchAllDailySnapshotResult {
   written: number;
 }
 
-export const DISCOVERY_DEFAULT_MIN_DARK_CAPITAL = 20_000_000;
+export const DISCOVERY_DEFAULT_MIN_DARK_CAPITAL = 30_000_000;
 export const DISCOVERY_DEFAULT_MIN_MULTIPLE = 2;
+export type DiscoveryCapitalDirection = 'inflow' | 'outflow';
 
 function todayDate(): string {
   const now = new Date();
@@ -361,13 +362,14 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 返回暗盘资金显著高于明盘资金的全市场标的。
+   * 返回暗盘资金流入或流出显著高于明盘资金绝对值的全市场标的。
    * 每只股票使用指定日期最后一条全市场快照，按暗盘资金从高到低排列。
    */
   async getDiscoveryStocks(
     minDarkCapital = DISCOVERY_DEFAULT_MIN_DARK_CAPITAL,
     minMultiple = DISCOVERY_DEFAULT_MIN_MULTIPLE,
     date = todayDate(),
+    capitalDirection: DiscoveryCapitalDirection = 'inflow',
   ): Promise<DarkTradeData[]> {
     let results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
     // 兼容上线前已有的分钟/日终快照：首次访问某日时回填结果表，之后查询不再扫描快照表。
@@ -388,14 +390,21 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
         (item) =>
           item.darkCapital != null &&
           item.lightCapital != null &&
-          item.darkCapital > minDarkCapital &&
-          item.darkCapital > Math.abs(item.lightCapital) * minMultiple,
+          (capitalDirection === 'inflow'
+            ? item.darkCapital > minDarkCapital &&
+              item.darkCapital > Math.abs(item.lightCapital) * minMultiple
+            : item.darkCapital < -minDarkCapital &&
+              Math.abs(item.darkCapital) > Math.abs(item.lightCapital) * minMultiple),
       )
-      .sort((a, b) => (b.darkCapital ?? 0) - (a.darkCapital ?? 0))
+      .sort((a, b) =>
+        capitalDirection === 'inflow'
+          ? (b.darkCapital ?? 0) - (a.darkCapital ?? 0)
+          : (a.darkCapital ?? 0) - (b.darkCapital ?? 0),
+      )
       .map((item) => this.dailyResultToData(item));
   }
 
-  /** 查询指定交易日、指定股票名称的日终明暗盘资金。 */
+  /** 查询指定交易日、指定股票名称或六码代码的日终明暗盘资金。 */
   async getDailyResultByName(
     name: string,
     date = todayDate(),
@@ -407,12 +416,18 @@ export class DarkTradeService implements OnModuleInit, OnModuleDestroy {
       await this.upsertDailyResults(await this.getLatestSnapshotsForDate(date));
       results = await this.dailyResultRepo.find({ where: { tradeDate: date } });
     }
+    const isStockCode = /^\d{6}$/.test(normalizedName);
     const result = results
-      .filter((item) => item.name && matchesStockName(item.name, normalizedName))
-      .sort(
-        (a, b) =>
-          stockNameMatchPriority(b.name ?? '', normalizedName) -
-          stockNameMatchPriority(a.name ?? '', normalizedName),
+      .filter((item) =>
+        isStockCode
+          ? item.code === normalizedName
+          : Boolean(item.name && matchesStockName(item.name, normalizedName)),
+      )
+      .sort((a, b) =>
+        isStockCode
+          ? 0
+          : stockNameMatchPriority(b.name ?? '', normalizedName) -
+            stockNameMatchPriority(a.name ?? '', normalizedName),
       )[0];
     if (!result) return null;
     if (!result.captureMinute.endsWith('1500')) {
